@@ -4,8 +4,8 @@ const music = require('../modules/music/service');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Play: YouTube / Spotify / SoundCloud / Bandcamp / прямые mp3 / радио')
-    .addStringOption(o => o.setName('query').setDescription('Название, ссылка или прямая mp3/m3u8').setRequired(true))
+    .setDescription('Play: SoundCloud / Spotify / Bandcamp / прямые mp3 / радио')
+    .addStringOption(o => o.setName('query').setDescription('Название, ссылка SC/Spotify/Bandcamp или прямая mp3').setRequired(true))
     .addChannelOption(o => o.setName('channel').setDescription('Войс-канал (по умолчанию твой)').setRequired(false)),
   async execute(interaction, client) {
     const query = interaction.options.getString('query', true);

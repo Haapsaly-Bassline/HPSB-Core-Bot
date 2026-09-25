@@ -11,15 +11,19 @@ function uptimeStr(ms) {
 module.exports = {
   data: new SlashCommandBuilder().setName('version').setDescription('Версия бота и окружение'),
   async execute(interaction, client) {
-    const lavalink = client.lavalink ? 'подключён' : (config.music.engine === 'lavalink' ? 'флаг on, нет соединения' : 'выкл');
+    let now = 'пусто';
+    try {
+      const v = require('../modules/music/service').queueView(client, interaction.guildId);
+      if (v?.current) now = v.current.title;
+    } catch {}
     const e = new EmbedBuilder()
       .setColor(0x7c3aed).setTitle(`🤖 HPSB Core Bot v${pkg.version}`).setTimestamp()
       .addFields(
         { name: 'Сборка', value: process.env.BUILD_DATE || 'dev', inline: true },
         { name: 'Node', value: process.version, inline: true },
         { name: 'Аптайм', value: uptimeStr(process.uptime() * 1000), inline: true },
-        { name: 'Муз-движок', value: `${config.music.engine} (discord-player + lavalink ${lavalink})`, inline: false },
-        { name: 'Очередь сейчас', value: client.player?.nodes?.get(interaction.guildId)?.currentTrack?.title || 'пусто', inline: false },
+        { name: 'Муз-движок', value: `hpsb-engine (свой)${config.music.engine === 'lavalink' ? ' + lavalink ' + (client.lavalink ? 'подключён' : 'флаг on') : ''}`, inline: false },
+        { name: 'Очередь сейчас', value: now, inline: false },
       )
       .setFooter({ text: 'Haapsaly Bassline' });
     await interaction.reply({ embeds: [e], flags: MessageFlags.Ephemeral });

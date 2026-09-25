@@ -3,10 +3,9 @@
 Многофункциональный бот: музыка в духе Jockie + радио + репостеры + свои новости + honeypot + ModCall + логи.
 Весь код написан с нуля под HPSB (по мотивам Jockie/Carl, без копирования чужого кода).
 
-## Команды (19)
-- Музыка: `/play` (YT/SP/SC/прямые mp3/плейлисты) `/radio` (HPSB/Predictor/свой поток) `/skip` `/stop` `/queue` `/nowplaying` `/loop` `/shuffle` `/remove` `/move` `/seek` `/volume` `/clear` `/pause` `/resume`
-- Модерация: `/modcall-panel` `/publish` `/logs` `/reposter-status`
-- YouTube идёт через `discord-player-youtubei` (стабильнее скрапинга). Bandcamp/Audiomack — только прямые audio-ссылки или зеркала YT/SC.
+## Команды (37)
+- Музыка (свой движок hpsb-engine, без discord-player): `/play` (текст/SC/Spotify/Bandcamp/прямые mp3) `/radio` `/skip` `/stop` `/queue` `/nowplaying` (живой NP с кнопками) `/loop` `/shuffle` `/remove` `/move` `/seek` `/volume` `/clear` `/pause` `/resume` + `/voice-debug` `/perms`
+- Провайдеры: прямые mp3/aac/m3u8 и радио, Bandcamp (свой резолвер), SoundCloud (API v2 + потоки), Spotify (метаданные + SC-аудио, иначе превью 30с). YouTube запаркован (сеть режет).
 
 ## Модули
 - `reposter` — YouTube (Data API ключ → RSS → скрап), TikTok (TikWM), Instagram (Graph → скрап профиля → RSSHub; нужна `IG_SESSIONID`).

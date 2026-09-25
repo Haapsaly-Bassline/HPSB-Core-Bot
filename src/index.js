@@ -1,5 +1,4 @@
 const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
-const { Player } = require('discord-player');
 const { config, validate } = require('./config');
 const { logger } = require('./utils/logger');
 const fs = require('node:fs');
@@ -29,11 +28,20 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// --- Music player (discord-player v6, own implementation, not Jockie copy) ---
-const player = new Player(client, {
-  skipFFmpeg: false,
+// --- Свой музыкальный движок (без discord-player): voice + FFmpeg + свои резолверы ---
+const { MusicEngine } = require('./modules/music/engine');
+const np = require('./modules/music/np');
+client.music = new MusicEngine(client, {
+  onTrackStart: (guildId) => {
+    try {
+      const g = client.music.of(guildId);
+      np.trackStart(client, guildId, g.textChannel);
+    } catch {}
+  },
+  onQueueEnd: (guildId, note) => {
+    try { np.finalize(client, guildId, note || 'Очередь завершена'); } catch {}
+  },
 });
-client.player = player;
 
 // Voice self-test: сразу видно, есть ли чем играть (критично для host PC)
 try {
@@ -51,81 +59,8 @@ try {
   logger.error('[voice] NO FFMPEG — звука не будет! npm install ffmpeg-static');
 }
 
-(async () => {
-  try {
-    // Регистрируем по одному: YouTube идёт через YoutubeiExtractor (InnerTube API,
-    // стабильнее скрапинга), остальные — из @discord-player/extractor.
-    // Bandcamp/Audiomack прямых экстракторов нет — работают через прямые audio-ссылки.
-    const dp = require('@discord-player/extractor');
-    for (const Ext of [dp.AttachmentExtractor, dp.SoundCloudExtractor, dp.AppleMusicExtractor, dp.VimeoExtractor, dp.ReverbnationExtractor]) {
-      await player.extractors.register(Ext, {});
-    }
-    // Spotify: ключи идут именно сюда (DP_SPOTIFY_*), без них — только текстовый поиск
-    if (!process.env.DP_SPOTIFY_CLIENT_ID && config.music.spotifyClientId) {
-      process.env.DP_SPOTIFY_CLIENT_ID = config.music.spotifyClientId;
-      process.env.DP_SPOTIFY_CLIENT_SECRET = config.music.spotifyClientSecret || '';
-    }
-    await player.extractors.register(dp.SpotifyExtractor, {
-      clientId: config.music.spotifyClientId || undefined,
-      clientSecret: config.music.spotifyClientSecret || undefined,
-    });
-    try {
-      const { YoutubeExtractor: YoutubeiExtractor } = require('discord-player-youtubei');
-      await player.extractors.register(YoutubeiExtractor, {});
-      logger.info('[music] extractors loaded (youtubei + spotify/soundcloud/apple/vimeo/attachment)');
-    } catch (e2) {
-      logger.warn('[music] youtubei failed, fallback to default youtube:', e2.message);
-      await player.extractors.register(dp.YoutubeExtractor, {});
-      logger.info('[music] extractors loaded (default youtube + others)');
-    }
-  } catch (e) {
-    logger.error('[music] extractor load failed', e.message);
-  }
-})();
-
-player.events.on('playerStart', async (queue, track) => {
-  try {
-    // Сцена (Stage): слушателя не слышно — пробуем стать спикером
-    if (queue.channel?.type === 13) {
-      try {
-        const me = queue.guild?.members?.me || await queue.guild?.members?.fetch(client.user.id).catch(() => null);
-        await me?.voice?.setSuppressed(false).catch(() => {});
-        if (me?.voice?.suppress) {
-          queue.metadata?.channel?.send('⚠️ Я на сцене, но не спикер — дайте мне слово (Invite to Speak), иначе меня не слышно.').catch(() => {});
-        }
-      } catch {}
-    }
-    // Живой Now Playing ведёт np-модуль (через MusicService — движок не важен)
-    require('./modules/music/np').trackStart(client, queue.guild.id, queue.metadata?.channel);
-  } catch {}
-});
-// Живой NP: финализация и мгновенное обновление кнопок
-player.events.on('emptyQueue', (queue) => {
-  try { require('./modules/music/np').finalize(client, queue.guild.id, 'Очередь завершена'); } catch {}
-});
-player.events.on('queueDelete', (queue) => {
-  try { require('./modules/music/np').finalize(client, queue.guild.id, 'Остановлено'); } catch {}
-});
-player.events.on('playerPause', (queue) => {
-  try { require('./modules/music/np').render(client, queue.guild.id); } catch {}
-});
-player.events.on('playerResume', (queue) => {
-  try { require('./modules/music/np').render(client, queue.guild.id); } catch {}
-});
-player.events.on('error', (queue, err) => {
-  const msg = String(err?.message || err || '');
-  // AbortError — обычно просто скип/стоп, не ошибка. Шум не нужен.
-  if (/abort/i.test(msg)) {
-    logger.warn('[music] queue aborted', queue?.currentTrack?.title || '');
-    return;
-  }
-  // Полный дамп: message у discord-player часто неинформативен ("[Object] ...")
-  logger.error('[music] queue error', queue?.currentTrack?.title || '-', msg);
-  try {
-    const extra = err?.stack || JSON.stringify(err, Object.getOwnPropertyNames(err || {}));
-    if (extra && extra !== msg) logger.error('[music] detail', String(extra).slice(0, 800));
-  } catch {}
-});
+logger.info('[music] hpsb-engine ready');
+// Ошибки движка логгирует сам engine.js (player/warn). Дамп деталей — в /logs.
 
 // --- Load commands ---
 const commandsPath = path.join(__dirname, 'commands');

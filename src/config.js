@@ -61,13 +61,11 @@ const config = {
   },
 
   music: {
-    // Spotify Client ID/Secret БЕСПЛАТНЫ (developer.spotify.com), оплата не нужна.
-    // Без них spotify-ссылки резолвятся хуже (через текстовый поиск), с ними — точно.
+    // Spotify Client ID/Secret больше не нужны (embed-скрап без ключей).
     spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
     spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
-    // Движок: discord-player (сейчас) | lavalink (на VPS, см. lavalink/README.md).
-    // Код lavalink-движка подключается на VPS-этапе, флаг уже заложен.
-    engine: process.env.MUSIC_ENGINE || 'discord-player',
+    // Движок: hpsb (свой) | lavalink (на host PC, см. lavalink/README.md).
+    engine: process.env.MUSIC_ENGINE || 'hpsb',
     lavalink: {
       host: process.env.LAVALINK_HOST || '127.0.0.1',
       port: Number(process.env.LAVALINK_PORT || 2333),
