@@ -5,6 +5,7 @@ const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
 
 let timer = null;
+let running = false;
 const lastNames = new Map(); // channelId -> name
 
 function fmt(n) {
@@ -55,9 +56,15 @@ async function update(client) {
 
 function startStats(client) {
   const mins = Math.max(10, config.stats.intervalMin || 15);
-  update(client).catch(e => logger.warn('[stats]', e.message));
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try { await update(client); } catch (e) { logger.warn('[stats]', e.message); }
+    finally { running = false; }
+  };
+  run();
   if (timer) clearInterval(timer);
-  timer = setInterval(() => update(client).catch(e => logger.warn('[stats]', e.message)), mins * 60 * 1000);
+  timer = setInterval(() => run().catch(e => logger.warn('[stats]', e.message)), mins * 60 * 1000);
   timer.unref?.();
   logger.info(`[stats] every ${mins}m`);
 }

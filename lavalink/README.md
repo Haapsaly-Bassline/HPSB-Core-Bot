@@ -1,43 +1,39 @@
-# Lavalink — запуск на VPS (музыка уровня Jockie)
+# Lavalink — запуск на host PC (музыка уровня Jockie)
 
 Почему: Jockie написан на Java и едет на Lavalink (их открытые репо — Java-инфра,
 включая форк TLS-библиотеки conscrypt: они борются с детектом на уровне TLS).
 Повторить их TLS-патчи в Node нереально, а вот вынести звук в Lavalink — да:
 весь фетч/транскод уезжает в Java-процесс, бот только управляет.
 
-## Что нужно на VPS
-- Ubuntu 22.04+, 1 CPU / 1 GB RAM минимум
-- Java 17+: `sudo apt install -y openjdk-17-jre-headless`
-- Node.js 20+ для самого бота
+## Что нужно на host PC (Windows)
+- Java 17+: https://adoptium.net/ → Temurin 17 JRE, установщик `.msi`
+  (проверка: `java -version` в новом окне PowerShell)
+- Node.js 20+ для самого бота (уже стоит, раз бот едет)
 
-## Запуск
+## Запуск (Windows)
 1. Скачай `Lavalink.jar` в эту папку:
    https://github.com/lavalink-devs/Lavalink/releases (бери v4, файл `Lavalink.jar`)
 2. В `application.yml`:
    - смени `lavalink.server.password` и продублируй в `.env` бота (`LAVALINK_PASSWORD`)
    - вставь Spotify ключи в секцию `plugins.lavasrc.spotify`
    - сверь версии плагинов с их GitHub-релизами
-3. Запуск: `java -jar Lavalink.jar` (в проде — через systemd, юнит ниже)
-4. В `.env` бота: `MUSIC_ENGINE=lavalink`, `LAVALINK_HOST=127.0.0.1`,
+3. Первый запуск руками для проверки (из PowerShell в папке `lavalink\`):
+   ```powershell
+   java -jar Lavalink.jar
+   ```
+   Жди строку про успешный старт и порт 2333 (ошибок по плагинам быть не должно).
+4. Автозапуск: Планировщик заданий → `java.exe` с аргументом
+   `-jar "C:\путь\к\lavalink\Lavalink.jar"`, рабочая папка — папка `lavalink\`,
+   триггер при запуске системы. Либо `.bat` в автозагрузку:
+   ```bat
+   @echo off
+   cd /d C:\HPSB\lavalink
+   java -jar Lavalink.jar
+   ```
+5. В `.env` бота: `MUSIC_ENGINE=lavalink`, `LAVALINK_HOST=127.0.0.1`,
    `LAVALINK_PORT=2333`, `LAVALINK_PASSWORD=...`
-5. Код движка (`src/modules/music/engine-lavalink.js`) подключается на этом этапе —
-   сейчас бот осознанно едет на discord-player, чтобы ничего не сломать без VPS для тестов.
-
-## systemd-юнит (пример)
-```ini
-[Unit]
-Description=HPSB Lavalink
-After=network.target
-
-[Service]
-WorkingDirectory=/opt/hpsb/lavalink
-ExecStart=/usr/bin/java -jar Lavalink.jar
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
+6. Код движка (`src/modules/music/engine-lavalink.js`) уже готов, команды
+   мигрируют со звуковыми тестами на месте.
 
 ## Что это даст
 - YouTube/Spotify/Apple/Deezer/SoundCloud/Bandcamp/HTTP — все провайдеры из одного места

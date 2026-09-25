@@ -12,6 +12,12 @@ module.exports = {
         await cmd.execute(interaction, client);
         return;
       }
+      // Кнопки живого Now Playing
+      if (interaction.isButton() && interaction.customId.startsWith('np:')) {
+        const np = require('../modules/music/np');
+        const handled = await np.handleButton(interaction, client);
+        if (handled) return;
+      }
       // Buttons / modals / selects -> delegate to modcall module
       if (interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu()) {
         const modcall = require('../modules/modcall/handler');

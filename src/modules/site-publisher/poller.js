@@ -87,13 +87,17 @@ async function checkReleases(client, state, opts = {}) {
       return { found: items.length, posted: 0 };
     }
     const targets = backfill ? items.slice(0, backfill) : items.filter(i => !known.has(String(i.id))).slice(0, 5);
+    let posted = 0;
     for (const r of targets) {
-      await post(client, channelId, releaseEmbed(r));
-      known.add(String(r.id));
-      logger.info(`[hpsb/releases] posted ${r.slug || r.id}`);
+      // ID запоминаем ТОЛЬКО при успешной отправке, иначе дроп потеряется навсегда
+      if (await post(client, channelId, releaseEmbed(r))) {
+        known.add(String(r.id));
+        posted++;
+        logger.info(`[hpsb/releases] posted ${r.slug || r.id}`);
+      }
     }
     state.releases.ids = [...known].slice(-100);
-    return { found: items.length, posted: targets.length };
+    return { found: items.length, posted };
   } catch (e) {
     logger.warn('[hpsb/releases] json failed, trying rss:', e.message);
     try {
@@ -103,15 +107,18 @@ async function checkReleases(client, state, opts = {}) {
         return { found: items.length, posted: 0 };
       }
       const targets = items.filter(x => !known.has(x.rssGuid)).slice(0, 5);
+      let posted = 0;
       for (const i of targets) {
-        await post(client, channelId, new EmbedBuilder()
+        if (await post(client, channelId, new EmbedBuilder()
           .setColor(0x7c3aed).setTitle(`💿 ${truncate(i.title, 250)}`).setURL(i.link)
           .setDescription(truncate(i.description || '', 1500)).setTimestamp()
-          .setFooter({ text: 'Haapsaly Bassline • Release (RSS)' }));
-        known.add(i.rssGuid);
+          .setFooter({ text: 'Haapsaly Bassline • Release (RSS)' }))) {
+          known.add(i.rssGuid);
+          posted++;
+        }
       }
       state.releases.ids = [...known].slice(-100);
-      return { found: items.length, posted: targets.length };
+      return { found: items.length, posted };
     } catch (e2) { logger.warn('[hpsb/releases] rss failed:', e2.message); return { found: 0, posted: 0 }; }
   }
 }
@@ -160,13 +167,16 @@ async function checkEvents(client, state, opts = {}) {
       return { found: items.length, posted: 0 };
     }
     const targets = (backfill ? items.slice(0, backfill) : items.filter(i => i?.id && !known.has(String(i.id)))).slice(0, 5);
+    let posted = 0;
     for (const ev of targets) {
-      await post(client, channelId, eventEmbed(ev));
-      known.add(String(ev.id));
-      logger.info(`[hpsb/events] posted ${ev.id}`);
+      if (await post(client, channelId, eventEmbed(ev))) {
+        known.add(String(ev.id));
+        posted++;
+        logger.info(`[hpsb/events] posted ${ev.id}`);
+      }
     }
     state.events.ids = [...known].slice(-100);
-    return { found: items.length, posted: targets.length };
+    return { found: items.length, posted };
   } catch (e) {
     logger.warn('[hpsb/events] json failed, trying rss:', e.message);
     try {
@@ -176,16 +186,19 @@ async function checkEvents(client, state, opts = {}) {
         return { found: items.length, posted: 0 };
       }
       const targets = items.filter(x => !known.has(x.rssGuid)).slice(0, 5);
+      let posted = 0;
       for (const i of targets) {
-        await post(client, channelId, new EmbedBuilder()
+        if (await post(client, channelId, new EmbedBuilder()
           .setColor(0x0ea5e9).setTitle(`📅 ${truncate(i.title, 250)}`).setURL(i.link)
           .setDescription(truncate(i.description || '', 1800))
           .setTimestamp(i.pubDate ? new Date(i.pubDate) : new Date())
-          .setFooter({ text: 'Haapsaly Bassline • Events (RSS)' }));
-        known.add(i.rssGuid);
+          .setFooter({ text: 'Haapsaly Bassline • Events (RSS)' }))) {
+          known.add(i.rssGuid);
+          posted++;
+        }
       }
       state.events.ids = [...known].slice(-100);
-      return { found: items.length, posted: targets.length };
+      return { found: items.length, posted };
     } catch (e2) { logger.warn('[hpsb/events] rss failed:', e2.message); return { found: 0, posted: 0 }; }
   }
 }
@@ -211,10 +224,11 @@ async function checkReminders(client, state) {
       if (need && !done.includes(need)) {
         const emb = eventEmbed(ev);
         emb.setTitle(`⏰ Напоминание (${need === '1h' ? 'остался час' : 'остались сутки'}): ${(ev.name || 'Event').slice(0, 200)}`);
-        await post(client, channelId, emb);
-        done.push(need);
-        posted++;
-        logger.info(`[hpsb/remind] ${ev.id} ${need}`);
+        if (await post(client, channelId, emb)) {
+          done.push(need);
+          posted++;
+          logger.info(`[hpsb/remind] ${ev.id} ${need}`);
+        }
       }
     }
   } catch (e) { logger.warn('[hpsb/remind]', e.message); }
@@ -237,6 +251,7 @@ async function checkPosts(client, state, opts = {}) {
     }
     const pool = backfill ? items.slice(0, backfill) : items.filter(i => (i.id || i.slug) && !known.has(String(i.id || i.slug)));
     const targets = pool.slice(0, 5);
+    let posted = 0;
     for (const p of targets) {
       const e = new EmbedBuilder()
         .setColor(0x10b981)
@@ -246,12 +261,14 @@ async function checkPosts(client, state, opts = {}) {
         .setTimestamp(p.publishedAt ? new Date(p.publishedAt) : new Date())
         .setFooter({ text: `Haapsaly Bassline • Post${p.tags?.length ? ' • ' + p.tags.join(', ') : ''}`.slice(0, 200) });
       if (p.cover) e.setImage(p.cover);
-      await post(client, channelId, e);
-      known.add(String(p.id || p.slug));
-      logger.info(`[hpsb/posts] posted ${p.slug || p.id}`);
+      if (await post(client, channelId, e)) {
+        known.add(String(p.id || p.slug));
+        posted++;
+        logger.info(`[hpsb/posts] posted ${p.slug || p.id}`);
+      }
     }
     state.posts.ids = [...known].slice(-100);
-    return { found: items.length, posted: targets.length };
+    return { found: items.length, posted };
   } catch (e) { logger.warn('[hpsb/posts]', e.message); return { found: 0, posted: 0 }; }
 }
 
@@ -270,28 +287,38 @@ async function checkLegacy(client, state) {
       return { found: items.length, posted: 0 };
     }
     const targets = items.filter(i => i?.id && !known.has(String(i.id))).slice(0, 5);
+    let posted = 0;
     for (const item of targets) {
-      await post(client, config.siteApi.channelId, newsEmbed({ ...item, source: 'HPSB site' }));
-      known.add(String(item.id));
+      if (await post(client, config.siteApi.channelId, newsEmbed({ ...item, source: 'HPSB site' }))) {
+        known.add(String(item.id));
+        posted++;
+      }
     }
     state.site.lastIds = [...known].slice(-50);
-    return { found: items.length, posted: targets.length };
+    return { found: items.length, posted };
   } catch (e) { logger.warn('[site legacy]', e.message); return { found: 0, posted: 0 }; }
 }
 
 const ZERO = { found: 0, posted: 0 };
+let running = false;
 
 // Один полный прогон (для поллера и для /sync). opts.backfill — докинуть последние N.
 async function runHpsbOnce(client, opts = {}) {
-  const state = store.load();
-  const out = { releases: { ...ZERO }, events: { ...ZERO }, posts: { ...ZERO }, legacy: { ...ZERO }, reminders: { ...ZERO } };
-  out.releases = await checkReleases(client, state, opts);
-  out.events = await checkEvents(client, state, opts);
-  out.posts = await checkPosts(client, state, opts);
-  out.legacy = await checkLegacy(client, state);
-  out.reminders = await checkReminders(client, state);
-  store.save(state);
-  return out;
+  if (running) { logger.warn('[hpsb] previous run still active, skipping'); return null; }
+  running = true;
+  try {
+    const state = store.load();
+    const out = { releases: { ...ZERO }, events: { ...ZERO }, posts: { ...ZERO }, legacy: { ...ZERO }, reminders: { ...ZERO } };
+    out.releases = await checkReleases(client, state, opts);
+    out.events = await checkEvents(client, state, opts);
+    out.posts = await checkPosts(client, state, opts);
+    out.legacy = await checkLegacy(client, state);
+    out.reminders = await checkReminders(client, state);
+    store.save(state);
+    return out;
+  } finally {
+    running = false;
+  }
 }
 
 function startSitePoller(client) {

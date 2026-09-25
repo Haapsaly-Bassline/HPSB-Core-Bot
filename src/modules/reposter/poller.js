@@ -9,7 +9,9 @@ const parser = new XMLParser({ ignoreAttributes: false });
 
 async function postToChannel(client, channelId, embed) {
   const ch = await client.channels.fetch(channelId).catch(() => null);
-  if (ch?.isTextBased()) await ch.send({ embeds: [embed] }).catch(() => {});
+  if (!ch?.isTextBased()) return false;
+  const ok = await ch.send({ embeds: [embed] }).then(() => true).catch(() => false);
+  return ok;
 }
 
 const YT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -100,10 +102,11 @@ async function checkYouTube(client, state) {
           .setDescription(`${item.author || ''}\n${link}`.slice(0, 2000))
           .setImage(`https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`)
           .setTimestamp();
-        await postToChannel(client, channelId, embed);
-        knownSet.add(item.id);
-        posted++;
-        logger.info(`[reposter/yt] new ${item.id}`);
+        if (await postToChannel(client, channelId, embed)) {
+          knownSet.add(item.id);
+          posted++;
+          logger.info(`[reposter/yt] new ${item.id}`);
+        }
       }
       state.youtube[ytId] = [...knownSet].slice(-20);
     } catch (e) { logger.warn(`[reposter/yt] ${ytId}:`, e.message); }
@@ -123,16 +126,18 @@ async function checkTikTok(client, state) {
       if (!videos.length) continue;
       const latest = videos[0];
       const vid = String(latest.video_id || latest.id || latest.aweme_id || '');
-      if (!vid || state.tiktok[uname] === vid) continue;
-      const isFirst = !state.tiktok[uname];
-      state.tiktok[uname] = vid;
-      if (isFirst) continue;
+      if (!vid) continue;
+      const prev = state.tiktok[uname];
+      if (prev === vid) continue;
+      if (!prev) { state.tiktok[uname] = vid; continue; } // первый запуск — запоминаем
       const link = `https://www.tiktok.com/@${uname}/video/${vid}`;
-      await postToChannel(client, channelId, new EmbedBuilder()
+      if (await postToChannel(client, channelId, new EmbedBuilder()
         .setColor(0x000000).setTitle(`🎵 Новый TikTok @${uname}`)
         .setURL(link).setDescription(`${latest.title || latest.desc || ''}\n${link}`.slice(0, 2000))
-        .setTimestamp());
-      posted++;
+        .setTimestamp())) {
+        state.tiktok[uname] = vid;
+        posted++;
+      }
     } catch (e) { logger.warn(`[reposter/tt] ${username}:`, e.message); }
   }
   return { found, posted };
@@ -146,10 +151,9 @@ async function checkInstagram(client, state) {
       const latest = await fetchLatestPost(username);
       if (!latest?.id) { logger.warn(`[reposter/ig] ${username}: empty (все методы мимо, см. IG_SESSIONID)`); continue; }
       found++;
-      if (state.instagram[username] === latest.id) continue;
-      const isFirst = !state.instagram[username];
-      state.instagram[username] = latest.id;
-      if (isFirst) continue; // первый запуск — только запоминаем
+      const prev = state.instagram[username];
+      if (prev === latest.id) continue;
+      if (!prev) { state.instagram[username] = latest.id; continue; } // первый запуск — запоминаем
       const e = new EmbedBuilder()
         .setColor(0xe1306c).setTitle(`📸 Новый пост @${String(username).replace(/^@/, '')}`)
         .setURL(latest.link || undefined)
@@ -157,25 +161,34 @@ async function checkInstagram(client, state) {
         .setFooter({ text: `Instagram • via ${latest.via}` })
         .setTimestamp(latest.timestamp ? new Date(latest.timestamp * (latest.timestamp < 1e12 ? 1000 : 1)) : new Date());
       if (latest.image) e.setImage(latest.image);
-      await postToChannel(client, channelId, e);
-      posted++;
-      logger.info(`[reposter/ig] new ${username} (${latest.via})`);
+      if (await postToChannel(client, channelId, e)) {
+        state.instagram[username] = latest.id;
+        posted++;
+        logger.info(`[reposter/ig] new ${username} (${latest.via})`);
+      }
     } catch (e) { logger.warn(`[reposter/ig] ${username}:`, e.message); }
   }
   return { found, posted };
 }
 
 let timer = null;
+let running = false;
 const ZERO = { found: 0, posted: 0 };
 
 async function runReposterOnce(client) {
-  const state = store.load();
-  const out = { youtube: { ...ZERO }, tiktok: { ...ZERO }, instagram: { ...ZERO } };
-  out.youtube = await checkYouTube(client, state);
-  out.tiktok = await checkTikTok(client, state);
-  out.instagram = await checkInstagram(client, state);
-  store.save(state);
-  return out;
+  if (running) { logger.warn('[reposter] previous run still active, skipping'); return null; }
+  running = true;
+  try {
+    const state = store.load();
+    const out = { youtube: { ...ZERO }, tiktok: { ...ZERO }, instagram: { ...ZERO } };
+    out.youtube = await checkYouTube(client, state);
+    out.tiktok = await checkTikTok(client, state);
+    out.instagram = await checkInstagram(client, state);
+    store.save(state);
+    return out;
+  } finally {
+    running = false;
+  }
 }
 
 function startReposter(client) {

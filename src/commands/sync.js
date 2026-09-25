@@ -20,6 +20,10 @@ module.exports = {
       const { runReposterOnce } = require('../modules/reposter/poller');
       const h = await runHpsbOnce(client, { backfill });
       const r = await runReposterOnce(client);
+      if (!h || !r) {
+        await interaction.editReply('⏳ Предыдущая синхронизация ещё идёт — попробуй через минуту.');
+        return;
+      }
       const e = new EmbedBuilder()
         .setColor(0x7c3aed).setTitle('🔄 Синхронизация').setTimestamp()
         .setDescription([

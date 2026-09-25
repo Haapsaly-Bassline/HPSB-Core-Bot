@@ -79,11 +79,21 @@ player.events.on('playerStart', async (queue, track) => {
         }
       } catch {}
     }
-    const { nowPlayingEmbed } = require('./utils/embeds');
-    const requester = queue.metadata?.requester || track.requestedBy;
-    const shown = queue.metadata?.radioLabel ? { ...track, title: `📻 ${queue.metadata.radioLabel}` } : track;
-    queue.metadata?.channel?.send({ embeds: [nowPlayingEmbed(shown, queue, requester)] }).catch(() => {});
+    require('./modules/music/np').trackStart(client, queue, track);
   } catch {}
+});
+// Живой NP: финализация и мгновенное обновление кнопок
+player.events.on('emptyQueue', (queue) => {
+  try { require('./modules/music/np').finalize(client, queue.guild.id, 'Очередь завершена'); } catch {}
+});
+player.events.on('queueDelete', (queue) => {
+  try { require('./modules/music/np').finalize(client, queue.guild.id, 'Остановлено'); } catch {}
+});
+player.events.on('playerPause', (queue) => {
+  try { require('./modules/music/np').render(client, queue.guild.id); } catch {}
+});
+player.events.on('playerResume', (queue) => {
+  try { require('./modules/music/np').render(client, queue.guild.id); } catch {}
 });
 player.events.on('error', (queue, err) => {
   const msg = String(err?.message || err || '');
@@ -95,9 +105,9 @@ player.events.on('error', (queue, err) => {
   logger.error('[music] queue error', queue?.currentTrack?.title || '', '-', msg);
 });
 
-// Lavalink-движок: только при MUSIC_ENGINE=lavalik (host PC / VPS).
+// Lavalink-движок: только при MUSIC_ENGINE=lavalink (host PC / VPS).
 // По умолчанию инертен — discord-player путь не трогаем.
-if (config.music.engine === 'lavalik') {
+if (config.music.engine === 'lavalink') {
   (async () => {
     try {
       const { LavalinkEngine } = require('./modules/music/engine-lavalink');

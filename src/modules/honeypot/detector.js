@@ -35,21 +35,30 @@ async function punish(client, message, reason, opts = {}) {
   const hours = opts.hours ?? (opts.trap ? config.honeypot.timeoutHours : 1);
   const audit = `Honeypot/Automod: ${reason}`;
 
+  // Честно отслеживаем, сработало ли наказание — лог не должен врать
+  let ok = true;
   try {
     if (action === 'ban') {
-      await member.ban({ reason: audit }).catch(() => {});
+      await member.ban({ reason: audit });
       try { await message.delete(); } catch {}
     } else if (action === 'kick') {
-      await member.kick(audit).catch(() => {});
+      await member.kick(audit);
       try { await message.delete(); } catch {}
     } else {
       const ms = Math.min(Math.max(hours, 1), 672) * 60 * 60 * 1000; // 1ч..28дн
       await member.timeout(ms, audit);
       try { await message.delete(); } catch {}
     }
-  } catch (e) { logger.warn('[honeypot] punish failed', e.message); }
+  } catch (e) {
+    ok = false;
+    logger.warn('[honeypot] punish failed', member.id, e.message);
+  }
   const what = action === 'ban' ? 'бан' : action === 'kick' ? 'кик' : `мут ${hours}ч`;
   const { punishLogEmbed } = require('../../utils/embeds');
+  if (!ok) {
+    await logToStaff(client, `❌ **Honeypot FAILED** (${what} не сработал — проверь роль/права бота): ${member} (${member.id}) — ${reason}`);
+    return false;
+  }
   await logToStaff(client, { embeds: [punishLogEmbed({
     what, member: `${member} (${member.id})`, reason, excerpt: (message.content || '').slice(0, 500) || undefined,
   })] });

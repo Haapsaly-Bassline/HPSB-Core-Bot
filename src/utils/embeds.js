@@ -1,5 +1,15 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
+// Дизайн-токены HPSB: новые эмбеды — отсюда, старые мигрируют постепенно
+const COLORS = {
+  primary: 0x7c3aed,
+  info: 0x0ea5e9,
+  success: 0x22c55e,
+  warning: 0xf59e0b,
+  danger: 0xef4444,
+  music: 0x1db954,
+};
+
 function baseEmbed({ title, description, url, image, color = 0x7c3aed, footer = 'Haapsaly Bassline' }) {
   const e = new EmbedBuilder().setColor(color).setTimestamp();
   if (title) e.setTitle(title.slice(0, 256));
@@ -94,7 +104,7 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle) {
   return e;
 }
 
-module.exports = { baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, modActionEmbed, punishLogEmbed };
+module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, modActionEmbed, punishLogEmbed };
 
 // --- Мод-действие: единый красивый вывод (и в чат, и в лог) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge
