@@ -20,14 +20,30 @@ function buildResource(streamUrl, { seekMs = 0, volume = 100 } = {}) {
   const ff = new prism.FFmpeg({ args });
   const opus = new prism.opus.Encoder({ rate: 48000, channels: 2, frameSize: 960 });
   let errTail = '';
+  // Счётчики для диагностики (тишина = мелкие пакеты ~2-3 байта, музыка = 100-300):
+  const stats = { ffBytes: 0, packets: 0, opusBytes: 0, sizes: [] };
   try {
     ff.process?.stderr?.on('data', (d) => { errTail = (errTail + d.toString()).slice(-1000); });
+    ff.on('data', (d) => { stats.ffBytes += d.length; });
   } catch {}
   ff.on('error', () => {});
   opus.on('error', () => {});
+  opus.on('data', (d) => {
+    stats.packets++;
+    stats.opusBytes += d.length;
+    if (stats.sizes.length < 6) stats.sizes.push(d.length);
+  });
   const resource = voip.createAudioResource(ff.pipe(opus), { inputType: voip.StreamType.Raw });
   resource.ffmpegErr = () => errTail;
+  resource.audioStats = stats;
   return resource;
+}
+
+function statsLine(stats) {
+  if (!stats) return 'no stats';
+  const avg = stats.packets ? Math.round(stats.opusBytes / stats.packets) : 0;
+  const verdict = !stats.packets ? 'ПАКЕТОВ НЕТ' : avg < 10 ? 'тишина/DTX' : 'похоже музыка';
+  return `ff=${stats.ffBytes}B opus=${stats.packets}x~${avg}B [${stats.sizes.join(',')}] => ${verdict}`;
 }
 
 class GuildMusic {
@@ -146,6 +162,7 @@ class GuildMusic {
 
   async next(autoplay = false) {
     if (this.current) {
+      logger.info('[engine] stats', this.current.item?.title || '', statsLine(this.current.resource?.audioStats));
       this.prev.push(this.current.item);
       if (this.prev.length > 25) this.prev.shift();
     }
@@ -172,6 +189,7 @@ class GuildMusic {
   async failCurrent(e) {
     const ferr = this.current?.resource?.ffmpegErr?.();
     logger.warn('[engine] stream failed', this.current?.item?.title || '', String(e.message || e).slice(0, 200));
+    logger.warn('[engine] stats', this.current?.item?.title || '', statsLine(this.current?.resource?.audioStats));
     if (ferr) logger.warn('[engine] ffmpeg:', ferr.slice(0, 400));
     const ch = this.textChannel;
     this.current = null;
