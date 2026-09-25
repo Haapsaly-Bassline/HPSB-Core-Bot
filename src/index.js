@@ -35,6 +35,22 @@ const player = new Player(client, {
 });
 client.player = player;
 
+// Voice self-test: сразу видно, есть ли чем играть (критично для host PC)
+try {
+  require('@discordjs/opus');
+  logger.info('[voice] opus ok');
+} catch {
+  logger.error('[voice] NO OPUS — звука не будет! npm install-scripts approve @discordjs/opus + npm rebuild');
+}
+try {
+  const bin = require('ffmpeg-static');
+  const ok = bin && require('node:fs').existsSync(bin);
+  if (ok) logger.info('[voice] ffmpeg ok');
+  else logger.error('[voice] NO FFMPEG binary — звука не будет! npm rebuild ffmpeg-static');
+} catch {
+  logger.error('[voice] NO FFMPEG — звука не будет! npm install ffmpeg-static');
+}
+
 (async () => {
   try {
     // Регистрируем по одному: YouTube идёт через YoutubeiExtractor (InnerTube API,
@@ -103,7 +119,12 @@ player.events.on('error', (queue, err) => {
     logger.warn('[music] queue aborted', queue?.currentTrack?.title || '');
     return;
   }
-  logger.error('[music] queue error', queue?.currentTrack?.title || '', '-', msg);
+  // Полный дамп: message у discord-player часто неинформативен ("[Object] ...")
+  logger.error('[music] queue error', queue?.currentTrack?.title || '-', msg);
+  try {
+    const extra = err?.stack || JSON.stringify(err, Object.getOwnPropertyNames(err || {}));
+    if (extra && extra !== msg) logger.error('[music] detail', String(extra).slice(0, 800));
+  } catch {}
 });
 
 // --- Load commands ---

@@ -5,6 +5,29 @@ const { trackMs, fmtMs, currentProgress, etaMs, queueTotalMs } = require('../../
 
 const DIRECT_RE = /\.(mp3|ogg|oga|wav|m4a|flac|aac|opus|m3u8|pls)(\?|$)|azura\.hpsbassline\.club\/listen/i;
 
+function isDirectStream(query) {
+  return DIRECT_RE.test(query || '');
+}
+
+// Префлайт прямого потока: своим запросом проверяем доступность.
+// Иначе экстрактор роняет его молчаливым "No results" и непонятно что чинить.
+async function preflightStream(url) {
+  try {
+    const r = await axios.get(url, {
+      responseType: 'stream', timeout: 12000, validateStatus: () => true,
+      headers: { 'User-Agent': 'HPSB-Core-Bot/1.0', 'Icy-MetaData': '0' },
+    });
+    const code = r.status;
+    const ct = r.headers?.['content-type'] || '?';
+    try { r.data?.destroy?.(); } catch {}
+    if (code >= 200 && code < 300 && /^(audio|video|application\/ogg)/i.test(ct)) return;
+    throw new Error(`HTTP ${code} (${ct})`);
+  } catch (e) {
+    if (/^HTTP \d+/.test(e.message)) throw new Error(`Поток недоступен: ${e.message}`);
+    throw new Error(`Поток недоступен с host PC: ${e.code || e.message} (сеть режет стрим)`);
+  }
+}
+
 function getQueue(client, guildId) {
   return client.player.nodes.get(guildId) || null;
 }
@@ -82,6 +105,10 @@ async function play(client, voiceChannel, query, { requester, textChannel, engin
 }
 
 async function doPlay(client, voiceChannel, query, meta, requester, eng, waitMs) {
+  // Прямой поток сначала проверяем своим запросом — иначе будет немое "No results"
+  if (eng === QueryType.ARBITRARY && /^https?:\/\//i.test(query)) {
+    await preflightStream(query);
+  }
   const res = await client.player.play(voiceChannel, query, {
     nodeOptions: { metadata: { ...meta } },
     requestedBy: requester,
