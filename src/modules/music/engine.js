@@ -7,9 +7,10 @@ const { logger } = require('../../utils/logger');
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function buildResource(streamUrl, { seekMs = 0, volume = 100 } = {}) {
-  // Флаги как у рабочего питон-бота: reconnect + genpts, сырой s16le в Opus
+  // БЕЗ -analyzeduration 0: FFmpeg должен распробовать файл, иначе на кривых
+  // mp3 детектит параметры мимо и гонит белый шум. Для эфиров проба быстрая.
   const args = [
-    '-analyzeduration', '0', '-loglevel', 'error',
+    '-loglevel', 'error',
     '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
     '-fflags', '+genpts',
   ];
@@ -18,9 +19,15 @@ function buildResource(streamUrl, { seekMs = 0, volume = 100 } = {}) {
   if (volume !== 100) args.push('-filter:a', `volume=${Math.min(Math.max(volume / 100, 0), 2).toFixed(2)}`);
   const ff = new prism.FFmpeg({ args });
   const opus = new prism.opus.Encoder({ rate: 48000, channels: 2, frameSize: 960 });
+  let errTail = '';
+  try {
+    ff.process?.stderr?.on('data', (d) => { errTail = (errTail + d.toString()).slice(-1000); });
+  } catch {}
   ff.on('error', () => {});
   opus.on('error', () => {});
-  return voip.createAudioResource(ff.pipe(opus), { inputType: voip.StreamType.Raw });
+  const resource = voip.createAudioResource(ff.pipe(opus), { inputType: voip.StreamType.Raw });
+  resource.ffmpegErr = () => errTail;
+  return resource;
 }
 
 class GuildMusic {
@@ -130,6 +137,7 @@ class GuildMusic {
     if (!cur) return;
     const url = await this.resolveStreamUrl(cur.item);
     const resource = buildResource(url, { seekMs: offsetMs, volume: this.volume });
+    cur.resource = resource;
     cur.startedAt = Date.now();
     cur.offsetMs = offsetMs;
     this.player.play(resource);
@@ -162,7 +170,9 @@ class GuildMusic {
   }
 
   async failCurrent(e) {
+    const ferr = this.current?.resource?.ffmpegErr?.();
     logger.warn('[engine] stream failed', this.current?.item?.title || '', String(e.message || e).slice(0, 200));
+    if (ferr) logger.warn('[engine] ffmpeg:', ferr.slice(0, 400));
     const ch = this.textChannel;
     this.current = null;
     if (ch?.isTextBased?.()) {

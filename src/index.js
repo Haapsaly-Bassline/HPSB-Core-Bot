@@ -1,5 +1,9 @@
 const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
 const { config, validate } = require('./config');
+
+// IPv6-выход у многих провайдеров висит (таймаут вместо отказа), а Node берёт
+// первую запись DNS. Форсим IPv4 первым: браузеры так и делают (Happy Eyeballs).
+try { require('node:dns').setDefaultResultOrder('ipv4first'); } catch {}
 const { logger } = require('./utils/logger');
 const fs = require('node:fs');
 const path = require('node:path');
