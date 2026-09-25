@@ -18,6 +18,14 @@ module.exports = {
         const handled = await np.handleButton(interaction, client);
         if (handled) return;
       }
+      // Кнопки-фиксы аудита ролей
+      if (interaction.isButton() && interaction.customId.startsWith('roles:fix:')) {
+        const cmd = client.commands.get('roles');
+        if (cmd?.handleButton) {
+          const handled = await cmd.handleButton(interaction, client);
+          if (handled) return;
+        }
+      }
       // Buttons / modals / selects -> delegate to modcall module
       if (interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu()) {
         const modcall = require('../modules/modcall/handler');
