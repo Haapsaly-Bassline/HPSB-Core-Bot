@@ -1,6 +1,6 @@
 {
   "name": "hpsb-core-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Multifunctional bot for Haapsaly Bassline Discord server",
   "main": "src/index.js",
   "type": "commonjs",

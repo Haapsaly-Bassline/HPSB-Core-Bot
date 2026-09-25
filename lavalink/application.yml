@@ -1,10 +1,10 @@
-# Lavalink для HPSB Core Bot — включается на VPS-этапе.
+# Lavalink для HPSB Core Bot — включается на host PC.
 # Сейчас бот работает на discord-player (MUSIC_ENGINE=discord-player).
-# На VPS: Java 17+ -> java -jar Lavalink.jar -> MUSIC_ENGINE=lavalink
+# На host PC: Java 17+ -> java -jar Lavalink.jar -> MUSIC_ENGINE=lavalink
 #
-# Взять свежий Lavalink.jar: https://github.com/lavalink-devs/Lavalink/releases
-# Версии плагинов ниже примерные — сверяй с релизами перед запуском:
-#   YouTube plugin: https://github.com/lavalink-devs/youtube-plugin/releases
+# Взять свежий Lavalink.jar (v4): https://github.com/lavalink-devs/Lavalink/releases
+# Версии ниже проверены 2026-09-25, перед запуском сверь с релизами:
+#   YouTube plugin: https://github.com/lavalink-devs/youtube-source/releases
 #   LavaSrc:        https://github.com/topi314/LavaSrc/releases (Spotify/Apple/Deezer через API-ключи)
 
 server:
@@ -16,7 +16,7 @@ lavalink:
     # Тот же пароль впиши в .env -> LAVALINK_PASSWORD
     password: "hpsb-lavalink-change-me"
     sources:
-      youtube: true
+      youtube: false                 # выкл: YouTube идёт через плагин ниже
       bandcamp: true
       soundcloud: true
       twitch: false
@@ -39,14 +39,14 @@ lavalink:
     localSearchEnabled: false
   plugins:
     # YouTube через официальный плагин (стабильнее встроенного источника)
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.2.5"
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       repository: "https://maven.lavalink.dev/releases"
       snapshot: false
     # Spotify / Apple Music / Deezer — впиши ключи ниже
-    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.7.0"
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
       repository: "https://maven.lavalink.dev/releases"
       snapshot: false
-    - dependency: "com.github.topi314.lavasrc:lava-lyrics-plugin:4.7.0"
+    - dependency: "com.github.topi314.lavasrc:lava-lyrics-plugin:4.8.3"
       repository: "https://maven.lavalink.dev/releases"
       snapshot: false
 
@@ -56,11 +56,11 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
-    # clients: MUSIC, ANDROID_TESTSUITE, TVHTML5EMBEDDED — если режут, крути список/oily
+    # TVHTML5EMBEDDED мёртв — актуальный TVHTML5_SIMPLY. Если режут, крути список/oily.
     clients:
       - MUSIC
       - ANDROID_TESTSUITE
-      - TVHTML5EMBEDDED
+      - TVHTML5_SIMPLY
   lavasrc:
     providers:
       - "ytsearch:\"%ISRC%\""          # Spotify-треки ищутся по ISRC — точные совпадения

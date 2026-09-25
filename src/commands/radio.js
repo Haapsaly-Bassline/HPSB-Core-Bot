@@ -1,10 +1,12 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { QueryType } = require('discord-player');
+const music = require('../modules/music/service');
 
 const STATIONS = {
   hpsb: { name: 'Haapsaly Bassline', url: 'https://azura.hpsbassline.club/listen/haapsaly_bassline/radio.mp3' },
   predictor: { name: 'Hardcore Predictor FM', url: 'https://azura.hpsbassline.club/listen/hardcore_predictorfm/radio.mp3' },
 };
+
+const DIRECT_RE = /\.(mp3|ogg|oga|wav|m4a|flac|aac|opus|m3u8|pls)(\?|$)|azura\.hpsbassline\.club\/listen|\/listen\//i;
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -31,19 +33,18 @@ module.exports = {
         return;
       }
     } catch {}
+
     const custom = (interaction.options.getString('url') || '').trim();
     const key = interaction.options.getString('station') || 'hpsb';
     const st = STATIONS[key] || STATIONS.hpsb;
     const url = custom || st.url;
     const label = custom || st.name;
-    // Своя ссылка на обычный трек/видео — пускаем через AUTO, потоки — ARBITRARY
-    const isStream = !custom || /\.(mp3|ogg|oga|wav|m4a|flac|aac|opus|m3u8|pls)(\?|$)|azura\.hpsbassline\.club\/listen|\/listen\//i.test(custom);
     try {
-      await client.player.play(voiceChannel, url, {
-        nodeOptions: { metadata: { channel: interaction.channel, requester: interaction.user, radioLabel: label } },
-        requestedBy: interaction.user,
-        // Прямой эфир — только ARBITRARY: через AUTO резолвер его не берёт
-        searchEngine: isStream ? QueryType.ARBITRARY : QueryType.AUTO,
+      await music.play(client, voiceChannel, url, {
+        requester: interaction.user,
+        textChannel: interaction.channel,
+        engine: 'arbitrary',
+        radioLabel: label,
       });
       await interaction.editReply(`📻 Включено: **${label}**`);
     } catch (e) {

@@ -8,6 +8,17 @@ module.exports = {
   async execute(client) {
     logger.info(`[ready] Logged in as ${client.user.tag}`);
 
+    // Lavalink — только ПОСЛЕ ready: client.user существует, так требует lavalink-client
+    if (config.music.engine === 'lavalink') {
+      try {
+        const { LavalinkEngine } = require('../modules/music/engine-lavalink');
+        client.lavalink = await new LavalinkEngine(client, config.music).init();
+        logger.info('[lavalink] ready');
+      } catch (e) {
+        logger.error('[lavalink] init failed:', e?.stack || e);
+      }
+    }
+
     // Start pollers lazily so index stays lean
     try {
       const { startReposter } = require('../modules/reposter/poller');

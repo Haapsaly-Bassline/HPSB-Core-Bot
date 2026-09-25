@@ -92,7 +92,7 @@ class LavalinkEngine {
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
       throw new Error(`No results for "${String(query).slice(0, 120)}"`);
     }
-    player.setData({ requesterId: requester?.id || null, radioLabel: metadata.radioLabel || null });
+    player.setData({ requesterId: requester?.id || null, requesterTag: requester?.tag || null, radioLabel: metadata.radioLabel || null });
 
     if (res.loadType === 'playlist') {
       await player.queue.add(res.tracks);
@@ -107,21 +107,11 @@ class LavalinkEngine {
 
   async onTrackStart(player, track) {
     try {
-      const { nowPlayingEmbed } = require('../../utils/embeds');
-      const info = track?.info || {};
-      const data = player.getData?.() || {};
-      let requester = null;
-      try { if (data.requesterId) requester = await this.client.users.fetch(data.requesterId).catch(() => null); } catch {}
-      const shown = {
-        title: data.radioLabel ? `📻 ${data.radioLabel}` : (info.title || 'Unknown'),
-        url: info.uri || '',
-        author: info.author || '',
-        thumbnail: info.artworkUrl || '',
-        duration: info.isStream ? 'LIVE' : fmtDur(info.length),
-      };
-      const ch = player.textChannelId ? await this.client.channels.fetch(player.textChannelId).catch(() => null) : null;
-      // прогресс-бар живого трека Lavalink не даёт на старте — nowPlayingEmbed сам покажет 0:00
-      if (ch?.isTextBased()) await ch.send({ embeds: [nowPlayingEmbed(shown, null, requester)] }).catch(() => {});
+      const np = require('./np');
+      const ch = player.textChannelId
+        ? await this.client.channels.fetch(player.textChannelId).catch(() => null)
+        : null;
+      await np.trackStart(this.client, player.guildId, ch?.isTextBased?.() ? ch : null);
     } catch (e) { logger.warn('[lavalink] nowplaying failed', e.message); }
   }
 
@@ -158,6 +148,46 @@ class LavalinkEngine {
       position: p.position ?? 0,
     };
   }
+
+  // Полный вью для /queue и живого NP (длительности в ms для бара)
+  queueViewFull(guildId) {
+    const p = this.getPlayer(guildId);
+    if (!p || !p.queue?.current) return null;
+    const data = p.getData?.() || {};
+    const cur = infoMs(p.queue.current);
+    if (data.radioLabel) cur.title = `📻 ${data.radioLabel}`;
+    cur.requesterTag = data.requesterTag || null;
+    const upcoming = p.queue.tracks.slice(0, 15).map((t, i) => ({ n: i + 1, ...infoMs(t) }));
+    const totalMs = cur.durationMs + p.queue.tracks.reduce((a, t) => a + (t?.info?.length > 0 ? t.info.length : 0), 0);
+    return {
+      current: cur, upcoming, size: p.queue.tracks.length, totalMs,
+      repeatMode: LOOP_BACK[p.repeatMode] ?? 0, paused: !!p.paused,
+    };
+  }
+
+  npSnapshot(guildId) {
+    const v = this.queueViewFull(guildId);
+    if (!v) return null;
+    const data = this.getPlayer(guildId)?.getData?.() || {};
+    return {
+      track: v.current, positionMs: this.getPlayer(guildId)?.position ?? 0,
+      durationMs: v.current.durationMs, repeatMode: v.repeatMode,
+      paused: v.paused, size: v.size, radioLabel: data.radioLabel || null,
+    };
+  }
+
+  async prev(guildId) {
+    const p = this.getPlayer(guildId);
+    if (!p) return false;
+    try {
+      const prevArr = Array.isArray(p.queue.previous) ? p.queue.previous : null;
+      const t = prevArr?.length ? prevArr[prevArr.length - 1] : null;
+      if (!t) return false;
+      p.queue.tracks.splice(0, 0, t);
+      await p.skip();
+      return true;
+    } catch { return false; }
+  }
 }
 
 function fmtDur(ms) {
@@ -170,6 +200,17 @@ function fmtDur(ms) {
 function infoOf(t) {
   const info = t?.info || t || {};
   return { title: info.title || 'Unknown', author: info.author || '', url: info.uri || info.url || '', duration: info.isStream ? 'LIVE' : fmtDur(info.length) };
+}
+
+function infoMs(t) {
+  const info = t?.info || t || {};
+  const ms = info.length > 0 ? info.length : (info.durationMs || 0);
+  return {
+    title: info.title || 'Unknown', author: info.author || '',
+    url: info.uri || info.url || '', thumbnail: info.artworkUrl || info.thumbnail || '',
+    durationMs: ms, durationLabel: info.isStream || ms <= 0 ? 'LIVE' : fmtDur(ms),
+    requesterTag: null, isLive: !!info.isStream || ms <= 0,
+  };
 }
 
 module.exports = { LavalinkEngine };

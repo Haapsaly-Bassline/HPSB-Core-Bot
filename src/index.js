@@ -79,7 +79,8 @@ player.events.on('playerStart', async (queue, track) => {
         }
       } catch {}
     }
-    require('./modules/music/np').trackStart(client, queue, track);
+    // Живой Now Playing ведёт np-модуль (через MusicService — движок не важен)
+    require('./modules/music/np').trackStart(client, queue.guild.id, queue.metadata?.channel);
   } catch {}
 });
 // Живой NP: финализация и мгновенное обновление кнопок
@@ -104,17 +105,6 @@ player.events.on('error', (queue, err) => {
   }
   logger.error('[music] queue error', queue?.currentTrack?.title || '', '-', msg);
 });
-
-// Lavalink-движок: только при MUSIC_ENGINE=lavalink (host PC / VPS).
-// По умолчанию инертен — discord-player путь не трогаем.
-if (config.music.engine === 'lavalink') {
-  (async () => {
-    try {
-      const { LavalinkEngine } = require('./modules/music/engine-lavalink');
-      client.lavalink = await new LavalinkEngine(client, config.music).init();
-    } catch (e) { logger.error('[lavalink] init failed', e.message); }
-  })();
-}
 
 // --- Load commands ---
 const commandsPath = path.join(__dirname, 'commands');
