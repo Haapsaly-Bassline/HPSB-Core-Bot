@@ -8,17 +8,27 @@ function entry(color, title, desc, fields = []) {
   return e;
 }
 
+// Грейс-период после старта: бэклог событий Discord не логгируем
+function inGrace(client) {
+  return client.readyTimestamp && (Date.now() - client.readyTimestamp < 60000);
+}
+
 module.exports = {
   name: Events.MessageDelete,
-  async execute(message) {
+  async execute(message, client) {
     try {
+      if (inGrace(client)) return;
       if (message.author?.bot) return;
       if (!message.guild) return;
-      // automod/honeypot сами логгируют — не дублируем свежие удаления бота
-      await modLog(message.client,
+      // Мусорные события без автора и текста (незакэшированные/системные) — пропускаем
+      if (!message.author && !message.content) return;
+      await modLog(client,
         { embeds: [entry(0xef4444, '🗑 Сообщение удалено',
           message.content ? message.content.slice(0, 1500) : '_текст недоступен (не было в кэше)_',
-          [['Автор', `${message.author} (${message.author?.id})`], ['Канал', `<#${message.channelId}>`]])] });
+          [
+            ['Автор', message.author ? `${message.author} (${message.author.id})` : `_неизвестен (id сообщения ${message.id})_`],
+            ['Канал', `<#${message.channelId}>`],
+          ])] });
     } catch {}
   },
 };

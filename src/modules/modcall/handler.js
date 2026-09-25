@@ -106,8 +106,20 @@ async function handleInteraction(interaction, client) {
     if (!sess) { await interaction.reply({ content: 'Тикет уже закрыт.', flags: MessageFlags.Ephemeral }); return true; }
 
     if (interaction.customId.startsWith(BTN_CLOSE)) {
+      const sessSnap = sess.threadId;
       sessions.delete(userId);
       persistSessions();
+      // закрываем ветку по-нормальному: архив + замок
+      if (sessSnap) {
+        try {
+          const thread = await client.channels.fetch(sessSnap).catch(() => null);
+          if (thread?.isThread?.()) {
+            await thread.send('🔒 Тикет закрыт модерацией.').catch(() => {});
+            await thread.setLocked(true).catch(() => {});
+            await thread.setArchived(true).catch(() => {});
+          }
+        } catch {}
+      }
       await interaction.reply(`🔒 Тикет ${userId} закрыт.`);
       try {
         const u = await client.users.fetch(userId);
@@ -116,8 +128,13 @@ async function handleInteraction(interaction, client) {
       return true;
     }
 
-    // take -> создать тред под staff-сообщением
-    const thread = await interaction.message.startThread({ name: `modcall-${userId.slice(-4)}`, autoArchiveDuration: 1440 }).catch(() => null);
+    // take -> тред под staff-сообщением (переиспользуем существующий)
+    let thread = sess.threadId ? await client.channels.fetch(sess.threadId).catch(() => null) : null;
+    if (!thread?.isThread?.()) {
+      thread = await interaction.message.startThread({ name: `modcall-${userId.slice(-4)}`, autoArchiveDuration: 1440 }).catch(() => null);
+    } else if (thread.archived) {
+      await thread.setArchived(false).catch(() => {});
+    }
     if (thread) {
       sess.threadId = thread.id;
       sessions.set(userId, sess);

@@ -65,6 +65,15 @@ const config = {
     // Без них spotify-ссылки резолвятся хуже (через текстовый поиск), с ними — точно.
     spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
     spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
+    // Движок: discord-player (сейчас) | lavalink (на VPS, см. lavalink/README.md).
+    // Код lavalink-движка подключается на VPS-этапе, флаг уже заложен.
+    engine: process.env.MUSIC_ENGINE || 'discord-player',
+    lavalink: {
+      host: process.env.LAVALINK_HOST || '127.0.0.1',
+      port: Number(process.env.LAVALINK_PORT || 2333),
+      password: process.env.LAVALINK_PASSWORD || '',
+      secure: (process.env.LAVALINK_SECURE || 'false') === 'true',
+    },
   },
 
   reposter: {

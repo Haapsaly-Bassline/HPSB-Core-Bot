@@ -67,8 +67,18 @@ client.player = player;
   }
 })();
 
-player.events.on('playerStart', (queue, track) => {
+player.events.on('playerStart', async (queue, track) => {
   try {
+    // Сцена (Stage): слушателя не слышно — пробуем стать спикером
+    if (queue.channel?.type === 13) {
+      try {
+        const me = queue.guild?.members?.me || await queue.guild?.members?.fetch(client.user.id).catch(() => null);
+        await me?.voice?.setSuppressed(false).catch(() => {});
+        if (me?.voice?.suppress) {
+          queue.metadata?.channel?.send('⚠️ Я на сцене, но не спикер — дайте мне слово (Invite to Speak), иначе меня не слышно.').catch(() => {});
+        }
+      } catch {}
+    }
     const { nowPlayingEmbed } = require('./utils/embeds');
     const requester = queue.metadata?.requester || track.requestedBy;
     const shown = queue.metadata?.radioLabel ? { ...track, title: `📻 ${queue.metadata.radioLabel}` } : track;
@@ -84,6 +94,17 @@ player.events.on('error', (queue, err) => {
   }
   logger.error('[music] queue error', queue?.currentTrack?.title || '', '-', msg);
 });
+
+// Lavalink-движок: только при MUSIC_ENGINE=lavalik (host PC / VPS).
+// По умолчанию инертен — discord-player путь не трогаем.
+if (config.music.engine === 'lavalik') {
+  (async () => {
+    try {
+      const { LavalinkEngine } = require('./modules/music/engine-lavalink');
+      client.lavalink = await new LavalinkEngine(client, config.music).init();
+    } catch (e) { logger.error('[lavalink] init failed', e.message); }
+  })();
+}
 
 // --- Load commands ---
 const commandsPath = path.join(__dirname, 'commands');

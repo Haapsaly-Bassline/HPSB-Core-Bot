@@ -3,8 +3,9 @@ const { modLog } = require('../utils/mod');
 
 module.exports = {
   name: Events.MessageUpdate,
-  async execute(oldMsg, newMsg) {
+  async execute(oldMsg, newMsg, client) {
     try {
+      if (client?.readyTimestamp && (Date.now() - client.readyTimestamp < 60000)) return;
       if (newMsg.author?.bot || !newMsg.guild) return;
       const before = (oldMsg.content || '').slice(0, 1000);
       const after = (newMsg.content || '').slice(0, 1000);

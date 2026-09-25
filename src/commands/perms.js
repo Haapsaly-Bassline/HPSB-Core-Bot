@@ -49,6 +49,17 @@ module.exports = {
       `Канал бота: ${vs.channel ? `<#${vs.channel.id}>` : 'не в войсе'}`,
     ];
 
+    // Какие войсы бот вообще видит (View/Connect/Speak)
+    const voiceList = interaction.guild.channels.cache
+      .filter(c => c.isVoiceBased?.())
+      .map(c => {
+        const e = c.permissionsFor(me);
+        const mark = !e?.has(PermissionFlagsBits.ViewChannel) ? '❌'
+          : (!e.has(PermissionFlagsBits.Connect) || (!e.has(PermissionFlagsBits.Speak) && c.type !== 13)) ? '🔶' : '✅';
+        const kind = c.type === 13 ? '🎭 сцена' : '🔊';
+        return `${mark} ${kind} ${c.name}`;
+      });
+
     const problems = [];
     if (!isAdmin) {
       if (!me.permissions.has(PermissionFlagsBits.Connect)) problems.push('Нет Connect на сервере');
@@ -71,6 +82,7 @@ module.exports = {
         { name: 'Сервер', value: gLines.join('\n').slice(0, 1000) },
         { name: `Войс: ${voiceChannel?.name || '—'}`, value: vLines.join('\n').slice(0, 1000) },
         { name: 'Состояние', value: vState.join('\n') },
+        { name: 'Все войсы (❌=не вижу, 🔶=вижу но нет входа/речи)', value: (voiceList.join('\n') || '—').slice(0, 1000) },
         { name: 'Вердикт', value: problems.length ? '❌ ' + problems.join('\n❌ ') : '✅ Всё чисто — дело не в правах.' },
       )
       .setTimestamp()
