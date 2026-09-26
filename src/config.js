@@ -82,6 +82,12 @@ const config = {
     // Бесплатный YouTube Data API v3 ключ (console.cloud.google.com, quota хватит за глаза).
     // Без него: RSS → скрап страницы. С ключом — идеально точно.
     youtubeApiKey: process.env.YT_API_KEY || '',
+    // EN-шаблоны медиа-постов. Плейсхолдеры: {role} {author} {user} {title} {link}
+    templates: {
+      youtube: process.env.YT_TEMPLATE || '{role} **{author}** uploaded a new video!',
+      tiktok: process.env.TT_TEMPLATE || '{role} **@{user}** posted on TikTok!',
+      instagram: process.env.IG_TEMPLATE || '{role} **@{user}** posted on Instagram!',
+    },
     // Instagram без подписки: как у других ботов — скрап публичного профиля.
     // Опционально ускорьте/стабилизируйте через cookie своей сессии (см. .env.example).
     instagramSessionId: process.env.IG_SESSIONID || '',
@@ -143,6 +149,9 @@ const config = {
       boosts: process.env.STATS_BOOSTS_TEMPLATE || '💎 Boosts: {count}',
     },
   },
+
+  // Роль для пинга в объявлениях (медиа + анонсы). Пусто = без пинга.
+  announceRoleId: process.env.ANNOUNCE_ROLE_ID || '',
 
   // Автокросспост из announcement-каналов подписчикам (ID через запятую)
   autopublish: parseIds(process.env.AUTOPUBLISH_CHANNEL_IDS),
