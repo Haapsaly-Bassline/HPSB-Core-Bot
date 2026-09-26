@@ -41,11 +41,13 @@ function startWebhook(client) {
   app.get('/health', (_, res) => res.json({ ok: true }));
 
   app.post('/hook/news', async (req, res) => {
-    // Токен любым способом: body.secret, x-hpsb-secret, x-api-key, Authorization: Bearer
+    // Токен любым способом: body.secret, x-hpsb-secret, x-webhook-secret,
+    // x-api-key, Authorization: Bearer
     const hdr = req.headers || {};
     const auth = String(hdr.authorization || '');
     const token = req.body?.secret
       || hdr['x-hpsb-secret']
+      || hdr['x-webhook-secret']
       || hdr['x-api-key']
       || (auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : null);
     if (secret && token !== secret) {
