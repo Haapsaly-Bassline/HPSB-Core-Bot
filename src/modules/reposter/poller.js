@@ -76,6 +76,39 @@ async function ytTitleFallback(item) {
   } catch { return item; }
 }
 
+async function postVideo(client, channelId, { id, title, author }) {
+  const link = `https://www.youtube.com/watch?v=${id}`;
+  const embed = new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle(`${(title || 'YouTube').slice(0, 250)}`)
+    .setURL(link)
+    .setDescription(`${author || ''}\n${link}`.slice(0, 2000))
+    .setImage(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`)
+    .setFooter({ text: 'Haapsaly Bassline • YouTube' })
+    .setTimestamp();
+  const text = renderTpl(config.reposter.templates.youtube, { author: author || 'HPSB', title: title || '', link });
+  return postToChannel(client, channelId, embed, text || undefined);
+}
+
+// Публикация одного видео с дедупом — для поллера и для PubSubHubbub.
+// channelId: YT-канал (топик). Возвращает true если реально запостили.
+async function publishYouTubeVideo(client, { videoId, title, author, channelId }) {
+  const entry = config.reporter.youtube.find(x => x.key === channelId) || config.reporter.youtube[0];
+  if (!entry) { logger.warn('[reposter/yt] unknown channel', channelId); return false; }
+  const state = store.load();
+  let known = state.youtube[entry.key];
+  if (typeof known === 'string') known = [known];
+  if (!Array.isArray(known)) known = [];
+  if (!videoId || known.includes(videoId)) return false;
+  const ok = await postVideo(client, entry.channelId, { id: videoId, title, author });
+  if (ok) {
+    state.youtube[entry.key] = [...new Set([...known, videoId])].slice(-20);
+    store.save(state);
+    logger.info(`[reposter/yt] new ${videoId}`);
+  }
+  return ok;
+}
+
 async function checkYouTube(client, state) {
   let found = 0, posted = 0;
   for (const { key: ytId, channelId } of config.reposter.youtube) {
@@ -95,17 +128,7 @@ async function checkYouTube(client, state) {
       const fresh = items.filter(i => !knownSet.has(i.id)).slice(0, 3);
       for (const raw of fresh) {
         const item = await ytTitleFallback(raw);
-        const link = `https://www.youtube.com/watch?v=${item.id}`;
-        const embed = new EmbedBuilder()
-          .setColor(0xff0000)
-          .setTitle(`${(item.title || 'YouTube').slice(0, 250)}`)
-          .setURL(link)
-          .setDescription(`${item.author || ''}\n${link}`.slice(0, 2000))
-          .setImage(`https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`)
-          .setFooter({ text: 'Haapsaly Bassline • YouTube' })
-          .setTimestamp();
-        const text = renderTpl(config.reposter.templates.youtube, { author: item.author || 'HPSB', title: item.title || '', link });
-        if (await postToChannel(client, channelId, embed, text || undefined)) {
+        if (await postVideo(client, channelId, { id: item.id, title: item.title, author: item.author })) {
           knownSet.add(item.id);
           posted++;
           logger.info(`[reposter/yt] new ${item.id}`);
@@ -208,4 +231,4 @@ function startReposter(client) {
   logger.info(`[reposter] polling every ${mins}m (yt:${config.reposter.youtube.length} tt:${config.reposter.tiktok.length} ig:${config.reposter.instagram.length})`);
 }
 
-module.exports = { startReposter, runReposterOnce };
+module.exports = { startReposter, runReposterOnce, publishYouTubeVideo };

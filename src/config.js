@@ -168,6 +168,7 @@ const config = {
     port: Number(process.env.WEBHOOK_PORT || 3100),
     secret: process.env.WEBHOOK_SECRET || '',
     channelId: process.env.WEBHOOK_NEWS_CHANNEL_ID || '',
+    publicBase: process.env.WEBHOOK_PUBLIC_BASE || '',
   },
 };
 

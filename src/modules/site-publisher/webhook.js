@@ -3,6 +3,8 @@
 // twitch: ссылка на параллельный стрим (кнопкой, без отдельного поста).
 // links: [{ label, url }] — доп. кнопки.
 const express = require('express');
+const axios = require('axios');
+const { XMLParser } = require('fast-xml-parser');
 const { EmbedBuilder } = require('discord.js');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
@@ -39,6 +41,43 @@ function startWebhook(client) {
 
   if (!secret) logger.warn('[webhook] WEBHOOK_SECRET пуст — постит сможет кто угодно. Задай секрет!');
   app.get('/health', (_, res) => res.json({ ok: true }));
+
+  // ---------- YouTube PubSubHubbub: пуши вместо опроса (0 ops в Make) ----------
+  // Google сам стучит сюда при загрузке видео. Подписка обновляется раз в 4 дня.
+  app.use('/hook/youtube', express.text({ type: '*/*', limit: '256kb' }));
+  app.get('/hook/youtube', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const challenge = req.query['hub.challenge'];
+    if ((mode === 'subscribe' || mode === 'unsubscribe' || mode === 'denied') && challenge) {
+      logger.info(`[pubsub] verify ${mode}: ${req.query['hub.topic']}`);
+      return res.status(200).send(String(challenge));
+    }
+    return res.status(400).send('bad verify');
+  });
+  const atomParser = new XMLParser({ ignoreAttributes: false });
+  app.post('/hook/youtube', async (req, res) => {
+    res.status(200).send('ok'); // отвечаем сразу, разбираем дальше
+    try {
+      const xml = typeof req.body === 'string' ? req.body : '';
+      if (!xml.includes('<entry')) return;
+      const feed = atomParser.parse(xml);
+      const raw = feed?.feed?.entry;
+      const entries = Array.isArray(raw) ? raw : raw ? [raw] : [];
+      const feedChannel = String(feed?.feed?.['yt:channelId'] || '');
+      const { publishYouTubeVideo } = require('../reposter/poller');
+      for (const en of entries.slice(0, 5)) {
+        const videoId = en['yt:videoId'];
+        if (!videoId) continue;
+        await publishYouTubeVideo(client, {
+          videoId,
+          title: en.title || '',
+          author: en?.author?.name || '',
+          channelId: feedChannel,
+        });
+      }
+    } catch (e) { logger.warn('[pubsub]', e.message); }
+  });
+  subscribeYouTube(client);
 
   app.post('/hook/news', async (req, res) => {
     // Токен любым способом: body.secret, x-hpsb-secret, x-webhook-secret,
@@ -86,7 +125,36 @@ function startWebhook(client) {
     }
   });
 
+  // Слушаем на всех интерфейсах: Caddy может быть как локально, так и на соседнем хосте
   app.listen(port, () => logger.info(`[webhook] listening :${port} -> #${channelId}`));
+}
+
+// Подписка YT-каналов на PubSubHubbub (лизы до 5 дней — обновляем раз в 4 дня)
+async function subscribeYouTube(client) {
+  const base = (config.webhook.publicBase || '').replace(/\/$/, '');
+  const channels = config.reporter.youtube.map(x => x.key).filter(Boolean);
+  if (!base || !channels.length) {
+    logger.info('[pubsub] skipped (no WEBHOOK_PUBLIC_BASE or YOUTUBE_MAP)');
+    return;
+  }
+  const run = async () => {
+    for (const ytId of channels) {
+      try {
+        await axios.post('https://pubsubhubbub.appspot.com/subscribe',
+          new URLSearchParams({
+            'hub.callback': `${base}/hook/youtube`,
+            'hub.mode': 'subscribe',
+            'hub.topic': `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${ytId}`,
+            'hub.verify': 'async',
+            'hub.lease_seconds': '432000',
+          }).toString(),
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 20000 });
+        logger.info(`[pubsub] subscribed ${ytId}`);
+      } catch (e) { logger.warn('[pubsub] sub failed', ytId, e.message); }
+    }
+  };
+  await run().catch(() => {});
+  setInterval(() => run().catch(() => {}), 4 * 24 * 3600 * 1000).unref?.();
 }
 
 module.exports = { startWebhook };
