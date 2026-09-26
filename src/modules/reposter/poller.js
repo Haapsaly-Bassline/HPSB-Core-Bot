@@ -167,9 +167,7 @@ async function checkInstagram(client, state) {
         .setFooter({ text: `Instagram • @${uname} • via ${latest.via}` })
         .setTimestamp(latest.timestamp ? new Date(latest.timestamp * (latest.timestamp < 1e12 ? 1000 : 1)) : new Date());
       if (latest.image) e.setImage(latest.image);
-      // ddinstagram-прокси: Discord сам развернёт видео/фото из ссылки (без API-токенов)
-      const dd = (latest.link || '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, 'https://www.ddinstagram.com/');
-      const text = (renderTpl(config.reporter?.templates?.instagram || config.reposter.templates.instagram, { user: uname, title: latest.caption?.split('\n')[0] || '', link: latest.link || '' }) + (dd && dd !== latest.link ? `\n${dd}` : '')).trim();
+      const text = renderTpl(config.reposter.templates.instagram, { user: uname, title: latest.caption?.split('\n')[0] || '', link: latest.link || '' });
       if (await postToChannel(client, channelId, e, text || undefined)) {
         state.instagram[username] = latest.id;
         posted++;
