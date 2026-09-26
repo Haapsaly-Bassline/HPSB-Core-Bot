@@ -1,18 +1,32 @@
 const axios = require('axios');
 const { XMLParser } = require('fast-xml-parser');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
 const store = require('../../utils/store');
-const { renderTpl } = require('../../utils/embeds');
+const { renderTpl, mediaPing } = require('../../utils/embeds');
 
 const parser = new XMLParser({ ignoreAttributes: false });
 
-async function postToChannel(client, channelId, embed, content) {
+function linkBtn(label, url) {
+  return new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label.slice(0, 80)).setURL(url);
+}
+
+// embed + текст с пингом медиа-роли + кнопки-ссылки
+async function postToChannel(client, channelId, { embed, content, buttons = [] }) {
   const ch = await client.channels.fetch(channelId).catch(() => null);
   if (!ch?.isTextBased()) return false;
-  const payload = content ? { content, embeds: [embed] } : { embeds: [embed] };
+  const payload = { embeds: [embed] };
+  if (content) payload.content = content;
+  if (buttons.length) {
+    payload.components = [new ActionRowBuilder().addComponents(...buttons.slice(0, 5))];
+  }
   return ch.send(payload).then(() => true).catch(() => false);
+}
+
+function mediaText(tpl, vars) {
+  const t = renderTpl(tpl, vars, mediaPing());
+  return t || undefined;
 }
 
 const YT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -80,14 +94,14 @@ async function postVideo(client, channelId, { id, title, author }) {
   const link = `https://www.youtube.com/watch?v=${id}`;
   const embed = new EmbedBuilder()
     .setColor(0xff0000)
-    .setTitle(`${(title || 'YouTube').slice(0, 250)}`)
+    .setTitle(`▶️ ${(title || 'YouTube').slice(0, 250)}`)
     .setURL(link)
-    .setDescription(`${author || ''}\n${link}`.slice(0, 2000))
+    .setDescription(`${author ? `by **${author}**\n` : ''}${link}`.slice(0, 2000))
     .setImage(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`)
     .setFooter({ text: 'Haapsaly Bassline • YouTube' })
     .setTimestamp();
-  const text = renderTpl(config.reposter.templates.youtube, { author: author || 'HPSB', title: title || '', link });
-  return postToChannel(client, channelId, embed, text || undefined);
+  const text = mediaText(config.reposter.templates.youtube, { author: author || 'HPSB', title: title || '', link });
+  return postToChannel(client, channelId, { embed, content: text, buttons: [linkBtn('▶️ Watch on YouTube', link)] });
 }
 
 // Публикация одного видео с дедупом — для поллера и для PubSubHubbub.
@@ -157,12 +171,12 @@ async function checkTikTok(client, state) {
       if (prev === vid) continue;
       if (!prev) { state.tiktok[uname] = vid; continue; } // первый запуск — запоминаем
       const link = `https://www.tiktok.com/@${uname}/video/${vid}`;
-      const text = renderTpl(config.reposter.templates.tiktok, { user: uname, title: latest.title || latest.desc || '', link });
-      if (await postToChannel(client, channelId, new EmbedBuilder()
-        .setColor(0x000000).setTitle(`${(latest.title || latest.desc || 'TikTok').slice(0, 250)}`)
+      const text = mediaText(config.reposter.templates.tiktok, { user: uname, title: latest.title || latest.desc || '', link });
+      if (await postToChannel(client, channelId, { embed: new EmbedBuilder()
+        .setColor(0x1a1a1a).setTitle(`🎵 ${(latest.title || latest.desc || 'TikTok').slice(0, 250)}`)
         .setURL(link).setDescription(`${link}`.slice(0, 2000))
         .setFooter({ text: `TikTok • @${uname}` })
-        .setTimestamp(), text || undefined)) {
+        .setTimestamp(), content: text, buttons: [linkBtn('🎵 Open TikTok', link)] })) {
         state.tiktok[uname] = vid;
         posted++;
       }
@@ -190,8 +204,9 @@ async function checkInstagram(client, state) {
         .setFooter({ text: `Instagram • @${uname} • via ${latest.via}` })
         .setTimestamp(latest.timestamp ? new Date(latest.timestamp * (latest.timestamp < 1e12 ? 1000 : 1)) : new Date());
       if (latest.image) e.setImage(latest.image);
-      const text = renderTpl(config.reposter.templates.instagram, { user: uname, title: latest.caption?.split('\n')[0] || '', link: latest.link || '' });
-      if (await postToChannel(client, channelId, e, text || undefined)) {
+      const text = mediaText(config.reporter.templates.instagram, { user: uname, title: latest.caption?.split('\n')[0] || '', link: latest.link || '' });
+      const btns = latest.link ? [linkBtn('📸 Open post', latest.link)] : [];
+      if (await postToChannel(client, channelId, { embed: e, content: text, buttons: btns })) {
         state.instagram[username] = latest.id;
         posted++;
         logger.info(`[reposter/ig] new ${username} (${latest.via})`);

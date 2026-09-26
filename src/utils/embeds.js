@@ -112,9 +112,19 @@ function announcePing() {
   } catch { return ''; }
 }
 
+// Пинг роли для МЕДИА (YT/IG/TT). Пусто = падаем на общую announceRoleId.
+function mediaPing() {
+  try {
+    const { config } = require('../config');
+    const id = config.mediaRoleId || config.announceRoleId;
+    return id ? `<@&${id}>` : '';
+  } catch { return ''; }
+}
+
 // EN-шаблоны объявлений: {role} {author} {user} {title} {link}
-function renderTpl(tpl, vars = {}) {
-  const role = announcePing();
+// roleOverride: mediaPing() для медиа-постов, иначе общая announcePing().
+function renderTpl(tpl, vars = {}, roleOverride) {
+  const role = roleOverride !== undefined ? roleOverride : announcePing();
   return String(tpl || '')
     .split('{role}').join(role)
     .replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''))
@@ -122,7 +132,7 @@ function renderTpl(tpl, vars = {}) {
     .trim();
 }
 
-module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, modActionEmbed, punishLogEmbed, announcePing, renderTpl };
+module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
 
 // --- Мод-действие: единый красивый вывод (и в чат, и в лог) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge

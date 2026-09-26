@@ -152,6 +152,8 @@ const config = {
 
   // Роль для пинга в объявлениях (медиа + анонсы). Пусто = без пинга.
   announceRoleId: process.env.ANNOUNCE_ROLE_ID || '',
+  // Отдельная роль для МЕДИА-постов (YT/IG/TT). Пусто = общая announceRoleId.
+  mediaRoleId: process.env.MEDIA_ROLE_ID || '',
 
   // Автокросспост из announcement-каналов подписчикам (ID через запятую)
   autopublish: parseIds(process.env.AUTOPUBLISH_CHANNEL_IDS),

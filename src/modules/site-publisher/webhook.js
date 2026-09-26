@@ -8,7 +8,7 @@ const { XMLParser } = require('fast-xml-parser');
 const { EmbedBuilder } = require('discord.js');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
-const { newsEmbed, announcePing } = require('../../utils/embeds');
+const { newsEmbed, mediaPing } = require('../../utils/embeds');
 
 const SOURCE_STYLE = [
   { match: 'instagram', color: 0xe1306c, emoji: '📸', tag: 'Instagram' },
@@ -97,7 +97,7 @@ function startWebhook(client) {
     try {
       const ch = await client.channels.fetch(channelId);
       if (!ch?.isTextBased()) return res.status(500).json({ ok: false, error: 'bad channel' });
-      const ping = announcePing();
+      const ping = mediaPing();
       const payload = { embeds: [styledEmbed({ title, description, url, image, source })] };
       if (ping) payload.content = ping;
       // Кнопки: основная ссылка + Twitch «за компанию» + любые доп. links
