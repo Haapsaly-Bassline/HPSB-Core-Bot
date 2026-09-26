@@ -4,14 +4,15 @@ const { EmbedBuilder } = require('discord.js');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
 const store = require('../../utils/store');
+const { renderTpl } = require('../../utils/embeds');
 
 const parser = new XMLParser({ ignoreAttributes: false });
 
-async function postToChannel(client, channelId, embed) {
+async function postToChannel(client, channelId, embed, content) {
   const ch = await client.channels.fetch(channelId).catch(() => null);
   if (!ch?.isTextBased()) return false;
-  const ok = await ch.send({ embeds: [embed] }).then(() => true).catch(() => false);
-  return ok;
+  const payload = content ? { content, embeds: [embed] } : { embeds: [embed] };
+  return ch.send(payload).then(() => true).catch(() => false);
 }
 
 const YT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -97,12 +98,14 @@ async function checkYouTube(client, state) {
         const link = `https://www.youtube.com/watch?v=${item.id}`;
         const embed = new EmbedBuilder()
           .setColor(0xff0000)
-          .setTitle(`▶️ Новое видео: ${(item.title || 'YouTube').slice(0, 250)}`)
+          .setTitle(`${(item.title || 'YouTube').slice(0, 250)}`)
           .setURL(link)
           .setDescription(`${item.author || ''}\n${link}`.slice(0, 2000))
           .setImage(`https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`)
+          .setFooter({ text: 'Haapsaly Bassline • YouTube' })
           .setTimestamp();
-        if (await postToChannel(client, channelId, embed)) {
+        const text = renderTpl(config.reposter.templates.youtube, { author: item.author || 'HPSB', title: item.title || '', link });
+        if (await postToChannel(client, channelId, embed, text || undefined)) {
           knownSet.add(item.id);
           posted++;
           logger.info(`[reposter/yt] new ${item.id}`);
@@ -131,10 +134,12 @@ async function checkTikTok(client, state) {
       if (prev === vid) continue;
       if (!prev) { state.tiktok[uname] = vid; continue; } // первый запуск — запоминаем
       const link = `https://www.tiktok.com/@${uname}/video/${vid}`;
+      const text = renderTpl(config.reposter.templates.tiktok, { user: uname, title: latest.title || latest.desc || '', link });
       if (await postToChannel(client, channelId, new EmbedBuilder()
-        .setColor(0x000000).setTitle(`🎵 Новый TikTok @${uname}`)
-        .setURL(link).setDescription(`${latest.title || latest.desc || ''}\n${link}`.slice(0, 2000))
-        .setTimestamp())) {
+        .setColor(0x000000).setTitle(`${(latest.title || latest.desc || 'TikTok').slice(0, 250)}`)
+        .setURL(link).setDescription(`${link}`.slice(0, 2000))
+        .setFooter({ text: `TikTok • @${uname}` })
+        .setTimestamp(), text || undefined)) {
         state.tiktok[uname] = vid;
         posted++;
       }
@@ -154,14 +159,16 @@ async function checkInstagram(client, state) {
       const prev = state.instagram[username];
       if (prev === latest.id) continue;
       if (!prev) { state.instagram[username] = latest.id; continue; } // первый запуск — запоминаем
+      const uname = String(username).replace(/^@/, '');
       const e = new EmbedBuilder()
-        .setColor(0xe1306c).setTitle(`📸 Новый пост @${String(username).replace(/^@/, '')}`)
+        .setColor(0xe1306c).setTitle(`${(latest.caption || 'Instagram').split('\n')[0].slice(0, 250)}`)
         .setURL(latest.link || undefined)
         .setDescription(`${(latest.caption || '').slice(0, 1500)}\n${latest.link || ''}`.slice(0, 2000))
-        .setFooter({ text: `Instagram • via ${latest.via}` })
+        .setFooter({ text: `Instagram • @${uname} • via ${latest.via}` })
         .setTimestamp(latest.timestamp ? new Date(latest.timestamp * (latest.timestamp < 1e12 ? 1000 : 1)) : new Date());
       if (latest.image) e.setImage(latest.image);
-      if (await postToChannel(client, channelId, e)) {
+      const text = renderTpl(config.reposter.templates.instagram, { user: uname, title: latest.caption?.split('\n')[0] || '', link: latest.link || '' });
+      if (await postToChannel(client, channelId, e, text || undefined)) {
         state.instagram[username] = latest.id;
         posted++;
         logger.info(`[reposter/ig] new ${username} (${latest.via})`);

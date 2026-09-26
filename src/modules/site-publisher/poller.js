@@ -55,11 +55,18 @@ function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
-async function post(client, channelId, embed) {
+async function post(client, channelId, embed, content) {
   if (!channelId) return false;
   const ch = await client.channels.fetch(channelId).catch(() => null);
   if (!ch?.isTextBased()) { logger.warn('[hpsb] bad channel', channelId); return false; }
-  return ch.send({ embeds: [embed] }).then(() => true).catch(() => false);
+  const payload = content ? { content, embeds: [embed] } : { embeds: [embed] };
+  return ch.send(payload).then(() => true).catch(() => false);
+}
+
+function pingLine(text) {
+  const { announcePing } = require('../../utils/embeds');
+  const ping = announcePing();
+  return ping ? `${ping} ${text}` : text;
 }
 
 // Один fetch на ленту. Возвращает унифицированные items:
@@ -102,12 +109,12 @@ function releaseEmbed(r) {
     .setTimestamp(r.createdAt ? new Date(r.createdAt) : new Date());
   const img = abs(config.hpsb.releases.baseUrl, r.cover);
   if (img) e.setImage(img);
-  if (r.genre?.length) e.addFields({ name: 'Жанр', value: r.genre.join(', ').slice(0, 200), inline: true });
-  if (r.year) e.addFields({ name: 'Год', value: String(r.year), inline: true });
+  if (r.genre?.length) e.addFields({ name: 'Genre', value: r.genre.join(', ').slice(0, 200), inline: true });
+  if (r.year) e.addFields({ name: 'Year', value: String(r.year), inline: true });
   if (r.tracks?.length) {
-    e.addFields({ name: `Треки (${r.tracks.length})`, value: truncate(r.tracks.slice(0, 8).map((t, i) => `${i + 1}. ${t.title}`).join('\n'), 900) });
+    e.addFields({ name: `Tracks (${r.tracks.length})`, value: truncate(r.tracks.slice(0, 8).map((t, i) => `${i + 1}. ${t.title}`).join('\n'), 900) });
   }
-  if (links) e.addFields({ name: 'Слушать', value: truncate(links, 900) });
+  if (links) e.addFields({ name: 'Listen', value: truncate(links, 900) });
   e.setFooter({ text: 'Haapsaly Bassline • Release' });
   return e;
 }
@@ -138,7 +145,8 @@ async function checkReleases(client, state, opts = {}) {
     let posted = 0;
     for (const item of targets) {
       const rich = item.raw?.services || item.raw?.tracks;
-      if (await post(client, channelId, rich ? releaseEmbed(item.raw) : simpleReleaseEmbed(item))) {
+      const text = pingLine(`💿 New release: **${truncate(item.title, 200)}**`);
+      if (await post(client, channelId, rich ? releaseEmbed(item.raw) : simpleReleaseEmbed(item), text)) {
         known.add(item.uid);
         posted++;
         logger.info(`[hpsb/releases] posted ${item.uid}`);
@@ -163,10 +171,10 @@ function eventEmbed(ev) {
     .setTimestamp(start || new Date());
   if (ev.image) e.setImage(ev.image);
   const rows = [];
-  if (start && !isNaN(start)) rows.push(`**Когда:** <t:${Math.floor(start.getTime() / 1000)}:F>`);
-  if (ev.location) rows.push(`**Где:** ${truncate(ev.location, 150)}`);
-  if (ev.status?.label) rows.push(`**Статус:** ${ev.status.label}`);
-  if (rows.length) e.addFields({ name: 'Детали', value: rows.join('\n').slice(0, 900) });
+  if (start && !isNaN(start)) rows.push(`**When:** <t:${Math.floor(start.getTime() / 1000)}:F>`);
+  if (ev.location) rows.push(`**Where:** ${truncate(ev.location, 150)}`);
+  if (ev.status?.label) rows.push(`**Status:** ${ev.status.label}`);
+  if (rows.length) e.addFields({ name: 'Details', value: rows.join('\n').slice(0, 900) });
   e.setFooter({ text: 'Haapsaly Bassline • Events' });
   return e;
 }
@@ -207,7 +215,8 @@ async function checkEvents(client, state, opts = {}) {
     for (const item of targets) {
       const rich = eventLike(item.raw);
       const emb = rich ? eventEmbed({ ...rich, link: rich.link || item.link }) : simpleEventEmbed(item);
-      if (await post(client, channelId, emb)) {
+      const text = pingLine(`📅 New event: **${truncate(item.title, 200)}**`);
+      if (await post(client, channelId, emb, text)) {
         known.add(item.uid);
         posted++;
         logger.info(`[hpsb/events] posted ${item.uid}`);
@@ -244,8 +253,9 @@ async function checkReminders(client, state) {
       if (need && !done.includes(need)) {
         const rich = eventLike(item.raw);
         const emb = rich ? eventEmbed({ ...rich, link: rich.link || item.link }) : simpleEventEmbed(item);
-        emb.setTitle(`⏰ Напоминание (${need === '1h' ? 'остался час' : 'остались сутки'}): ${truncate(item.title || 'Event', 200)}`);
-        if (await post(client, channelId, emb)) {
+        emb.setTitle(`⏰ Reminder (${need === '1h' ? '1 hour left' : '24 hours left'}): ${truncate(item.title || 'Event', 200)}`);
+        const text = pingLine(`⏰ Reminder: **${truncate(item.title, 200)}**`);
+        if (await post(client, channelId, emb, text)) {
           done.push(need);
           posted++;
           logger.info(`[hpsb/remind] ${item.uid} ${need}`);
@@ -286,7 +296,8 @@ async function checkPosts(client, state, opts = {}) {
         .setTimestamp(item.date ? new Date(item.date) : new Date())
         .setFooter({ text: `Haapsaly Bassline • Post${p.tags?.length ? ' • ' + p.tags.join(', ') : ''}`.slice(0, 200) });
       if (item.image) e.setImage(item.image);
-      if (await post(client, channelId, e)) {
+      const text = pingLine(`📰 **${truncate(item.title, 200)}**`);
+      if (await post(client, channelId, e, text)) {
         known.add(item.uid);
         posted++;
         logger.info(`[hpsb/posts] posted ${item.uid}`);
@@ -319,7 +330,8 @@ async function checkLegacy(client, state) {
     const targets = items.filter(i => i?.id && !known.has(String(i.id))).slice(0, 5);
     let posted = 0;
     for (const item of targets) {
-      if (await post(client, config.siteApi.channelId, newsEmbed({ ...item, source: 'HPSB site' }))) {
+      const text = pingLine(`📰 **${truncate(item.title || 'News', 200)}**`);
+      if (await post(client, config.siteApi.channelId, newsEmbed({ ...item, source: 'HPSB site' }), text)) {
         known.add(String(item.id));
         posted++;
       }

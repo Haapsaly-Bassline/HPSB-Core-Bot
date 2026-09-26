@@ -104,7 +104,25 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle) {
   return e;
 }
 
-module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, modActionEmbed, punishLogEmbed };
+// Пинг роли для объявлений (медиа + анонсы). Пусто = без пинга.
+function announcePing() {
+  try {
+    const { config } = require('../config');
+    return config.announceRoleId ? `<@&${config.announceRoleId}>` : '';
+  } catch { return ''; }
+}
+
+// EN-шаблоны объявлений: {role} {author} {user} {title} {link}
+function renderTpl(tpl, vars = {}) {
+  const role = announcePing();
+  return String(tpl || '')
+    .split('{role}').join(role)
+    .replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, modActionEmbed, punishLogEmbed, announcePing, renderTpl };
 
 // --- Мод-действие: единый красивый вывод (и в чат, и в лог) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge
