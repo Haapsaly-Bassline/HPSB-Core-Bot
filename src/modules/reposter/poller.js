@@ -185,37 +185,6 @@ async function checkTikTok(client, state) {
   return { found, posted };
 }
 
-async function checkInstagram(client, state) {
-  const { fetchLatestPost } = require('./instagram');
-  let found = 0, posted = 0;
-  for (const { key: username, channelId } of config.reposter.instagram) {
-    try {
-      const latest = await fetchLatestPost(username);
-      if (!latest?.id) { logger.warn(`[reposter/ig] ${username}: empty (все методы мимо, см. IG_SESSIONID)`); continue; }
-      found++;
-      const prev = state.instagram[username];
-      if (prev === latest.id) continue;
-      if (!prev) { state.instagram[username] = latest.id; continue; } // первый запуск — запоминаем
-      const uname = String(username).replace(/^@/, '');
-      const e = new EmbedBuilder()
-        .setColor(0xe1306c).setTitle(`${(latest.caption || 'Instagram').split('\n')[0].slice(0, 250)}`)
-        .setURL(latest.link || undefined)
-        .setDescription(`${(latest.caption || '').slice(0, 1500)}\n${latest.link || ''}`.slice(0, 2000))
-        .setFooter({ text: `Instagram • @${uname} • via ${latest.via}` })
-        .setTimestamp(latest.timestamp ? new Date(latest.timestamp * (latest.timestamp < 1e12 ? 1000 : 1)) : new Date());
-      if (latest.image) e.setImage(latest.image);
-      const text = mediaText(config.reporter.templates.instagram, { user: uname, title: latest.caption?.split('\n')[0] || '', link: latest.link || '' });
-      const btns = latest.link ? [linkBtn('📸 Open post', latest.link)] : [];
-      if (await postToChannel(client, channelId, { embed: e, content: text, buttons: btns })) {
-        state.instagram[username] = latest.id;
-        posted++;
-        logger.info(`[reposter/ig] new ${username} (${latest.via})`);
-      }
-    } catch (e) { logger.warn(`[reposter/ig] ${username}:`, e.message); }
-  }
-  return { found, posted };
-}
-
 let timer = null;
 let running = false;
 const ZERO = { found: 0, posted: 0 };
@@ -225,10 +194,10 @@ async function runReposterOnce(client) {
   running = true;
   try {
     const state = store.load();
-    const out = { youtube: { ...ZERO }, tiktok: { ...ZERO }, instagram: { ...ZERO } };
+    // Instagram идёт через Make-вебхук, скрапер удалён.
+    const out = { youtube: { ...ZERO }, tiktok: { ...ZERO } };
     out.youtube = await checkYouTube(client, state);
     out.tiktok = await checkTikTok(client, state);
-    out.instagram = await checkInstagram(client, state);
     store.save(state);
     return out;
   } finally {
@@ -243,7 +212,7 @@ function startReposter(client) {
   if (timer) clearInterval(timer);
   timer = setInterval(() => run().catch(e => logger.warn('[reposter]', e.message)), mins * 60 * 1000);
   timer.unref?.();
-  logger.info(`[reposter] polling every ${mins}m (yt:${config.reposter.youtube.length} tt:${config.reposter.tiktok.length} ig:${config.reposter.instagram.length})`);
+  logger.info(`[reposter] polling every ${mins}m (yt:${config.reposter.youtube.length} tt:${config.reposter.tiktok.length})`);
 }
 
 module.exports = { startReposter, runReposterOnce, publishYouTubeVideo };

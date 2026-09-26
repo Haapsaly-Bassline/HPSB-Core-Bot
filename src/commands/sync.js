@@ -33,7 +33,6 @@ module.exports = {
           line('⏰ Напоминания', h.reminders),
           line('▶️ YouTube', r.youtube),
           line('🎵 TikTok', r.tiktok),
-          line('📸 Instagram', r.instagram),
         ].join('\n'))
         .setFooter({ text: `${backfill ? `backfill=${backfill} • ` : ''}Haapsaly Bassline` });
       await interaction.editReply({ embeds: [e] });
