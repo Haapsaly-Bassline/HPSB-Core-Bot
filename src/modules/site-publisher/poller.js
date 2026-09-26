@@ -1,14 +1,47 @@
-// HPSB site-publisher: releases / events / posts.
-// JSON первичен, RSS — фолбэк. Первый запуск только запоминает (без спама историей).
+// HPSB site-publisher: releases / events / posts + напоминания.
+// Принцип: ОДИН источник на ленту (без цепочек JSON->RSS):
+//   releases -> JSON releases API, events -> RSS (JSON мёртв), posts -> JSON.
+// Формат определяется по ответу. Ошибки: бэкофф (3 провала = молчим 30 мин).
+// Первый запуск только запоминает (без спама историей).
 const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
 const { XMLParser } = require('fast-xml-parser');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
 const store = require('../../utils/store');
+const { newsEmbed } = require('../../utils/embeds');
 
 const parser = new XMLParser({ ignoreAttributes: false });
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 let timer = null;
+
+// fails: { key -> { n, until, warned } } — бэкофф в памяти
+const fails = {};
+
+function backoffSkip(key) {
+  const f = fails[key];
+  return f && f.until && Date.now() < f.until;
+}
+
+function backoffFail(key, err) {
+  const f = fails[key] || (fails[key] = { n: 0, until: 0, warned: false });
+  f.n++;
+  if (f.n >= 3) {
+    f.until = Date.now() + 30 * 60 * 1000;
+    if (!f.warned) {
+      f.warned = true;
+      logger.warn(`[hpsb/${key}] 3 провала подряд (${err}) — молчу 30 мин`);
+    }
+  } else {
+    logger.warn(`[hpsb/${key}] fail ${f.n}/3: ${err}`);
+  }
+}
+
+function backoffOk(key) {
+  const f = fails[key];
+  if (f && (f.n > 0 || f.warned)) logger.info(`[hpsb/${key}] источник ожил`);
+  delete fails[key];
+}
 
 function abs(base, maybeRelative) {
   if (!maybeRelative) return undefined;
@@ -26,33 +59,38 @@ async function post(client, channelId, embed) {
   if (!channelId) return false;
   const ch = await client.channels.fetch(channelId).catch(() => null);
   if (!ch?.isTextBased()) { logger.warn('[hpsb] bad channel', channelId); return false; }
-  await ch.send({ embeds: [embed] }).catch(() => {});
-  return true;
+  return ch.send({ embeds: [embed] }).then(() => true).catch(() => false);
+}
+
+// Один fetch на ленту. Возвращает унифицированные items:
+// { uid, title, link, desc, date, image, raw }
+async function fetchFeed(url) {
+  const { data } = await axios.get(url, { timeout: 20000, headers: { 'User-Agent': UA } });
+  if (typeof data === 'string' && /^\s*</.test(data)) {
+    const feed = parser.parse(data);
+    const raw = feed?.rss?.channel?.item;
+    const items = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    return items.map(i => ({
+      uid: String(i.guid?.['#text'] || i.guid || i.link || ''),
+      title: i.title || '', link: i.link || '', desc: i.description || '',
+      date: i.pubDate || '', image: i.enclosure?.url || '', raw: i,
+    })).filter(x => x.uid);
+  }
+  const arr = Array.isArray(data) ? data : data.posts || data.items || data.releases || data.events || [];
+  return arr.map(i => ({
+    uid: String(i.id || i.slug || i.guid || ''),
+    title: i.title || i.name || '', link: i.url || i.link || '',
+    desc: i.description || i.excerpt || i.descriptionRaw || '',
+    date: i.createdAt || i.publishedAt || i.start || i.pubDate || '',
+    image: i.cover || i.image || '', raw: i,
+  })).filter(x => x.uid);
 }
 
 // ---------- RELEASES ----------
-async function fetchReleasesJson() {
-  const { data } = await axios.get(config.hpsb.releases.apiUrl, { timeout: 15000 });
-  const arr = Array.isArray(data) ? data : data.items || data.releases || [];
-  return arr.filter(x => x?.id && x.status !== 'draft');
-}
-
-async function fetchReleasesRss() {
-  const { data } = await axios.get(config.hpsb.releases.rssUrl, {
-    timeout: 15000,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36' },
-  });
-  const feed = parser.parse(data);
-  const items = Array.isArray(feed?.rss?.channel?.item) ? feed.rss.channel.item
-    : feed?.rss?.channel?.item ? [feed.rss.channel.item] : [];
-  return items.map(i => ({ rssGuid: String(i.guid?.['#text'] || i.guid || i.link), title: i.title, link: i.link, description: i.description }));
-}
-
 const SERVICE_LABEL = { bandcamp: 'Bandcamp', youtube: 'YouTube', 'youtube-music': 'YT Music', audiomack: 'Audiomack', soundcloud: 'SoundCloud', spotify: 'Spotify', discogs: 'Discogs', custom: 'More', merch: 'Merch' };
 
 function releaseEmbed(r) {
-  const base = config.hpsb.releases.pageBase || 'https://hpsbassline.club/releases';
-  const page = `${base}/${r.slug || r.id}`;
+  const page = `${config.hpsb.releases.pageBase || 'https://hpsbassline.club/releases'}/${r.slug || r.id}`;
   const services = [...(r.services || [])];
   if (r.merch) services.push({ type: 'merch', url: r.merch });
   const links = services.slice(0, 10).map(s => `[${SERVICE_LABEL[s.type] || s.type}](${s.url})`).join(' • ');
@@ -74,52 +112,43 @@ function releaseEmbed(r) {
   return e;
 }
 
+function simpleReleaseEmbed(item) {
+  return new EmbedBuilder()
+    .setColor(0x7c3aed).setTitle(`💿 ${truncate(item.title, 250)}`).setURL(item.link || undefined)
+    .setDescription(truncate(item.desc, 1500)).setTimestamp(item.date ? new Date(item.date) : new Date())
+    .setFooter({ text: 'Haapsaly Bassline • Release' });
+}
+
 async function checkReleases(client, state, opts = {}) {
-  const { channelId } = config.hpsb.releases;
-  if (!channelId) return { found: 0, posted: 0 };
+  const KEY = 'releases';
+  const { channelId, feedUrl } = config.hpsb.releases;
+  if (!channelId || !feedUrl) return { found: 0, posted: 0 };
+  if (backoffSkip(KEY)) return { found: 0, posted: 0 };
   state.releases.ids = state.releases.ids || [];
   const known = new Set(state.releases.ids);
   const backfill = Math.min(Math.max(opts.backfill || 0, 0), 5);
   try {
-    const items = await fetchReleasesJson();
+    const items = await fetchFeed(feedUrl);
+    backoffOk(KEY);
     if (!known.size && items.length && !backfill) {
-      state.releases.ids = items.slice(0, 30).map(i => String(i.id));
+      state.releases.ids = items.slice(0, 30).map(i => i.uid);
       return { found: items.length, posted: 0 };
     }
-    const targets = backfill ? items.slice(0, backfill) : items.filter(i => !known.has(String(i.id))).slice(0, 5);
+    const targets = (backfill ? items.slice(0, backfill) : items.filter(i => !known.has(i.uid))).slice(0, 5);
     let posted = 0;
-    for (const r of targets) {
-      // ID запоминаем ТОЛЬКО при успешной отправке, иначе дроп потеряется навсегда
-      if (await post(client, channelId, releaseEmbed(r))) {
-        known.add(String(r.id));
+    for (const item of targets) {
+      const rich = item.raw?.services || item.raw?.tracks;
+      if (await post(client, channelId, rich ? releaseEmbed(item.raw) : simpleReleaseEmbed(item))) {
+        known.add(item.uid);
         posted++;
-        logger.info(`[hpsb/releases] posted ${r.slug || r.id}`);
+        logger.info(`[hpsb/releases] posted ${item.uid}`);
       }
     }
     state.releases.ids = [...known].slice(-100);
     return { found: items.length, posted };
   } catch (e) {
-    logger.warn('[hpsb/releases] json failed, trying rss:', e.message);
-    try {
-      const items = await fetchReleasesRss();
-      if (!known.size && items.length) {
-        state.releases.ids = items.slice(0, 30).map(i => i.rssGuid);
-        return { found: items.length, posted: 0 };
-      }
-      const targets = items.filter(x => !known.has(x.rssGuid)).slice(0, 5);
-      let posted = 0;
-      for (const i of targets) {
-        if (await post(client, channelId, new EmbedBuilder()
-          .setColor(0x7c3aed).setTitle(`💿 ${truncate(i.title, 250)}`).setURL(i.link)
-          .setDescription(truncate(i.description || '', 1500)).setTimestamp()
-          .setFooter({ text: 'Haapsaly Bassline • Release (RSS)' }))) {
-          known.add(i.rssGuid);
-          posted++;
-        }
-      }
-      state.releases.ids = [...known].slice(-100);
-      return { found: items.length, posted };
-    } catch (e2) { logger.warn('[hpsb/releases] rss failed:', e2.message); return { found: 0, posted: 0 }; }
+    backoffFail(KEY, e.message);
+    return { found: 0, posted: 0 };
   }
 }
 
@@ -142,145 +171,146 @@ function eventEmbed(ev) {
   return e;
 }
 
-async function fetchEventsRss() {
-  const { data } = await axios.get(config.hpsb.events.rssUrl, {
-    timeout: 15000,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36' },
-  });
-  const feed = parser.parse(data);
-  const items = Array.isArray(feed?.rss?.channel?.item) ? feed.rss.channel.item
-    : feed?.rss?.channel?.item ? [feed.rss.channel.item] : [];
-  return items.map(i => ({ rssGuid: String(i.guid?.['#text'] || i.guid || i.link), title: i.title, link: i.link, description: i.description, pubDate: i.pubDate }));
+function simpleEventEmbed(item) {
+  return new EmbedBuilder()
+    .setColor(0x0ea5e9).setTitle(`📅 ${truncate(item.title, 250)}`).setURL(item.link || undefined)
+    .setDescription(truncate(item.desc, 1800))
+    .setTimestamp(item.date ? new Date(item.date) : new Date())
+    .setFooter({ text: 'Haapsaly Bassline • Events' });
+}
+
+function eventLike(ev) {
+  // JSON-вариант с полями API
+  if (ev && (ev.start || ev.startUnix)) {
+    return { name: ev.name, link: ev.link, description: ev.description || ev.descriptionRaw, image: ev.image, location: ev.location, status: ev.status, start: ev.start, startUnix: ev.startUnix };
+  }
+  return null;
 }
 
 async function checkEvents(client, state, opts = {}) {
-  const { channelId } = config.hpsb.events;
-  if (!channelId) return { found: 0, posted: 0 };
+  const KEY = 'events';
+  const { channelId, feedUrl } = config.hpsb.events;
+  if (!channelId || !feedUrl) return { found: 0, posted: 0 };
+  if (backoffSkip(KEY)) return { found: 0, posted: 0 };
   state.events.ids = state.events.ids || [];
   const known = new Set(state.events.ids);
   const backfill = Math.min(Math.max(opts.backfill || 0, 0), 5);
   try {
-    const { data } = await axios.get(config.hpsb.events.apiUrl, { timeout: 15000 });
-    const items = Array.isArray(data) ? data : data.items || data.events || [];
+    const items = await fetchFeed(feedUrl);
+    backoffOk(KEY);
     if (!known.size && items.length && !backfill) {
-      state.events.ids = items.slice(0, 30).map(i => String(i.id));
+      state.events.ids = items.slice(0, 30).map(i => i.uid);
       return { found: items.length, posted: 0 };
     }
-    const targets = (backfill ? items.slice(0, backfill) : items.filter(i => i?.id && !known.has(String(i.id)))).slice(0, 5);
+    const targets = (backfill ? items.slice(0, backfill) : items.filter(i => !known.has(i.uid))).slice(0, 5);
     let posted = 0;
-    for (const ev of targets) {
-      if (await post(client, channelId, eventEmbed(ev))) {
-        known.add(String(ev.id));
+    for (const item of targets) {
+      const rich = eventLike(item.raw);
+      const emb = rich ? eventEmbed({ ...rich, link: rich.link || item.link }) : simpleEventEmbed(item);
+      if (await post(client, channelId, emb)) {
+        known.add(item.uid);
         posted++;
-        logger.info(`[hpsb/events] posted ${ev.id}`);
+        logger.info(`[hpsb/events] posted ${item.uid}`);
       }
     }
     state.events.ids = [...known].slice(-100);
     return { found: items.length, posted };
   } catch (e) {
-    logger.warn('[hpsb/events] json failed, trying rss:', e.message);
-    try {
-      const items = await fetchEventsRss();
-      if (!known.size && items.length) {
-        state.events.ids = items.slice(0, 30).map(i => i.rssGuid);
-        return { found: items.length, posted: 0 };
-      }
-      const targets = items.filter(x => !known.has(x.rssGuid)).slice(0, 5);
-      let posted = 0;
-      for (const i of targets) {
-        if (await post(client, channelId, new EmbedBuilder()
-          .setColor(0x0ea5e9).setTitle(`📅 ${truncate(i.title, 250)}`).setURL(i.link)
-          .setDescription(truncate(i.description || '', 1800))
-          .setTimestamp(i.pubDate ? new Date(i.pubDate) : new Date())
-          .setFooter({ text: 'Haapsaly Bassline • Events (RSS)' }))) {
-          known.add(i.rssGuid);
-          posted++;
-        }
-      }
-      state.events.ids = [...known].slice(-100);
-      return { found: items.length, posted };
-    } catch (e2) { logger.warn('[hpsb/events] rss failed:', e2.message); return { found: 0, posted: 0 }; }
+    backoffFail(KEY, e.message);
+    return { found: 0, posted: 0 };
   }
 }
 
 // ---------- Напоминания о будущих эвентах (24ч и 1ч до старта) ----------
+// Старт берём из date (RSS pubDate = старт, JSON start).
 async function checkReminders(client, state) {
-  const { channelId } = config.hpsb.events;
-  if (!channelId) return { found: 0, posted: 0 };
+  const KEY = 'remind';
+  const { channelId, feedUrl } = config.hpsb.events;
+  if (!channelId || !feedUrl) return { found: 0, posted: 0 };
+  if (backoffSkip(KEY)) return { found: 0, posted: 0 };
   state.events.reminded = state.events.reminded || {};
   let posted = 0, found = 0;
   try {
-    const { data } = await axios.get(config.hpsb.events.apiUrl, { timeout: 15000 });
-    const items = (Array.isArray(data) ? data : data.items || data.events || [])
-      .filter(e => e?.id && e.start && (!e.status || e.status.code === 'upcoming'));
+    const items = await fetchFeed(feedUrl);
+    backoffOk(KEY);
     found = items.length;
     const now = Date.now();
-    for (const ev of items) {
-      const t = new Date(ev.start).getTime();
+    for (const item of items) {
+      const t = item.date ? new Date(item.date).getTime() : 0;
       if (!t || t <= now) continue;
-      const done = state.events.reminded[ev.id] || (state.events.reminded[ev.id] = []);
+      const done = state.events.reminded[item.uid] || (state.events.reminded[item.uid] = []);
       const left = t - now;
       const need = left <= 3600 * 1000 ? '1h' : left <= 24 * 3600 * 1000 ? '24h' : null;
       if (need && !done.includes(need)) {
-        const emb = eventEmbed(ev);
-        emb.setTitle(`⏰ Напоминание (${need === '1h' ? 'остался час' : 'остались сутки'}): ${(ev.name || 'Event').slice(0, 200)}`);
+        const rich = eventLike(item.raw);
+        const emb = rich ? eventEmbed({ ...rich, link: rich.link || item.link }) : simpleEventEmbed(item);
+        emb.setTitle(`⏰ Напоминание (${need === '1h' ? 'остался час' : 'остались сутки'}): ${truncate(item.title || 'Event', 200)}`);
         if (await post(client, channelId, emb)) {
           done.push(need);
           posted++;
-          logger.info(`[hpsb/remind] ${ev.id} ${need}`);
+          logger.info(`[hpsb/remind] ${item.uid} ${need}`);
         }
       }
     }
-  } catch (e) { logger.warn('[hpsb/remind]', e.message); }
+  } catch (e) {
+    backoffFail(KEY, e.message);
+  }
   return { found, posted };
 }
 
 // ---------- POSTS ----------
 async function checkPosts(client, state, opts = {}) {
+  const KEY = 'posts';
   const { channelId, apiUrl } = { channelId: config.hpsb.posts.channelId, apiUrl: config.hpsb.posts.apiUrl };
   if (!channelId || !apiUrl) return { found: 0, posted: 0 };
+  if (backoffSkip(KEY)) return { found: 0, posted: 0 };
   state.posts.ids = state.posts.ids || [];
   const known = new Set(state.posts.ids);
   const backfill = Math.min(Math.max(opts.backfill || 0, 0), 5);
   try {
-    const { data } = await axios.get(apiUrl, { timeout: 15000 });
-    const items = data.posts || data.items || (Array.isArray(data) ? data : []);
+    const items = await fetchFeed(apiUrl);
+    backoffOk(KEY);
     if (!known.size && items.length && !backfill) {
-      state.posts.ids = items.slice(0, 30).map(i => String(i.id || i.slug));
+      state.posts.ids = items.slice(0, 30).map(i => i.uid);
       return { found: items.length, posted: 0 };
     }
-    const pool = backfill ? items.slice(0, backfill) : items.filter(i => (i.id || i.slug) && !known.has(String(i.id || i.slug)));
-    const targets = pool.slice(0, 5);
+    const targets = (backfill ? items.slice(0, backfill) : items.filter(i => !known.has(i.uid))).slice(0, 5);
     let posted = 0;
-    for (const p of targets) {
+    for (const item of targets) {
+      const p = item.raw || {};
       const e = new EmbedBuilder()
         .setColor(0x10b981)
-        .setTitle(`📰 ${truncate(p.title, 250)}`)
-        .setURL(p.url || undefined)
-        .setDescription(truncate(p.excerpt || p.description || '', 1800))
-        .setTimestamp(p.publishedAt ? new Date(p.publishedAt) : new Date())
+        .setTitle(`📰 ${truncate(item.title, 250)}`)
+        .setURL(item.link || undefined)
+        .setDescription(truncate(item.desc, 1800))
+        .setTimestamp(item.date ? new Date(item.date) : new Date())
         .setFooter({ text: `Haapsaly Bassline • Post${p.tags?.length ? ' • ' + p.tags.join(', ') : ''}`.slice(0, 200) });
-      if (p.cover) e.setImage(p.cover);
+      if (item.image) e.setImage(item.image);
       if (await post(client, channelId, e)) {
-        known.add(String(p.id || p.slug));
+        known.add(item.uid);
         posted++;
-        logger.info(`[hpsb/posts] posted ${p.slug || p.id}`);
+        logger.info(`[hpsb/posts] posted ${item.uid}`);
       }
     }
     state.posts.ids = [...known].slice(-100);
     return { found: items.length, posted };
-  } catch (e) { logger.warn('[hpsb/posts]', e.message); return { found: 0, posted: 0 }; }
+  } catch (e) {
+    backoffFail(KEY, e.message);
+    return { found: 0, posted: 0 };
+  }
 }
 
-// ---------- legacy generic (SITE_API_URL) — оставлен для совместимости ----------
-const { newsEmbed } = require('../../utils/embeds');
+// ---------- legacy generic (SITE_API_URL) ----------
 async function checkLegacy(client, state) {
+  const KEY = 'legacy';
   if (!config.siteApi.url || !config.siteApi.channelId) return { found: 0, posted: 0 };
+  if (backoffSkip(KEY)) return { found: 0, posted: 0 };
   try {
     const { data } = await axios.get(config.siteApi.url, {
-      timeout: 15000, headers: config.siteApi.key ? { Authorization: `Bearer ${config.siteApi.key}` } : {},
+      timeout: 20000, headers: { ...(config.siteApi.key ? { Authorization: `Bearer ${config.siteApi.key}` } : {}), 'User-Agent': UA },
     });
     const items = Array.isArray(data) ? data : data.items || [];
+    backoffOk(KEY);
     const known = new Set(state.site.lastIds || []);
     if (!known.size && items.length) {
       state.site.lastIds = items.slice(0, 30).map(i => String(i.id));
@@ -296,7 +326,10 @@ async function checkLegacy(client, state) {
     }
     state.site.lastIds = [...known].slice(-50);
     return { found: items.length, posted };
-  } catch (e) { logger.warn('[site legacy]', e.message); return { found: 0, posted: 0 }; }
+  } catch (e) {
+    backoffFail(KEY, e.message);
+    return { found: 0, posted: 0 };
+  }
 }
 
 const ZERO = { found: 0, posted: 0 };

@@ -17,9 +17,12 @@ module.exports = {
         { name: '👥 Участники', value: fmt(s.total), inline: true },
         { name: '🧍 Люди', value: fmt(s.humans), inline: true },
         { name: '🤖 Боты', value: fmt(s.bots), inline: true },
-        { name: '💎 Бусты', value: `${s.boosts} (ур. ${s.tier})`, inline: true },
-        { name: '📁 Каналы', value: fmt(s.channels), inline: true },
+        { name: s.presenceSeen ? '🟢 Онлайн' : '🟢 Онлайн (?)', value: s.presenceSeen ? fmt(s.online) : 'включи Presence Intent', inline: true },
+        { name: '⚫ Офлайн', value: s.presenceSeen ? fmt(s.offline) : '—', inline: true },
         { name: '🎭 Роли', value: fmt(s.roles), inline: true },
+        { name: '📁 Каналы', value: fmt(s.channels), inline: true },
+        { name: '💎 Бусты', value: `${s.boosts} (ур. ${s.tier})`, inline: true },
+        { name: '🎖 В роли', value: fmt(s.role), inline: true },
       )
       .setFooter({ text: 'Haapsaly Bassline • Stats' })
       .setTimestamp();

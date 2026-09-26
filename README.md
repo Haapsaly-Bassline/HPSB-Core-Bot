@@ -16,7 +16,7 @@
 
 ## Запуск
 1. Скопируй `.env.example` → `.env`, заполни (все ID уже вписаны, нужен только `DISCORD_TOKEN`).
-2. Developer Portal → Bot: включи **Server Members Intent** и **Message Content Intent**.
+2. Developer Portal → Bot: включи **Server Members Intent**, **Message Content Intent** и **Presence Intent** (последний — для online/offline счётчиков).
 3. `npm install` (если ругнётся на install-scripts — `npm install-scripts approve @discordjs/opus ffmpeg-static` + `npm rebuild`).
 4. `npm run register` — slash-команды на гильдию.
 5. `npm start` (фон: через PM2/планировщик; логи — `data/bot.log`, смотреть через `/logs`).

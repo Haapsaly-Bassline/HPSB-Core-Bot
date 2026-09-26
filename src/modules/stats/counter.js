@@ -1,16 +1,52 @@
-// Member Count: голосовые/текстовые каналы-счётчики вида "👥 Участники: 123".
-// Переименование не чаще раза в 15 мин (лимит Discord) и только при изменении цифры.
+// Member Count parity: 9 счётчиков с шаблонами {count}, on/off, setup.
+// Переименование только при изменении (лимит Discord), интервал ≥10 мин.
 const { ChannelType } = require('discord.js');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
+const store = require('../../utils/store');
 
-let timer = null;
-let running = false;
-const lastNames = new Map(); // channelId -> name
+const TYPES = ['members', 'humans', 'bots', 'roles', 'channels', 'role', 'online', 'offline', 'boosts'];
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('ru-RU');
 }
+
+function templateFor(key) {
+  const data = store.load();
+  return data.statsTemplates?.[key] || config.stats.t[key] || `{count}`;
+}
+
+function channelIdsFor(key) {
+  // Один тип -> НЕСКОЛЬКО каналов: env (один) + store (один или массив)
+  const data = store.load();
+  const out = [];
+  if (config.stats[key]) out.push(config.stats[key]);
+  const s = data.statsChannels?.[key];
+  if (Array.isArray(s)) out.push(...s);
+  else if (s) out.push(s);
+  return [...new Set(out.filter(Boolean))];
+}
+
+// Совместимость со старым кодом (первый канал)
+function channelIdFor(key) {
+  return channelIdsFor(key)[0] || '';
+}
+
+function isEnabled(key) {
+  const data = store.load();
+  return !(data.statsDisabled || []).includes(key);
+}
+
+function renderName(key, value) {
+  const t = templateFor(key);
+  const v = fmt(value);
+  return t.includes('{count}') ? t.split('{count}').join(v).slice(0, 100) : `${t} ${v}`.slice(0, 100);
+}
+
+let timer = null;
+let running = false;
+const lastNames = new Map(); // channelId -> name
+let presenceWarned = false;
 
 async function setName(client, id, name) {
   if (!id || lastNames.get(id) === name) return;
@@ -24,38 +60,79 @@ async function setName(client, id, name) {
   } catch (e) { logger.warn('[stats] rename failed', id, e.message); }
 }
 
+async function collect(guild) {
+  // полный список участников нужен только части счётчиков
+  const needMembers = ['humans', 'bots', 'role', 'online', 'offline'].some(k => channelIdsFor(k).length && isEnabled(k));
+  let members = null;
+  if (needMembers) {
+    try { await guild.members.fetch(); } catch {}
+    members = guild.members.cache;
+  }
+  const g2 = await guild.fetch().catch(() => guild);
+  const bots = members ? members.filter(m => m.user.bot).size : 0;
+  const total = guild.memberCount;
+  let online = 0, offline = 0, presenceSeen = false;
+  if (members) {
+    for (const m of members.values()) {
+      const st = m.presence?.status;
+      if (!st) continue;
+      presenceSeen = true;
+      if (st === 'offline') offline++;
+      else online++;
+    }
+  }
+  const roleId = store.load().statsRoleId || config.stats.roleId;
+  const roleCount = members && roleId ? members.filter(m => m.roles.cache.has(roleId)).size : 0;
+
+  return {
+    members: total,
+    humans: members ? total - bots : 0,
+    bots: members ? bots : 0,
+    roles: guild.roles.cache.size,
+    channels: guild.channels.cache.size,
+    role: roleCount,
+    online, offline, presenceSeen,
+    boosts: g2.premiumSubscriptionCount || 0,
+    tier: g2.premiumTier,
+  };
+}
+
 async function update(client) {
   const guild = await client.guilds.fetch(config.guildId).catch(() => null);
   if (!guild) return;
-  const s = config.stats;
-  if (!s.members && !s.humans && !s.bots && !s.boosts) return;
-
-  let members = null;
-  try {
-    if (s.humans || s.bots) {
-      await guild.members.fetch().catch(() => {});
-      const all = guild.members.cache;
-      const bots = all.filter(m => m.user.bot).size;
-      members = { total: guild.memberCount, bots, humans: guild.memberCount - bots };
-    } else {
-      members = { total: guild.memberCount, bots: 0, humans: 0 };
+  const vals = await collect(guild);
+  if (!vals.presenceSeen && (channelIdsFor('online').length || channelIdsFor('offline').length)) {
+    if (!presenceWarned) {
+      presenceWarned = true;
+      logger.warn('[stats] online/offline: нет presences — включи Presence Intent в Portal');
     }
-  } catch (e) { logger.warn('[stats]', e.message); return; }
-
-  // префиксы можно менять в .env: STATS_MEMBERS_LABEL и т.д.
-  if (s.members) await setName(client, s.members, `${s.membersLabel}: ${fmt(members.total)}`);
-  if (s.humans) await setName(client, s.humans, `${s.humansLabel}: ${fmt(members.humans)}`);
-  if (s.bots) await setName(client, s.bots, `${s.botsLabel}: ${fmt(members.bots)}`);
-  if (s.boosts) {
-    try {
-      const g2 = await guild.fetch().catch(() => guild);
-      await setName(client, s.boosts, `${s.boostsLabel}: ${g2.premiumSubscriptionCount || 0}`);
-    } catch {}
+  }
+  const jobs = [
+    ['members', vals.members],
+    ['humans', vals.humans],
+    ['bots', vals.bots],
+    ['roles', vals.roles],
+    ['channels', vals.channels],
+    ['boosts', vals.boosts],
+  ];
+  if (vals.presenceSeen) jobs.push(['online', vals.online], ['offline', vals.offline]);
+  if (store.load().statsRoleId || config.stats.roleId) jobs.push(['role', vals.role]);
+  for (const [key, value] of jobs) {
+    if (!isEnabled(key)) continue;
+    for (const id of channelIdsFor(key)) {
+      await setName(client, id, renderName(key, value));
+    }
   }
 }
 
 function startStats(client) {
-  const mins = Math.max(10, config.stats.intervalMin || 15);
+  const mins = Math.max(10, config.stats.intervalMin || 10);
+  const active = TYPES.filter(k => channelIdFor(k) && isEnabled(k));
+  if (!active.length) {
+    logger.warn('[stats] НЕТ настроенных счётчиков — запусти /counters setup (или впиши STATS_*_CHANNEL_ID)');
+  } else {
+    logger.info('[stats] active:', active.map(k => `${k}->${channelIdFor(k)}`).join(', '));
+  }
   const run = async () => {
     if (running) return;
     running = true;
@@ -72,14 +149,13 @@ function startStats(client) {
 async function snapshot(client) {
   const guild = await client.guilds.fetch(config.guildId).catch(() => null);
   if (!guild) return null;
-  await guild.members.fetch().catch(() => {});
-  const bots = guild.members.cache.filter(m => m.user.bot).size;
-  const g2 = await guild.fetch().catch(() => guild);
+  const vals = await collect(guild);
   return {
-    total: guild.memberCount, humans: guild.memberCount - bots, bots,
-    boosts: g2.premiumSubscriptionCount || 0, tier: g2.premiumTier,
-    channels: g2.channels.cache.size, roles: g2.roles.cache.size,
+    total: vals.members, humans: vals.humans, bots: vals.bots,
+    roles: vals.roles, channels: vals.channels, role: vals.role,
+    online: vals.online, offline: vals.offline, presenceSeen: vals.presenceSeen,
+    boosts: vals.boosts, tier: vals.tier,
   };
 }
 
-module.exports = { startStats, snapshot, ChannelType };
+module.exports = { startStats, snapshot, TYPES, channelIdFor, channelIdsFor, templateFor, isEnabled, renderName, ChannelType };

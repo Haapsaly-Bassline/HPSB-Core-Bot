@@ -7,7 +7,7 @@ const path = require('node:path');
 
 const FILE = path.join(__dirname, '..', '..', 'data', 'store.json');
 
-const DEFAULTS = { youtube: {}, tiktok: {}, instagram: {}, site: { lastIds: [] }, releases: { ids: [] }, events: { ids: [] }, posts: { ids: [] }, modcall: {}, warns: {} };
+const DEFAULTS = { youtube: {}, tiktok: {}, instagram: {}, site: { lastIds: [] }, releases: { ids: [] }, events: { ids: [] }, posts: { ids: [] }, modcall: {}, warns: {}, statsChannels: {}, statsTemplates: {}, statsDisabled: [] };
 // warns: { userId: [{ id, mod, reason, at }] }
 
 function ensure() {

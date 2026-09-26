@@ -24,6 +24,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences, // для online/offline счётчиков (включи в Portal)
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
   ],

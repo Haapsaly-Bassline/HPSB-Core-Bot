@@ -7,10 +7,11 @@ const { logger } = require('../../utils/logger');
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function buildResource(streamUrl, { seekMs = 0, volume = 100 } = {}) {
-  // БЕЗ -analyzeduration 0: FFmpeg должен распробовать файл, иначе на кривых
-  // mp3 детектит параметры мимо и гонит белый шум. Для эфиров проба быстрая.
+  // -analyzeduration 0: FFmpeg быстро определяет параметры файла/стрима,
+  // иначе на кривых MP3 детектит параметры мимо и гонит белый шум.
   const args = [
     '-loglevel', 'error',
+    '-analyzeduration', '0',
     '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
     '-fflags', '+genpts',
   ];
@@ -26,8 +27,8 @@ function buildResource(streamUrl, { seekMs = 0, volume = 100 } = {}) {
     ff.process?.stderr?.on('data', (d) => { errTail = (errTail + d.toString()).slice(-1000); });
     ff.on('data', (d) => { stats.ffBytes += d.length; });
   } catch {}
-  ff.on('error', () => {});
-  opus.on('error', () => {});
+  ff.on('error', (e) => logger.warn('[engine] ffmpeg error', String(e).slice(0, 200)));
+  opus.on('error', (e) => logger.warn('[engine] opus error', String(e).slice(0, 200)));
   opus.on('data', (d) => {
     stats.packets++;
     stats.opusBytes += d.length;

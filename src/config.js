@@ -91,19 +91,17 @@ const config = {
     instagramBusinessId: process.env.IG_BUSINESS_ID || '',
   },
 
-  // HPSB свои сервисы: JSON первичен, RSS — фолбэк
+  // HPSB свои сервисы: ОДИН источник на ленту (формат автоопределяется)
   hpsb: {
     pollMinutes: Number(process.env.HPSB_POLL_MINUTES || process.env.SITE_API_POLL_MINUTES || 5),
     releases: {
-      apiUrl: process.env.RELEASES_API_URL || 'https://release.hpsbassline.club/api/releases',
-      rssUrl: process.env.RELEASES_RSS_URL || 'https://www.hpsbassline.club/api/feed/releases.xml',
+      feedUrl: process.env.RELEASES_FEED_URL || 'https://release.hpsbassline.club/api/releases',
       channelId: process.env.RELEASES_CHANNEL_ID || process.env.SITE_NEWS_CHANNEL_ID || '',
       baseUrl: (process.env.RELEASES_BASE_URL || 'https://release.hpsbassline.club').replace(/\/$/, ''),
       pageBase: (process.env.RELEASES_PAGE_BASE || 'https://hpsbassline.club/releases').replace(/\/$/, ''),
     },
     events: {
-      apiUrl: process.env.EVENTS_API_URL || 'https://events.hpsbassline.club/api/events',
-      rssUrl: process.env.EVENTS_RSS_URL || 'https://www.hpsbassline.club/api/feed/events.xml',
+      feedUrl: process.env.EVENTS_FEED_URL || 'https://www.hpsbassline.club/api/feed/events.xml',
       channelId: process.env.EVENTS_CHANNEL_ID || process.env.SITE_NEWS_CHANNEL_ID || '',
       pageBase: (process.env.EVENTS_PAGE_BASE || 'https://hpsbassline.club/events').replace(/\/$/, ''),
     },
@@ -120,17 +118,30 @@ const config = {
     hours: Number(process.env.ANTIRAID_HOURS || 1),
   },
 
-  // Member Count: ID каналов-счётчиков (создай голосовые, бот будет переименовывать)
+  // Member Count parity: 9 счётчиков + шаблоны {count} + on/off
   stats: {
-    intervalMin: Number(process.env.STATS_INTERVAL_MIN || 15),
+    intervalMin: Number(process.env.STATS_INTERVAL_MIN || 10),
     members: process.env.STATS_MEMBERS_CHANNEL_ID || '',
     humans: process.env.STATS_HUMANS_CHANNEL_ID || '',
     bots: process.env.STATS_BOTS_CHANNEL_ID || '',
+    roles: process.env.STATS_ROLES_CHANNEL_ID || '',
+    channels: process.env.STATS_CHANNELS_CHANNEL_ID || '',
+    role: process.env.STATS_ROLE_CHANNEL_ID || '',
+    roleId: process.env.STATS_ROLE_ID || '',
+    online: process.env.STATS_ONLINE_CHANNEL_ID || '',
+    offline: process.env.STATS_OFFLINE_CHANNEL_ID || '',
     boosts: process.env.STATS_BOOSTS_CHANNEL_ID || '',
-    membersLabel: process.env.STATS_MEMBERS_LABEL || '👥 Участники',
-    humansLabel: process.env.STATS_HUMANS_LABEL || '🧍 Люди',
-    botsLabel: process.env.STATS_BOTS_LABEL || '🤖 Боты',
-    boostsLabel: process.env.STATS_BOOSTS_LABEL || '💎 Бусты',
+    t: {
+      members: process.env.STATS_MEMBERS_TEMPLATE || '👥 Members: {count}',
+      humans: process.env.STATS_HUMANS_TEMPLATE || '🧍 Users: {count}',
+      bots: process.env.STATS_BOTS_TEMPLATE || '🤖 Bots: {count}',
+      roles: process.env.STATS_ROLES_TEMPLATE || '🎭 Roles: {count}',
+      channels: process.env.STATS_CHANNELS_TEMPLATE || '📁 Channels: {count}',
+      role: process.env.STATS_ROLE_TEMPLATE || '🎖 {count}',
+      online: process.env.STATS_ONLINE_TEMPLATE || '🟢 Online: {count}',
+      offline: process.env.STATS_OFFLINE_TEMPLATE || '⚫ Offline: {count}',
+      boosts: process.env.STATS_BOOSTS_TEMPLATE || '💎 Boosts: {count}',
+    },
   },
 
   // Автокросспост из announcement-каналов подписчикам (ID через запятую)
