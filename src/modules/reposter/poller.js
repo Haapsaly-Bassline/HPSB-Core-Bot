@@ -93,7 +93,7 @@ async function postVideo(client, channelId, { id, title, author }) {
 // Публикация одного видео с дедупом — для поллера и для PubSubHubbub.
 // channelId: YT-канал (топик). Возвращает true если реально запостили.
 async function publishYouTubeVideo(client, { videoId, title, author, channelId }) {
-  const entry = config.reporter.youtube.find(x => x.key === channelId) || config.reporter.youtube[0];
+  const entry = config.reposter.youtube.find(x => x.key === channelId) || config.reposter.youtube[0];
   if (!entry) { logger.warn('[reposter/yt] unknown channel', channelId); return false; }
   const state = store.load();
   let known = state.youtube[entry.key];

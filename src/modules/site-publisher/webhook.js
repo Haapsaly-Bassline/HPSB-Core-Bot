@@ -77,7 +77,7 @@ function startWebhook(client) {
       }
     } catch (e) { logger.warn('[pubsub]', e.message); }
   });
-  subscribeYouTube(client);
+  subscribeYouTube(client).catch(e => logger.warn('[pubsub] init failed', e.message));
 
   app.post('/hook/news', async (req, res) => {
     // Токен любым способом: body.secret, x-hpsb-secret, x-webhook-secret,
@@ -132,7 +132,7 @@ function startWebhook(client) {
 // Подписка YT-каналов на PubSubHubbub (лизы до 5 дней — обновляем раз в 4 дня)
 async function subscribeYouTube(client) {
   const base = (config.webhook.publicBase || '').replace(/\/$/, '');
-  const channels = config.reporter.youtube.map(x => x.key).filter(Boolean);
+  const channels = config.reposter.youtube.map(x => x.key).filter(Boolean);
   if (!base || !channels.length) {
     logger.info('[pubsub] skipped (no WEBHOOK_PUBLIC_BASE or YOUTUBE_MAP)');
     return;
