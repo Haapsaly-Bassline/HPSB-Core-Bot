@@ -155,6 +155,15 @@ const config = {
   // Отдельная роль для МЕДИА-постов (YT/IG/TT). Пусто = общая announceRoleId.
   mediaRoleId: process.env.MEDIA_ROLE_ID || '',
 
+  // Приватки (VoiceMaster-style): зашёл в генератор -> своя комната + панель
+  priv: {
+    generatorId: process.env.PRIV_GENERATOR_ID || '1555650624912236645',
+    categoryId: process.env.PRIV_CATEGORY_ID || '',
+    defaultLimit: Number(process.env.PRIV_DEFAULT_LIMIT || 0),
+    defaultBitrate: Number(process.env.PRIV_DEFAULT_BITRATE || 64),
+    nameTemplate: process.env.PRIV_NAME_TEMPLATE || `{user}'s room`,
+  },
+
   // Автокросспост из announcement-каналов подписчикам (ID через запятую)
   autopublish: parseIds(process.env.AUTOPUBLISH_CHANNEL_IDS),
 

@@ -46,6 +46,26 @@ async function auditGuild(client) {
   const missing = WANT_GUILD.filter(f => !me.permissions.has(f)).map(labelOf);
   if (missing.length) logger.warn('[selfcheck] missing guild perms:', missing.join(', '));
   else logger.info('[selfcheck] guild perms OK');
+  // Роли по ID: которых нет — пинги будут «неизвестными»
+  const roles = {
+    'MOD_ROLE_ID (модерация/тикеты)': config.modRoleId,
+    'ANNOUNCE_ROLE_ID (анонсы)': config.announceRoleId,
+    'MEDIA_ROLE_ID (медиа)': config.mediaRoleId || config.announceRoleId,
+  };
+  for (const [label, id] of Object.entries(roles)) {
+    if (!id) {
+      missing.push(`${label}: не задан`);
+      continue;
+    }
+    const role = await guild.roles.fetch(id).catch(() => null);
+    if (!role) {
+      missing.push(`${label}: ${id} НЕТ НА СЕРВЕРЕ`);
+      logger.warn(`[selfcheck] role missing: ${label} = ${id}`);
+    } else if (role.members.size === 0 && /ANNOUNCE|MEDIA/.test(label)) {
+      logger.warn(`[selfcheck] role empty (пинг в пустоту): ${label} = ${role.name}`);
+      missing.push(`${label}: роль пустая (${role.name}) — пинг никто не получит`);
+    }
+  }
   return { me, missing };
 }
 

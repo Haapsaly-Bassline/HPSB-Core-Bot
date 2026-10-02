@@ -26,6 +26,13 @@ module.exports = {
           if (handled) return;
         }
       }
+      // Приватки: кнопки/модалки/селекты
+      if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isUserSelectMenu())
+        && interaction.customId.startsWith('priv:')) {
+        const priv = require('../modules/private/rooms');
+        const handled = await priv.handleInteraction(interaction, client);
+        if (handled) return;
+      }
       // Buttons / modals / selects -> delegate to modcall module
       if (interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu()) {
         const modcall = require('../modules/modcall/handler');

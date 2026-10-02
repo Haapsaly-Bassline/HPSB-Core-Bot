@@ -97,8 +97,11 @@ async function handleInteraction(interaction, client) {
   // Кнопки staff: взять / закрыть. customId вида "modcall:take:<userId>" — берём ПОСЛЕДНИЙ кусок.
   if (interaction.isButton() && (interaction.customId.startsWith(BTN_TAKE) || interaction.customId.startsWith(BTN_CLOSE))) {
     const userId = interaction.customId.split(':').pop();
+    const { hasModRole } = require('../../utils/mod');
     const isAdmin = config.adminIds.includes(interaction.user.id);
-    if (!isAdmin && !interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
+    const isMod = isAdmin || hasModRole(interaction.member)
+      || interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages);
+    if (!isMod) {
       await interaction.reply({ content: '❌ Только для модерации.', flags: MessageFlags.Ephemeral });
       return true;
     }

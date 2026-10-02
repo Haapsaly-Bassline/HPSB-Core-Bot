@@ -2,8 +2,8 @@ const { PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { config } = require('../config');
 
 // true — можно модерировать; иначе сам отвечает и возвращает false.
-// Принимаем ЛЮБОЕ мод-право (а не только ManageMessages): Discord-уровень команд
-// (/ban требует BanMembers и т.д.) и так отсекает лишних, это — второй рубеж.
+// Принимаем ЛЮБОЕ мод-право + роль модерации из MOD_ROLE_ID
+// (роль Mods на сервере без прав — без этого моды не проходят).
 const MOD_PERMS = [
   PermissionFlagsBits.Administrator,
   PermissionFlagsBits.ManageGuild,
@@ -13,9 +13,17 @@ const MOD_PERMS = [
   PermissionFlagsBits.BanMembers,
 ];
 
+function hasModRole(member) {
+  try {
+    return !!config.modRoleId && !!member?.roles?.cache?.has(config.modRoleId);
+  } catch { return false; }
+}
+
 async function requireMod(interaction) {
   const perms = interaction.memberPermissions;
+  const member = interaction.member;
   const ok = config.adminIds.includes(interaction.user.id)
+    || hasModRole(member)
     || (perms ? MOD_PERMS.some(f => perms.has(f)) : false);
   if (!ok) {
     await interaction.reply({ content: '❌ Только для модерации.', flags: MessageFlags.Ephemeral }).catch(() => {});
@@ -43,4 +51,4 @@ async function modLog(client, text) {
   if (ch?.isTextBased()) ch.send(text).catch(() => {});
 }
 
-module.exports = { requireMod, resolveMember, protectedTarget, modLog };
+module.exports = { requireMod, hasModRole, resolveMember, protectedTarget, modLog };
