@@ -1,4 +1,4 @@
-// Резолвер-оркестратор: любой запрос -> [{трек с ПРЯМЫМ аудио}].
+// Резолвер-оркестратор: любой запрос -> [{трек с ПРЯМЫМ аудио}] для legacy engine.
 // Никаких мостов и магии: каждый трек знает, откуда брать байты.
 // item.stream: { type: 'direct', url } | { type: 'soundcloud', api, hls } | { type: 'preview', url }
 const axios = require('axios');
@@ -28,6 +28,25 @@ function fmtDur(ms) {
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function resolveSearchQuery(query) {
+  const value = String(query || '').trim();
+  if (!value) throw new Error('Пустой запрос');
+
+  if (/^https?:\/\//i.test(value) && DIRECT_RE.test(value)) {
+    return { engine: 'arbitrary', query: value };
+  }
+  if (/soundcloud\.com|on\.soundcloud/i.test(value)) {
+    return { engine: 'soundcloud', query: value };
+  }
+  if (/open\.spotify\.com|spotify\.com/i.test(value)) {
+    return { engine: 'spotify', query: value };
+  }
+  if (/youtube\.com|youtu\.be|bandcamp\.com/i.test(value)) {
+    return { engine: 'youtube', query: value };
+  }
+  return { engine: 'youtube', query: `ytsearch:${value}` };
 }
 
 // resolve(query) -> { kind: 'tracks'|'playlist', title?, tracks: [item] }
@@ -89,7 +108,6 @@ async function resolve(query) {
     for (const t of r.tracks.slice(0, 30)) {
       const q = sp.trackQuery(t);
       const found = await sc.search(q, 3).catch(() => []);
-      // берём лучшее совпадение по длине (эвристика против каверов)
       const best = found[0];
       if (best) {
         tracks.push({
@@ -131,4 +149,4 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'stream'; }
 }
 
-module.exports = { resolve, preflightStream, fmtDur };
+module.exports = { resolve, resolveSearchQuery, preflightStream, fmtDur };

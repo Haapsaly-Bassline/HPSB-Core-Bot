@@ -43,7 +43,7 @@ const config = {
     capsMinLen: Number(process.env.AUTOMOD_CAPS_MINLEN || 12),
     capsPct: Number(process.env.AUTOMOD_CAPS_PCT || 75),
     links: (process.env.AUTOMOD_LINKS || 'on') === 'on',
-    linkWhitelist: (process.env.AUTOMOD_LINK_WHITELIST || 'hpsbassline.club,azura.hpsbassline.club,youtube.com,youtu.be,spotify.com,soundcloud.com,bandcamp.com,audiomack.com,discord.gg,discord.com,instagram.com,tiktok.com').split(',').map(s => s.trim()).filter(Boolean),
+    linkWhitelist: (process.env.AUTOMOD_LINK_WHITELIST || 'hpsbassline.club,azura.hpsbassline.club,youtube.com,youtu.be,spotify.com,soundcloud.com,bandcamp.com,audiomack.com,discord.gg,discord.com,streamable.com,reddit.com,github.com,google.com,tiktok.com,instagram.com,twitpic.com,cdn.discordapp.com').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     invites: (process.env.AUTOMOD_INVITES || 'on') === 'on',
     badwords: (process.env.AUTOMOD_BADWORDS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     actionHours: Number(process.env.AUTOMOD_ACTION_HOURS || 1),
@@ -64,8 +64,8 @@ const config = {
     // Spotify Client ID/Secret больше не нужны (embed-скрап без ключей).
     spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
     spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
-    // Движок: hpsb (свой) | lavalink (на host PC, см. lavalink/README.md).
-    engine: process.env.MUSIC_ENGINE || 'hpsb',
+    // Движок: hpsb (свой) | lavalink (стандартный, как в Jockie/Notes 2).
+    engine: (process.env.MUSIC_ENGINE || 'lavalink').toLowerCase(),
     lavalink: {
       host: process.env.LAVALINK_HOST || '127.0.0.1',
       port: Number(process.env.LAVALINK_PORT || 2333),

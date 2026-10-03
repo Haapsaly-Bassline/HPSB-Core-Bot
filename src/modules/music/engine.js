@@ -53,10 +53,10 @@ class GuildMusic {
     this.guildId = guildId;
     this.connection = null;
     this.player = null;
-    this.queue = [];        // следующие
-    this.current = null;    // { item, startedAt, offsetMs }
-    this.prev = [];         // история (макс. 25)
-    this.loop = 0;          // 0 off, 1 track, 2 queue
+    this.queue = [];
+    this.current = null;
+    this.prev = [];
+    this.loop = 0;
     this.volume = 100;
     this.textChannel = null;
     this.radioLabel = null;
@@ -95,7 +95,6 @@ class GuildMusic {
         this.connection = null;
         throw new Error(`Не смог подключиться к войсу (статус: ${st}). Если висит на signalling — сеть режет голосовой UDP.`);
       }
-      // Сцена: слушателя не слышно — пробуем стать спикером
       if (voiceChannel.type === 13) {
         try {
           const me = voiceChannel.guild.members.me
@@ -114,7 +113,6 @@ class GuildMusic {
         this.next().catch(() => {});
       });
       this.player.on(voip.AudioPlayerStatus.Idle, () => {
-        // естественный конец трека (скип идёт через stop()+таймер, см. skip())
         if (this.current) this.next().catch(() => {});
       });
       this.connection.subscribe(this.player);
@@ -170,7 +168,6 @@ class GuildMusic {
     const skipRepeat = this._noRepeatOnce;
     this._noRepeatOnce = false;
     if (!autoplay && this.loop === 1 && this.current && !skipRepeat) {
-      // повтор трека: играем заново (история не дублируется)
       this.prev.pop();
       await this.playCurrent(0).catch((e) => this.failCurrent(e));
       return;
@@ -210,7 +207,7 @@ class GuildMusic {
 
   async skip() {
     if (!this.current) return false;
-    this.player?.stop(); // дальше сработает Idle -> next()
+    this.player?.stop();
     return true;
   }
 
@@ -268,12 +265,11 @@ class GuildMusic {
     const t = this.prev.pop();
     if (!t) return false;
     this.queue.unshift(t);
-    this._noRepeatOnce = true; // чтобы loop-track не переиграл текущий вместо возврата
-    this.player?.stop(); // Idle -> next() подхватит возвращённый трек
+    this._noRepeatOnce = true;
+    this.player?.stop();
     return true;
   }
 
-  // --- Вью для команд/NP (формы как раньше, команды не меняются) ---
   viewOf(item) {
     if (!item) return null;
     const ms = item.durationMs || 0;
@@ -334,11 +330,9 @@ class MusicEngine {
   emitTrackStart(guildId) { try { this.onTrackStart(guildId); } catch {} }
   emitQueueEnd(guildId, note) { try { this.onQueueEnd(guildId, note); } catch {} }
 
-  // Низкоуровневый play уже резолвленных айтемов
   async playItems(voiceChannel, items, { requester, textChannel, radioLabel } = {}) {
     const g = this.of(voiceChannel.guild.id);
     await g.ensureConnection(voiceChannel);
-    // ETA до добавления (как раньше)
     const waitMs = g.current
       ? Math.max((g.current.item.durationMs || 0) - g.positionMs(), 0)
         + g.queue.reduce((a, t) => a + (t.durationMs || 0), 0)

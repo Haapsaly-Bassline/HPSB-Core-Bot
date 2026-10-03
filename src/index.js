@@ -8,7 +8,6 @@ const { logger } = require('./utils/logger');
 const fs = require('node:fs');
 const path = require('node:path');
 
-// FFmpeg: берём бинарник из ffmpeg-static, чтобы войс точно его находил
 try {
   if (!process.env.FFMPEG_PATH) {
     const bin = require('ffmpeg-static');
@@ -24,7 +23,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences, // для online/offline счётчиков (включи в Portal)
+    GatewayIntentBits.GuildPresences,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
   ],
@@ -33,22 +32,41 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// --- Свой музыкальный движок (без discord-player): voice + FFmpeg + свои резолверы ---
-const { MusicEngine } = require('./modules/music/engine');
-const np = require('./modules/music/np');
-client.music = new MusicEngine(client, {
-  onTrackStart: (guildId) => {
-    try {
-      const g = client.music.of(guildId);
-      np.trackStart(client, guildId, g.textChannel);
-    } catch {}
-  },
-  onQueueEnd: (guildId, note) => {
-    try { np.finalize(client, guildId, note || 'Очередь завершена'); } catch {}
-  },
-});
+function initLegacyEngine() {
+  const { MusicEngine } = require('./modules/music/engine');
+  const np = require('./modules/music/np');
+  client.music = new MusicEngine(client, {
+    onTrackStart: (guildId) => {
+      try {
+        const g = client.music.of(guildId);
+        np.trackStart(client, guildId, g.textChannel);
+      } catch {}
+    },
+    onQueueEnd: (guildId, note) => {
+      try { np.finalize(client, guildId, note || 'Очередь завершена'); } catch {}
+    },
+  });
+  logger.info('[music] legacy hpsb-engine active');
+}
 
-// Voice self-test: сразу видно, есть ли чем играть (критично для host PC)
+function initLavalinkEngine() {
+  const { LavalinkEngine } = require('./modules/music/engine-lavalink');
+  client.music = new LavalinkEngine(client, { lavalink: config.music.lavalink });
+  client.music.init().then(() => {
+    logger.info('[music] lavalink-engine ready');
+  }).catch((err) => {
+    logger.error('[music] lavalink init failed:', err?.message || err);
+    logger.warn('[music] falling back to legacy hpsb engine');
+    initLegacyEngine();
+  });
+}
+
+if (config.music.engine === 'lavalink') {
+  initLavalinkEngine();
+} else {
+  initLegacyEngine();
+}
+
 try {
   require('@discordjs/opus');
   logger.info('[voice] opus ok');
@@ -64,10 +82,8 @@ try {
   logger.error('[voice] NO FFMPEG — звука не будет! npm install ffmpeg-static');
 }
 
-logger.info('[music] hpsb-engine ready');
-// Ошибки движка логгирует сам engine.js (player/warn). Дамп деталей — в /logs.
+logger.info('[music] engine bootstrap complete');
 
-// --- Load commands ---
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) {
   for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
@@ -77,7 +93,6 @@ if (fs.existsSync(commandsPath)) {
   logger.info(`[core] loaded ${client.commands.size} commands`);
 }
 
-// --- Load events ---
 const eventsPath = path.join(__dirname, 'events');
 if (fs.existsSync(eventsPath)) {
   for (const file of fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
@@ -87,10 +102,7 @@ if (fs.existsSync(eventsPath)) {
   }
 }
 
-// --- Modules (pollers / webhook / honeypot use events, started on ready) ---
 client.modules = {};
-// reposter + site publisher + webhook стартуют в events/ready.js чтобы client уже был залогинен
-
 process.on('unhandledRejection', (e) => logger.error('[unhandled]', e?.stack || e));
 
 client.login(config.token).catch((e) => {
