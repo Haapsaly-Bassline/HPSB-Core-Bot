@@ -1,8 +1,7 @@
 // Роутинг запросов на Lavalink-движок: любой ввод -> { engine, query }.
 // URL нода резолвит сама (LavaSrc/встроенные источники), текстовый поиск —
-// префиксом источника. Дефолт — SoundCloud: работает без ключей и IP-бана.
-// YouTube/Spotify-запросы пропускаем как есть — нода ответит понятной ошибкой,
-// пока YouTube забанен по IP (см. lavalink/application.yml).
+// префиксом источника. Дефолт — YouTube (снова работает 2026-10-04:
+// клиенты ANDROID_VR/WEB пробивают IP-бан). Если опять ляжет — верни scsearch.
 // Legacy hpsb engine УДАЛЁН (бот исключительно на lavalink): прямого скачивания
 // байтов тут больше нет.
 
@@ -46,7 +45,7 @@ function resolveSearchQuery(query) {
     const engine = detectEngine(value) || 'arbitrary';
     return { engine, query: value }; // URL резолвит сама нода
   }
-  return { engine: 'soundcloud', query: `${SEARCH_PREFIX.soundcloud}${value}` };
+  return { engine: 'youtube', query: `${SEARCH_PREFIX.youtube}${value}` };
 }
 
 module.exports = { resolveSearchQuery, SEARCH_PREFIX, detectEngine };

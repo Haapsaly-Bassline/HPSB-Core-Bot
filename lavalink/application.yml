@@ -33,7 +33,7 @@ lavalink:
     useChronicle: true                 # нужен Java 17+ (chronicle bytebuffer вне heap)
     youtubePlaylistLoadLimit: 6
     playerUpdateInterval: 5
-    youtubeSearchEnabled: false          # выкл вместе с плагином ниже (ytsearch без него некому обрабатывать)
+    youtubeSearchEnabled: true               # ТЕСТ 2026-10-04: пробуем вернуть YouTube
     soundcloudSearchEnabled: true
     httpSearchEnabled: false
     localSearchEnabled: false
@@ -55,13 +55,12 @@ lavalink:
 
 plugins:
   youtube:
-    # ВЫКЛЮЧЕН 2026-10-03: YouTube флагует домашний IP как бота
-    # ("Sign in to confirm you're not a bot" -> trackError, трек находится, но звука нет).
-    # Радио/HTTP/SoundCloud/Bandcamp/Vimeo это не затрагивает — они идут мимо YouTube.
-    enabled: false
-    allowSearch: false
-    allowDirectVideoIds: false
-    allowDirectPlaylistIds: false
+    # ТЕСТ 2026-10-04: пробуем вернуть YouTube (IP-бан). Плагин ВКЛ, клиенты расширены.
+    # Если все клиенты упрутся в "Sign in to confirm you're not a bot" — следующий шаг OAuth (блок ниже).
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
     # Как вернуть YouTube: enabled -> true, раскомментируй oauth ниже, перезапусти Lavalink,
     # пройди device-flow в консоли БЕРНЕР-аккаунтом Google (НЕ основным — есть риск бана!),
     # выданный refreshToken впиши в yml. Либо добавь клиенты WEB/ANDROID_VR в список ниже —
@@ -71,6 +70,8 @@ plugins:
     #  refreshToken: "PASTE_REFRESH_TOKEN"
     clients:
       - MUSIC
+      - ANDROID_VR
+      - WEB
       - TVHTML5_SIMPLY
   lavasrc:
     # Зеркало (Spotify/Apple/Tidal) ищет аудио по провайдерам СВЕРХУ ВНИЗ.

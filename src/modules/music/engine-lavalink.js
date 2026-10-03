@@ -24,7 +24,7 @@ function searchSource(engine, query) {
     case 'yandex': return `ymsearch:${q}`;
     case 'vk': return `vksearch:${q}`;
     case 'audiomack': return q; // URL уже прошёл выше; текста без префикса у audiomack нет
-    default: return `scsearch:${q}`; // дефолт — SoundCloud (YouTube забанен по IP)
+    default: return `ytsearch:${q}`; // дефолт — YouTube (работает с 2026-10-04)
   }
 }
 
@@ -278,7 +278,7 @@ function searchParamSource(engine, q) {
     case 'qobuz': return 'qbsearch';
     case 'yandex': return 'ymsearch';
     case 'vk': return 'vksearch';
-    default: return 'scsearch'; // дефолт — SoundCloud (YouTube забанен по IP)
+    default: return 'ytsearch'; // дефолт — YouTube (работает с 2026-10-04)
   }
 }
 
