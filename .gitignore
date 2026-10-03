@@ -9,3 +9,6 @@ data/bot.err.log
 # В репо едут только application.yml + README.md. Скачать: см. lavalink/README.md.
 lavalink/*.jar
 lavalink/plugins/
+# Куки YouTube-аккаунта (доступ к аккаунту!): только локально, никогда в git.
+lavalink/*cookies*.txt
+lavalink/cookies.txt

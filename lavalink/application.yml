@@ -56,12 +56,13 @@ lavalink:
 
 plugins:
   youtube:
-    # ТЕСТ 2026-10-04: пробуем вернуть YouTube (IP-бан). Плагин ВКЛ, клиенты расширены.
-    # Если все клиенты упрутся в "Sign in to confirm you're not a bot" — следующий шаг OAuth (блок ниже).
+    # СХЕМА 2026-10-04: поиск/метаданные — плагин; ПРЯМЫЕ ССЫЛКИ — ytdlp с куками бернера
+    # (allowDirect* выкл: плагин пропускает URL, их забирает ytdlp — иначе все ссылки
+    # резолвит плагин и упираются в login/bot-check на ПРОИГРЫВАНИИ).
     enabled: true
     allowSearch: true
-    allowDirectVideoIds: true
-    allowDirectPlaylistIds: true
+    allowDirectVideoIds: false
+    allowDirectPlaylistIds: false
     # Как вернуть YouTube: enabled -> true, раскомментируй oauth ниже, перезапусти Lavalink,
     # пройди device-flow в консоли БЕРНЕР-аккаунтом Google (НЕ основным — есть риск бана!),
     # выданный refreshToken впиши в yml. Либо добавь клиенты WEB/ANDROID_VR в список ниже —
@@ -97,10 +98,9 @@ plugins:
       tidal: false                       # ВЫКЛ до токена (плейсхолдер может крашить старт).
                                          # Впиши token ниже и ставь true; звук — зеркалом.
       qobuz: false                       # ВЫКЛ до токена. Впиши userOauthToken ниже и ставь true (Direct).
-      ytdlp: false                        # ВЫКЛ: в LavaSrc 4.8.3 это ТОЛЬКО YouTube через yt-dlp
-                                         # (SEARCH_PREFIX=ytsearch, URL-паттерны лишь youtube.com/youtu.be).
-                                         # Audiomack он НЕ даёт, а ytsearch может увести у youtube-плагина.
-                                         # Оставлено на случай, если youtube-плагин снова умрёт.
+      ytdlp: true                         # ВКЛ 2026-10-04: забирает ПРЯМЫЕ YT-ссылки (плагин их пропускает,
+                                         # см. allowDirect* выше) и играет через yt-dlp с куками бернера.
+                                         # Текстовый поиск остаётся на плагине. Audiomack НЕ даёт (только YouTube).
       flowerytts: false                  # TTS-озвучка текста, не музыка
       jiosaavn: false                    # нужен свой secretKey
       youtube: false                     # LavaSearch-поиск по YouTube (мёртв без youtube-плагина)
@@ -140,9 +140,12 @@ plugins:
       # Токен: https://github.com/topi314/LavaSrc#qobuz
       userOauthToken: "PASTE_QOBUZ_TOKEN"
     ytdlp:
-      # Абсолютный путь: голый "yt-dlp" (WinGet-шим) Java может не резолвить.
+      # Куки бернера (залогиненная сессия пробивает login-required и бот-чек).
+      # Файл ТОЛЬКО локально (gitignore), протухает — переэкспортить из браузера.
       path: "C:/Users/Host-PC/AppData/Local/Microsoft/WinGet/Links/yt-dlp.exe"
       searchLimit: 10
+      customLoadArgs: ["--cookies", "J:/DESKROP/HPSB-Core-Bot/lavalink/cookies.txt", "-q", "--no-warnings", "--flat-playlist", "--skip-download", "-J"]
+      customPlaybackArgs: ["--cookies", "J:/DESKROP/HPSB-Core-Bot/lavalink/cookies.txt", "-q", "--no-warnings", "-f", "bestaudio", "-J"]
 
 logging:
   level:

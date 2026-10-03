@@ -51,7 +51,7 @@
 | Spotify (ссылки + `spsearch:`) | ⚠️ метаданные да, звук нет | звук — зеркалом через Deezer или YouTube (оба пока недоступны) |
 | Deezer | ⏳ ждёт токены | `arl` (cookie deezer.com) + `masterDecryptionKey`; как только появятся — звук появится и у Spotify |
 | Apple Music / Tidal / Qobuz | ⏳ ждут токены | блоки уже разведены в yml, включи `sources.*: true` после вставки токена |
-| YouTube | ✅ работает (2026-10-04) | клиенты MUSIC + ANDROID_VR + WEB + TVHTML5_SIMPLY пробили IP-бан; если снова ляжет — OAuth бернер-аккаунта (инструкция в `application.yml`) |
+| YouTube | ⚠️ частично (2026-10-04) | Поиск/метаданные — плагин. Прямые ссылки — ytdlp с куками бернера (`cookies.txt` локально, в git не едет). Текстовый поиск unrestricted-видео играет; login-required — только по ссылкам через ytdlp. Полный возврат — OAuth уже включён (TV-клиент). |
 | Yandex / VK | ❌ не выбраны | `yandexmusic: true` + accessToken / `vkmusic: true` + userToken |
 | Audiomack | ❌ нужен yt-dlp | `winget install yt-dlp`, затем `ytdlp: true` в yml |
 
