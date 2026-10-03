@@ -1,5 +1,5 @@
 # Lavalink для HPSB Core Bot — включается на host PC.
-# Сейчас бот работает на discord-player (MUSIC_ENGINE=discord-player).
+# Бот исключительно на lavalink (MUSIC_ENGINE=lavalink в .env бота).
 # На host PC: Java 17+ -> java -jar Lavalink.jar -> MUSIC_ENGINE=lavalink
 #
 # Взять свежий Lavalink.jar (v4): https://github.com/lavalink-devs/Lavalink/releases
@@ -16,7 +16,8 @@ lavalink:
     # Тот же пароль впиши в .env -> LAVALINK_PASSWORD
     password: "hpsb-lavalink-change-me"
     sources:
-      youtube: false                 # выкл: YouTube идёт через плагин ниже
+      youtube: false                # ОБЯЗАТЕЛЬНО false: встроенный источник deprecated и перехватывает
+                                    # ytsearch: у плагина (400 от YouTube). Плагин — ниже, отдельно.
       bandcamp: true
       soundcloud: true
       twitch: false
@@ -112,8 +113,6 @@ plugins:
       lrcLib: false
     spotify:
       preferAnonymousToken: false
-      # Ключи НЕ коммитим (иначе утекут в GitHub): возьми из .env бота (SPOTIFY_*)
-      # и впиши ЛОКАЛЬНО после git pull. Без них spsearch/Spotify-ссылки не резолвятся.
       # Ключи НЕ коммитим (иначе утекут в GitHub): возьми из .env бота (SPOTIFY_*)
       # и впиши ЛОКАЛЬНО после git pull. Без них spsearch/Spotify-ссылки не резолвятся.
       clientId: "PASTE_SPOTIFY_CLIENT_ID"
