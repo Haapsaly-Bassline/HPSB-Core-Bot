@@ -40,3 +40,30 @@
 - Spotify по ISRC — точные совпадения вместо «похожего»
 - Плейлисты, поиск `ytsearch:`/`scsearch:`, очередь и фильтры — как у Jockie
 - Бот переживает рестарт Lavalink (переподключение), звук не зависит от сети бота
+
+## Матрица источников (2026-10-04, проверено живьём)
+
+Бот работает ИСКЛЮЧИТЕЛЬНО на lavalink (legacy-движок удалён из кода).
+
+| Источник | Статус | Что нужно |
+|---|---|---|
+| SoundCloud / Bandcamp / Vimeo / HTTP-радио | ✅ работают | ничего |
+| Spotify (ссылки + `spsearch:`) | ⚠️ метаданные да, звук нет | звук — зеркалом через Deezer или YouTube (оба пока недоступны) |
+| Deezer | ⏳ ждёт токены | `arl` (cookie deezer.com) + `masterDecryptionKey`; как только появятся — звук появится и у Spotify |
+| Apple Music / Tidal / Qobuz | ⏳ ждут токены | блоки уже разведены в yml, включи `sources.*: true` после вставки токена |
+| YouTube | ❌ IP-бан | только OAuth бернер-аккаунта (инструкция в `application.yml`) |
+| Yandex / VK | ❌ не выбраны | `yandexmusic: true` + accessToken / `vkmusic: true` + userToken |
+| Audiomack | ❌ нужен yt-dlp | `winget install yt-dlp`, затем `ytdlp: true` в yml |
+
+Гайды по токенам: https://github.com/topi314/LavaSrc#configuration
+(разделы Spotify / Apple Music / Deezer / Tidal / Qobuz).
+
+## Старт Lavalink (рекомендуемая строка)
+
+```powershell
+java -Djava.net.preferIPv4Stack=true -jar Lavalink.jar
+```
+
+`preferIPv4Stack` — потому что у провайдера висит IPv6 (таймауты вместо отказа),
+Java в отличие от Node не умеет Happy Eyeballs: без флага редкие запросы
+(например в Spotify API) падают с `Read timed out`. Проверено в логах.

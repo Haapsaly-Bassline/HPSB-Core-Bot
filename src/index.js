@@ -32,40 +32,12 @@ const client = new Client({
 
 client.commands = new Collection();
 
-function initLegacyEngine() {
-  const { MusicEngine } = require('./modules/music/engine');
-  const np = require('./modules/music/np');
-  client.music = new MusicEngine(client, {
-    onTrackStart: (guildId) => {
-      try {
-        const g = client.music.of(guildId);
-        np.trackStart(client, guildId, g.textChannel);
-      } catch {}
-    },
-    onQueueEnd: (guildId, note) => {
-      try { np.finalize(client, guildId, note || 'Очередь завершена'); } catch {}
-    },
-  });
-  logger.info('[music] legacy hpsb-engine active');
-}
-
-function initLavalinkEngine() {
-  const { LavalinkEngine } = require('./modules/music/engine-lavalink');
-  client.music = new LavalinkEngine(client, { lavalink: config.music.lavalink });
-  client.music.init().then(() => {
-    logger.info('[music] lavalink-engine ready');
-  }).catch((err) => {
-    logger.error('[music] lavalink init failed:', err?.message || err);
-    logger.warn('[music] falling back to legacy hpsb engine');
-    initLegacyEngine();
-  });
-}
-
-if (config.music.engine === 'lavalink') {
-  initLavalinkEngine();
-} else {
-  initLegacyEngine();
-}
+// Бот работает ИСКЛЮЧИТЕЛЬНО на Lavalink (legacy hpsb engine удалён).
+// client.music поднимается в ready.js (нужен client.user.id); до ready музыки нет —
+// команды честно ответят "Music engine не инициализирован".
+client.music = null;
+client.lavalink = null;
+logger.info('[music] lavalink-only mode (init deferred until ready)');
 
 try {
   require('@discordjs/opus');

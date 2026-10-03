@@ -1,6 +1,11 @@
 node_modules/
 .env
+.env.bak
 data/*.json
 data/bot.log
 data/bot.err.log
 !data/.gitkeep
+# Lavalink-бинарники: 100МБ+ jar GitHub отклонит, плагины докачиваются сами.
+# В репо едут только application.yml + README.md. Скачать: см. lavalink/README.md.
+lavalink/*.jar
+lavalink/plugins/

@@ -64,7 +64,7 @@ function checkVoice() {
 
 function checkLavalink() {
   return new Promise((resolve) => {
-    if (config.music.engine !== 'lavalink') { resolve(['⚪ lavalink: выкл (hpsb-engine)']); return; }
+    if (config.music.engine !== 'lavalink') { resolve(['⚪ lavalink: выкл (legacy удалён — поставь MUSIC_ENGINE=lavalink)']); return; }
     const { host, port } = config.music.lavalink;
     const sock = net.connect({ host, port, timeout: 5000 }, () => {
       sock.destroy();
@@ -81,10 +81,14 @@ function checkEnv() {
     const keys = [...ex.matchAll(/^([A-Z][A-Z0-9_]+)=/gm)].map(m => m[1]);
     const missing = keys.filter(k => !process.env[k]);
     // необязательные не считаем проблемой
+    // Пустой ID = фича выключена (счётчик/категория/маппинг не настроены) — это валидное состояние, не ошибка.
     const optional = new Set(['WEBHOOK_SECRET', 'WEBHOOK_NEWS_CHANNEL_ID', 'SITE_API_URL', 'SITE_API_KEY',
       'SITE_NEWS_CHANNEL_ID', 'HONEYPOT_BANNER_URL', 'YT_API_KEY', 'IG_GRAPH_TOKEN', 'IG_BUSINESS_ID',
-      'IG_CSRFTOKEN', 'IG_DID', 'AUTOMOD_BADWORDS', 'SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET',
-      'DISCORD_CLIENT_SECRET', 'LOG_CHANNEL_ID', 'TIKTOK_MAP', 'SESSION_SECRET']);
+      'IG_CSRFTOKEN', 'IG_DID', 'IG_SESSIONID', 'AUTOMOD_BADWORDS', 'SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET',
+      'DISCORD_CLIENT_SECRET', 'LOG_CHANNEL_ID', 'TIKTOK_MAP', 'INSTAGRAM_MAP', 'SESSION_SECRET',
+      'PRIV_CATEGORY_ID', 'STATS_MEMBERS_CHANNEL_ID', 'STATS_HUMANS_CHANNEL_ID', 'STATS_BOTS_CHANNEL_ID',
+      'STATS_ROLES_CHANNEL_ID', 'STATS_CHANNELS_CHANNEL_ID', 'STATS_ROLE_CHANNEL_ID', 'STATS_ROLE_ID',
+      'STATS_ONLINE_CHANNEL_ID', 'STATS_OFFLINE_CHANNEL_ID', 'STATS_BOOSTS_CHANNEL_ID']);
     const need = missing.filter(k => !optional.has(k));
     if (!need.length) return ['✅ .env полный'];
     return [`❌ В .env пусто: ${need.join(', ')}`];

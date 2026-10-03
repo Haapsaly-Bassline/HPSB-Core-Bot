@@ -8,15 +8,22 @@ module.exports = {
   async execute(client) {
     logger.info(`[ready] Logged in as ${client.user.tag}`);
 
-    // Lavalink — только ПОСЛЕ ready: client.user существует, так требует lavalink-client
+    // Lavalink — только ПОСЛЕ ready: client.user существует, так требует lavalink-client.
+    // Бот исключительно на lavalink: legacy-фолбэка больше нет. Не поднялся — музыка
+    // недоступна, команды отвечают "Music engine не инициализирован".
     if (config.music.engine === 'lavalink') {
       try {
         const { LavalinkEngine } = require('../modules/music/engine-lavalink');
-        client.lavalink = await new LavalinkEngine(client, config.music).init();
-        logger.info('[lavalink] ready');
+        const engine = await new LavalinkEngine(client, config.music).init();
+        client.music = engine;
+        client.lavalink = engine;
+        logger.info('[lavalink] ready (client.music = lavalink)');
       } catch (e) {
-        logger.error('[lavalink] init failed:', e?.stack || e);
+        logger.error('[lavalink] init failed:', e?.message || e?.stack || e);
+        logger.error('[lavalink] музыка НЕДОСТУПНА: проверь LAVALINK_* в .env и что запущен java -jar Lavalink.jar');
       }
+    } else {
+      logger.error(`[music] MUSIC_ENGINE=${config.music.engine} больше не поддерживается — legacy удалён, поставь lavalink`);
     }
 
     // Start pollers lazily so index stays lean

@@ -4,8 +4,8 @@ const music = require('../modules/music/service');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Play: SoundCloud / Spotify / Bandcamp / прямые mp3 / радио')
-    .addStringOption(o => o.setName('query').setDescription('Название, ссылка SC/Spotify/Bandcamp или прямая mp3').setRequired(true))
+    .setDescription('Play: текст / SoundCloud / Spotify / Deezer / Apple / Tidal / Qobuz / Bandcamp / mp3 / радио')
+    .addStringOption(o => o.setName('query').setDescription('Название, ссылка на трек/плейлист или прямая mp3').setRequired(true))
     .addChannelOption(o => o.setName('channel').setDescription('Войс-канал (по умолчанию твой)').setRequired(false)),
   async execute(interaction, client) {
     const query = interaction.options.getString('query', true);
@@ -30,42 +30,39 @@ module.exports = {
     } catch {}
 
     try {
-      const { addedTrackEmbed } = require('../utils/embeds');
+      const { addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed } = require('../utils/embeds');
       const res = await music.play(client, voiceChannel, query, {
         requester: interaction.user,
         textChannel: interaction.channel,
       });
 
       if (res.kind === 'playlist') {
-        const pl = res.playlist;
-        await interaction.editReply(
-          `📃 Плейлист **${pl.title}** (${pl.author || ''}) — добавлено треков: **${pl.count}**.\n${pl.url || ''}`
+        const emb = playlistAddedEmbed(
+          { title: res.playlist.title, count: res.playlist.count, first: res.track },
+          interaction.user,
         );
+        await interaction.editReply({ embeds: [emb] });
         return;
       }
-      if (res.kind === 'bandcamp') {
-        const a = res.album;
-        await interaction.editReply(
-          `💿 **Bandcamp:** ${a.title || ''} — ${a.artist || ''}\n` +
-          `Треков в очереди: **${a.count}**\n` +
-          a.tracks.slice(0, 8).map((t, i) => `${i + 1}. ${t}`).join('\n')
+      // Прямой эфир/радио через /play (mp3-ссылка): оверлей LIVE вместо длительности
+      if (res.track.isLive) {
+        const emb = liveAddedEmbed(
+          { label: res.track.title, url: res.track.url, source: res.track.source },
+          interaction.user,
         );
+        await interaction.editReply({ embeds: [emb] });
         return;
       }
       const emb = addedTrackEmbed(
         {
           title: res.track.title, url: res.track.url, author: res.track.author,
           thumbnail: res.track.thumbnail, duration: res.track.durationLabel,
+          source: res.track.source,
         },
         res.position, interaction.user,
         res.waitMs, res.nextTitle,
       );
-      if (res.viaFallback) {
-        await interaction.editReply(`🔎 Прямая ссылка не открылась, включил через поиск: «${String(res.viaFallback).slice(0, 100)}»`);
-        await interaction.followUp({ embeds: [emb] });
-      } else {
-        await interaction.editReply({ embeds: [emb] });
-      }
+      await interaction.editReply({ embeds: [emb] });
     } catch (e) {
       await interaction.editReply(`❌ Не смог включить: ${String(e.message || e).slice(0, 300)}`);
     }

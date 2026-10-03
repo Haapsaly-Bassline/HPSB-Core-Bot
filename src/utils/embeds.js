@@ -83,11 +83,14 @@ function nowPlayingEmbed(track, queue, requester) {
 }
 
 // --- Jockie-style: Added Track ---
-function addedTrackEmbed(track, position, requester, eta, nextTitle) {
+// track: { title, url, author, thumbnail, duration, source }
+// source: короткий код источника (spotify/soundcloud/deezer/…/http) — покажем бейдж.
+function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
   const { fmtMs } = require('./music');
+  const badge = sourceBadge(source || track.source);
   const e = new EmbedBuilder()
     .setColor(0x5865f2)
-    .setTitle('➕ Added Track')
+    .setTitle(`➕ Added Track${badge ? ` • ${badge}` : ''}`)
     .setDescription(`Track\n${trackLink(track)}\n${track.author || ''}`.slice(0, 4000))
     .setTimestamp();
   if (track.thumbnail) e.setThumbnail(track.thumbnail);
@@ -102,6 +105,50 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle) {
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
   e.setFooter({ text: 'Haapsaly Bassline • Music' });
   return e;
+}
+
+// --- Плейлист/альбом добавлен: единый оверлей вместо plain-text ---
+function playlistAddedEmbed({ title, count, first, source }, requester) {
+  const badge = sourceBadge(source || first?.source);
+  const e = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle(`📃 Playlist added${badge ? ` • ${badge}` : ''}`)
+    .setDescription(
+      `**${String(title || 'playlist').slice(0, 300)}**\n` +
+      `Треков добавлено: **${count}**` +
+      (first?.title ? `\nПервый: ${trackLink(first)}` : '')
+    ).setTimestamp();
+  if (first?.thumbnail) e.setThumbnail(first.thumbnail);
+  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
+  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  return e;
+}
+
+// --- Радио/прямой эфир: единый оверлей вместо plain-text ---
+function liveAddedEmbed({ label, url, source }, requester) {
+  const e = new EmbedBuilder()
+    .setColor(0xef4444)
+    .setTitle('📻 Live / Radio')
+    .setDescription(
+      `**${String(label || 'Stream').slice(0, 300)}**\n` +
+      `🔴 LIVE${source && source !== 'http' ? ` • ${sourceBadge(source)}` : ''}` +
+      (url ? `\n${url}` : '')
+    ).setTimestamp();
+  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
+  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  return e;
+}
+
+// Бейдж источника для оверлеев. Пусто = не показываем.
+const SOURCE_BADGES = {
+  spotify: '🟢 Spotify', soundcloud: '🟠 SoundCloud', deezer: '🟣 Deezer',
+  applemusic: '🍎 Apple Music', tidal: '⬛ Tidal', qobuz: '🔵 Qobuz',
+  yandex: '🟡 Yandex', vk: '🔷 VK', youtube: '🔴 YouTube',
+  bandcamp: '💿 Bandcamp', vimeo: '🎬 Vimeo', twitch: '🟪 Twitch',
+  http: '🌐 HTTP', arbitrary: '🌐 Stream',
+};
+function sourceBadge(source) {
+  return SOURCE_BADGES[String(source || '').toLowerCase()] || '';
 }
 
 // Пинг роли для объявлений (медиа + анонсы). Пусто = без пинга.
@@ -132,7 +179,7 @@ function renderTpl(tpl, vars = {}, roleOverride) {
     .trim();
 }
 
-module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
+module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
 
 // --- Мод-действие: единый красивый вывод (и в чат, и в лог) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge

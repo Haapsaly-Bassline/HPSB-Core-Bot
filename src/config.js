@@ -61,10 +61,10 @@ const config = {
   },
 
   music: {
-    // Spotify Client ID/Secret больше не нужны (embed-скрап без ключей).
+    // Ключи дублируются в lavalink/application.yml (LavaSrc-Spotify). Бот читает их оттуда через ноду.
     spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
     spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
-    // Движок: hpsb (свой) | lavalink (стандартный, как в Jockie/Notes 2).
+    // Движок один — lavalink. Legacy hpsb engine удалён (бот исключительно на lavalink).
     engine: (process.env.MUSIC_ENGINE || 'lavalink').toLowerCase(),
     lavalink: {
       host: process.env.LAVALINK_HOST || '127.0.0.1',

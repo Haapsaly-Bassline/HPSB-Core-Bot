@@ -52,6 +52,16 @@ async function auditGuild(client) {
     'ANNOUNCE_ROLE_ID (анонсы)': config.announceRoleId,
     'MEDIA_ROLE_ID (медиа)': config.mediaRoleId || config.announceRoleId,
   };
+  // role.members читается из КЭША участников — на старте он почти пуст,
+  // без прогрева проверка "роль пустая" ложно срабатывает. Греем полным fetch
+  // (нужен привилегированный Server Members Intent в Dev Portal + GuildMembers в index.js).
+  let cacheWarmed = false;
+  try {
+    await guild.members.fetch();
+    cacheWarmed = true;
+  } catch (e) {
+    logger.warn('[selfcheck] не смог прогреть кэш участников — проверку пустых ролей пропускаю (включи Server Members Intent в Dev Portal):', e.message);
+  }
   for (const [label, id] of Object.entries(roles)) {
     if (!id) {
       missing.push(`${label}: не задан`);
@@ -62,6 +72,7 @@ async function auditGuild(client) {
       missing.push(`${label}: ${id} НЕТ НА СЕРВЕРЕ`);
       logger.warn(`[selfcheck] role missing: ${label} = ${id}`);
     } else if (role.members.size === 0 && /ANNOUNCE|MEDIA/.test(label)) {
+      if (!cacheWarmed) continue; // кэш не прогрет — молчим, чтобы не врать
       logger.warn(`[selfcheck] role empty (пинг в пустоту): ${label} = ${role.name}`);
       missing.push(`${label}: роль пустая (${role.name}) — пинг никто не получит`);
     }

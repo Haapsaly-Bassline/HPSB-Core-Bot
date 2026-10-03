@@ -44,7 +44,7 @@ module.exports = {
         { name: 'Код от', value: codeDate(), inline: true },
         { name: 'Node', value: process.version, inline: true },
         { name: 'Аптайм', value: uptimeStr(process.uptime() * 1000), inline: true },
-        { name: 'Муз-движок', value: `hpsb-engine (свой)${config.music.engine === 'lavalink' ? ' + lavalink ' + (client.lavalink ? 'подключён' : 'флаг on') : ''}`, inline: false },
+        { name: 'Муз-движок', value: `lavalink${client.lavalink ? ' (подключён)' : ' (флаг on, нода недоступна)'}`, inline: false },
         { name: 'Очередь сейчас', value: now, inline: false },
       )
       .setFooter({ text: 'Haapsaly Bassline' });

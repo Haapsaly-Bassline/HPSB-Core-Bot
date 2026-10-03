@@ -8,13 +8,23 @@ const { logger } = require('../../utils/logger');
 const LOOP_MAP = { 0: 'off', 1: 'track', 2: 'queue' };
 const LOOP_BACK = { off: 0, track: 1, queue: 2 };
 
-// источник поиска Lavalink по нашему движку
+// источник поиска Lavalink по нашему движку.
+// URL и готовые префиксы (dzsearch:, spsearch: …) уходят ноде как есть.
+const KNOWN_PREFIXES = /^(ytsearch|ytmsearch|scsearch|spsearch|dzsearch|dzisrc|amsearch|tdsearch|qbsearch|qbisrc|ymsearch|vksearch):/i;
 function searchSource(engine, query) {
-  if (/^https?:\/\//i.test(query || '')) return query; // URL резолвит нода сама
+  const q = String(query || '');
+  if (/^https?:\/\//i.test(q) || KNOWN_PREFIXES.test(q)) return q;
   switch (engine) {
-    case 'soundcloud': return `scsearch:${query}`;
-    case 'spotify': return `spsearch:${query}`;
-    default: return `ytsearch:${query}`;
+    case 'soundcloud': return `scsearch:${q}`;
+    case 'spotify': return `spsearch:${q}`;
+    case 'deezer': return `dzsearch:${q}`;
+    case 'applemusic': return `amsearch:${q}`;
+    case 'tidal': return `tdsearch:${q}`;
+    case 'qobuz': return `qbsearch:${q}`;
+    case 'yandex': return `ymsearch:${q}`;
+    case 'vk': return `vksearch:${q}`;
+    case 'audiomack': return q; // URL уже прошёл выше; текста без префикса у audiomack нет
+    default: return `scsearch:${q}`; // дефолт — SoundCloud (YouTube забанен по IP)
   }
 }
 
@@ -26,14 +36,33 @@ class LavalinkEngine {
   }
 
   async init() {
-    const { host, port, password, secure } = this.cfg.lavalink;
+    if (!this.client.user) {
+      throw new Error('[lavalink] client.user ещё null — init() можно вызывать только ПОСЛЕ ready (client ready event)');
+    }
+    const lav = this.cfg.lavalink || {};
+    const host = String(lav.host || '').trim();
+    const port = Number(lav.port);
+    const password = String(lav.password ?? '');
+    const secure = !!lav.secure;
+    if (!host) {
+      throw new Error('[lavalink] LAVALINK_HOST пуст — впиши в .env (обычно 127.0.0.1)');
+    }
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+      throw new Error(`[lavalink] LAVALINK_PORT кривой (${lav.port}) — впиши в .env (обычно 2333)`);
+    }
+    if (!password.length) {
+      // lavalink-client в этом случае кидает криптичное
+      // "ManagerOption.nodes must be an Array...", поэтому валидируем сами с понятным текстом.
+      throw new Error('[lavalink] LAVALINK_PASSWORD пуст — впиши в .env тот же пароль, что в lavalink/application.yml -> lavalink.server.password');
+    }
     this.manager = new LavalinkManager({
-      nodes: [{ host, port, authorization: password, secure, id: 'hpsb-main', regions: ['europe'] }],
+      nodes: [{ host, port, authorization: password, secure, id: 'hpsb-main' }],
       sendToShard: (guildId, payload) => {
         const guild = this.client.guilds.cache.get(guildId);
         if (guild?.shard) guild.shard.send(payload);
       },
-      client: { id: this.client.user.id, username: this.client.user.tag },
+      // client.id подставим в init() ниже — в конструкторе user может быть ещё null
+      client: { id: this.client.user.id, username: this.client.user.username || this.client.user.tag },
       autoSkip: true,
       autoSkipOnResolveError: true,
     });
@@ -56,7 +85,7 @@ class LavalinkEngine {
       logger.warn('[lavalink] trackStuck', track?.info?.title || '');
     });
 
-    await this.manager.init(this.client.user);
+    await this.manager.init({ id: this.client.user.id, username: this.client.user.username || this.client.user.tag });
     logger.info('[lavalink] engine ready');
     return this;
   }
@@ -199,7 +228,11 @@ function fmtDur(ms) {
 
 function infoOf(t) {
   const info = t?.info || t || {};
-  return { title: info.title || 'Unknown', author: info.author || '', url: info.uri || info.url || '', duration: info.isStream ? 'LIVE' : fmtDur(info.length) };
+  return {
+    title: info.title || 'Unknown', author: info.author || '', url: info.uri || info.url || '',
+    duration: info.isStream ? 'LIVE' : fmtDur(info.length),
+    source: normSource(info.sourceName || info.source || t?.source || ''),
+  };
 }
 
 function infoMs(t) {
@@ -210,7 +243,28 @@ function infoMs(t) {
     url: info.uri || info.url || '', thumbnail: info.artworkUrl || info.thumbnail || '',
     durationMs: ms, durationLabel: info.isStream || ms <= 0 ? 'LIVE' : fmtDur(ms),
     requesterTag: null, isLive: !!info.isStream || ms <= 0,
+    source: normSource(info.sourceName || info.source || t?.source || ''),
   };
+}
+
+// Lavalink sourceName -> короткий код источника для бейджей оверлея
+function normSource(s) {
+  const v = String(s || '').toLowerCase();
+  if (!v) return '';
+  if (v.includes('spotify')) return 'spotify';
+  if (v.includes('apple')) return 'applemusic';
+  if (v.includes('deezer')) return 'deezer';
+  if (v.includes('tidal')) return 'tidal';
+  if (v.includes('qobuz')) return 'qobuz';
+  if (v.includes('yandex')) return 'yandex';
+  if (v.includes('vk')) return 'vk';
+  if (v.includes('soundcloud')) return 'soundcloud';
+  if (v.includes('bandcamp')) return 'bandcamp';
+  if (v.includes('vimeo')) return 'vimeo';
+  if (v.includes('twitch')) return 'twitch';
+  if (v.includes('youtube') || v.includes('yt-')) return 'youtube';
+  if (v === 'http' || v.includes('http')) return 'http';
+  return v.slice(0, 24);
 }
 
 module.exports = { LavalinkEngine };

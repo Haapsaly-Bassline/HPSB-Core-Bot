@@ -40,13 +40,14 @@ module.exports = {
     const url = custom || st.url;
     const label = custom || st.name;
     try {
+      const { liveAddedEmbed } = require('../utils/embeds');
       await music.play(client, voiceChannel, url, {
         requester: interaction.user,
         textChannel: interaction.channel,
         engine: 'arbitrary',
         radioLabel: label,
       });
-      await interaction.editReply(`📻 Включено: **${label}**`);
+      await interaction.editReply({ embeds: [liveAddedEmbed({ label, url, source: 'http' }, interaction.user)] });
     } catch (e) {
       await interaction.editReply(`❌ Не смог включить радио: ${String(e.message || e).slice(0, 300)}`);
     }

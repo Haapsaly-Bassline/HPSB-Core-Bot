@@ -9,18 +9,24 @@ const music = require('./service');
 const UPDATE_SECS = Math.max(5, Number(process.env.NP_UPDATE_SECS || 10));
 const sessions = new Map(); // guildId -> { channelId, messageId, timer }
 
+const { sourceBadge } = require('../../utils/embeds');
+
 function buildEmbed(snap) {
   const t = snap.track;
+  const badge = sourceBadge(t.source);
   const linked = /^https?:\/\//i.test(t.url || '') ? `[${t.title}](${t.url})` : `**${t.title}**`;
+  const head = snap.radioLabel ? `📻 **${String(snap.radioLabel).slice(0, 200)}**\n` : '';
   const e = new EmbedBuilder()
-    .setColor(0x57f287)
-    .setTitle('Now Playing')
-    .setDescription(`${linked}\n${t.author || ''}`.slice(0, 3500))
+    .setColor(snap.radioLabel || t.isLive ? 0xef4444 : 0x57f287)
+    .setTitle(snap.radioLabel ? '📻 Live / Radio' : `Now Playing${badge ? ` • ${badge}` : ''}`)
+    .setDescription(`${head}${linked}\n${snap.radioLabel || t.author || ''}`.slice(0, 3500))
     .setTimestamp();
   if (t.thumbnail) e.setThumbnail(t.thumbnail);
   const left = snap.durationMs > 0 ? fmtMs(snap.positionMs) : 'LIVE';
   const right = snap.durationMs > 0 ? fmtMs(snap.durationMs) : t.durationLabel || 'LIVE';
   e.addFields({ name: '​', value: `\`${left}\` ${progressBar(snap.positionMs, snap.durationMs, 18)} \`${right}\`` });
+  if ((snap.size ?? 0) > 0) e.addFields({ name: '📋 В очереди', value: String(snap.size), inline: true });
+  if (badge && snap.radioLabel) e.addFields({ name: 'Источник', value: badge, inline: true });
   e.setFooter({ text: t.requesterTag ? `Requested by ${t.requesterTag}` : 'Haapsaly Bassline • Music' });
   return e;
 }
@@ -128,4 +134,4 @@ async function handleButton(interaction, client) {
   return true;
 }
 
-module.exports = { trackStart, render, finalize, handleButton };
+module.exports = { trackStart, render, finalize, handleButton, buildEmbed };
