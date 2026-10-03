@@ -107,6 +107,8 @@ plugins:
       preferAnonymousToken: false
       # Ключи НЕ коммитим (иначе утекут в GitHub): возьми из .env бота (SPOTIFY_*)
       # и впиши ЛОКАЛЬНО после git pull. Без них spsearch/Spotify-ссылки не резолвятся.
+      # Ключи НЕ коммитим (иначе утекут в GitHub): возьми из .env бота (SPOTIFY_*)
+      # и впиши ЛОКАЛЬНО после git pull. Без них spsearch/Spotify-ссылки не резолвятся.
       clientId: "PASTE_SPOTIFY_CLIENT_ID"
       clientSecret: "PASTE_SPOTIFY_CLIENT_SECRET"
       countryCode: "EE"

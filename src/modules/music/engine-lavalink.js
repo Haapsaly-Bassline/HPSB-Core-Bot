@@ -112,12 +112,19 @@ class LavalinkEngine {
     return player;
   }
 
-  // query: URL или текст; engine: 'youtube'|'soundcloud'|'spotify'|'arbitrary'
+  // query: URL или текст; engine: 'youtube'|'soundcloud'|'spotify'|'arbitrary'|'deezer'|…
   // arbitrary (прямые mp3/радио) отдаём ноде как есть.
   async play(voiceChannel, query, { requester, metadata = {}, engine = 'youtube' } = {}) {
     const player = await this.ensurePlayer(voiceChannel, metadata.channel?.id);
     const q = engine === 'arbitrary' ? query : searchSource(engine, query);
-    const res = await player.search({ query: q }, requester).catch(() => null);
+    // ВАЖНО: source указываем ЯВНО. Без него lavalink-client подставляет
+    // defaultSearchPlatform='ytsearch', и при выключенном YouTube ВАЛИТСЯ ЛЮБАЯ
+    // ссылка ("has not 'youtube' enabled"), хотя нода её резолвит. Проверено 2026-10-03.
+    const src = searchParamSource(engine, q);
+    const res = await player.search({ query: q, source: src }, requester).catch((e) => {
+      logger.warn('[lavalink] search failed', String(e?.message || e).slice(0, 160));
+      return null;
+    });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
       throw new Error(`No results for "${String(query).slice(0, 120)}"`);
     }
@@ -247,6 +254,42 @@ function infoMs(t) {
   };
 }
 
+// source для player.search: выводим из самого запроса (префикс/домен),
+// а не из defaultSearchPlatform клиента (там ytsearch — мёртв без YouTube).
+function searchParamSource(engine, q) {
+  const query = String(q || '');
+  const pref = query.match(/^(ytsearch|ytmsearch|scsearch|spsearch|dzsearch|dzisrc|amsearch|tdsearch|qbsearch|qbisrc|ymsearch|vksearch):/i);
+  if (pref) return pref[1].toLowerCase();
+  if (/^https?:\/\//i.test(query)) return urlSource(query);
+  switch (engine) {
+    case 'soundcloud': return 'scsearch';
+    case 'spotify': return 'spsearch';
+    case 'deezer': return 'dzsearch';
+    case 'applemusic': return 'amsearch';
+    case 'tidal': return 'tdsearch';
+    case 'qobuz': return 'qbsearch';
+    case 'yandex': return 'ymsearch';
+    case 'vk': return 'vksearch';
+    default: return 'scsearch'; // дефолт — SoundCloud (YouTube забанен по IP)
+  }
+}
+
+// Каноничные имена источников Lavalink для URL (совпадают с sourceManagers ноды).
+function urlSource(url) {
+  const v = String(url || '').toLowerCase();
+  if (/soundcloud\.com|on\.soundcloud/.test(v)) return 'soundcloud';
+  if (/spotify\.com/.test(v)) return 'spotify';
+  if (/deezer\.com|deezer\.page\.link/.test(v)) return 'deezer';
+  if (/music\.apple\.com/.test(v)) return 'applemusic';
+  if (/tidal\.com/.test(v)) return 'tidal';
+  if (/qobuz\.com|open\.qobuz|play\.qobuz/.test(v)) return 'qobuz';
+  if (/music\.yandex|yandex\..*music/.test(v)) return 'yandexmusic';
+  if (/vk\.com|vk\.ru/.test(v)) return 'vkmusic';
+  if (/bandcamp\.com/.test(v)) return 'bandcamp';
+  if (/youtube\.com|youtu\.be/.test(v)) return 'youtube';
+  return 'http'; // прямые mp3/радио и всё неизвестное
+}
+
 // Lavalink sourceName -> короткий код источника для бейджей оверлея
 function normSource(s) {
   const v = String(s || '').toLowerCase();
@@ -267,4 +310,4 @@ function normSource(s) {
   return v.slice(0, 24);
 }
 
-module.exports = { LavalinkEngine };
+module.exports = { LavalinkEngine, searchSource, searchParamSource, urlSource };
