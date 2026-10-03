@@ -65,11 +65,14 @@ plugins:
     # пройди device-flow в консоли БЕРНЕР-аккаунтом Google (НЕ основным — есть риск бана!),
     # выданный refreshToken впиши в yml. Либо добавь клиенты WEB/ANDROID_VR в список ниже —
     # иногда хватает, но при IP-бане обычно нет.
-    #oauth:
-    #  enabled: true
-    #  refreshToken: "PASTE_REFRESH_TOKEN"
+    # OAuth 2026-10-04: работает (токен обновляется сам, device-flow больше не нужен).
+    # Токен НЕ коммитить! В гите PASTE Refresh token — после pull вписать свой локально и рестартнуть ноду.
+    oauth:
+      enabled: true
+      refreshToken: "PASTE_REFRESH_TOKEN"
     clients:
       - MUSIC
+      - TV                 # OAuth-клиент (без него OAuth включён впустую — варнинг плагина)
       - ANDROID_VR
       - WEB
       - TVHTML5_SIMPLY
@@ -93,7 +96,10 @@ plugins:
       tidal: false                       # ВЫКЛ до токена (плейсхолдер может крашить старт).
                                          # Впиши token ниже и ставь true; звук — зеркалом.
       qobuz: false                       # ВЫКЛ до токена. Впиши userOauthToken ниже и ставь true (Direct).
-      ytdlp: false                       # Audiomack и пр.: поставь yt-dlp (см. коммент ниже) и включи
+      ytdlp: false                        # ВЫКЛ: в LavaSrc 4.8.3 это ТОЛЬКО YouTube через yt-dlp
+                                         # (SEARCH_PREFIX=ytsearch, URL-паттерны лишь youtube.com/youtu.be).
+                                         # Audiomack он НЕ даёт, а ytsearch может увести у youtube-плагина.
+                                         # Оставлено на случай, если youtube-плагин снова умрёт.
       flowerytts: false                  # TTS-озвучка текста, не музыка
       jiosaavn: false                    # нужен свой secretKey
       youtube: false                     # LavaSearch-поиск по YouTube (мёртв без youtube-плагина)
@@ -135,13 +141,13 @@ plugins:
       # Токен: https://github.com/topi314/LavaSrc#qobuz
       userOauthToken: "PASTE_QOBUZ_TOKEN"
     ytdlp:
-      # Audiomack и ещё ~1000 сайтов через yt-dlp. Установка на Windows:
-      #   winget install yt-dlp  (или скачай yt-dlp.exe в PATH)
-      # потом path: "yt-dlp" и ytdlp: true выше.
-      path: "yt-dlp"
+      # Абсолютный путь: голый "yt-dlp" (WinGet-шим) Java может не резолвить.
+      path: "C:/Users/Host-PC/AppData/Local/Microsoft/WinGet/Links/yt-dlp.exe"
       searchLimit: 10
 
 logging:
   level:
     lavalink: INFO
     root: WARN
+    # OAuth device-flow печатает ссылку+код СЮДА (иначе молчит под root=WARN)
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO
