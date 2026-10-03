@@ -61,9 +61,10 @@
 ## Старт Lavalink (рекомендуемая строка)
 
 ```powershell
-java -Djava.net.preferIPv4Stack=true -jar Lavalink.jar
+java "-Djava.net.preferIPv4Stack=true" -jar Lavalink.jar
 ```
 
 `preferIPv4Stack` — потому что у провайдера висит IPv6 (таймауты вместо отказа),
 Java в отличие от Node не умеет Happy Eyeballs: без флага редкие запросы
-(например в Spotify API) падают с `Read timed out`. Проверено в логах.
+(например в Spotify API) падают с `Read timed out`. Проверено в логах 2026-10-04
+(кавычки вокруг -D обязательны, иначе PowerShell разваливает флаг).
