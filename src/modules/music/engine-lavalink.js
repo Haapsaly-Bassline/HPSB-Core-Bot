@@ -133,12 +133,12 @@ class LavalinkEngine {
     if (res.loadType === 'playlist') {
       await player.queue.add(res.tracks);
       if (!player.playing && !player.paused) await player.play().catch(() => {});
-      return { track: res.tracks[0], queue: player.queue, playlist: { title: res.playlist?.name || res.playlist?.title, count: res.tracks.length } };
+      return { track: viewOf(res.tracks[0], requester), queue: player.queue, playlist: { title: res.playlist?.name || res.playlist?.title, count: res.tracks.length } };
     }
     const track = res.tracks[0];
     await player.queue.add(track);
     if (!player.playing && !player.paused) await player.play().catch(() => {});
-    return { track, queue: player.queue, playlist: null };
+    return { track: viewOf(track, requester), queue: player.queue, playlist: null };
   }
 
   async onTrackStart(player, track) {
@@ -240,6 +240,14 @@ function infoOf(t) {
     duration: info.isStream ? 'LIVE' : fmtDur(info.length),
     source: normSource(info.sourceName || info.source || t?.source || ''),
   };
+}
+
+// Плоский вью трека для ответов /play (клиент отдаёт вложенный info.*,
+// service.viewOf его бы показал как Unknown — проверено 2026-10-04).
+function viewOf(t, requester) {
+  const v = infoMs(t);
+  v.requesterTag = requester?.tag || null;
+  return v;
 }
 
 function infoMs(t) {

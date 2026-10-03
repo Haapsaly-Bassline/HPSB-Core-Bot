@@ -11,12 +11,17 @@ function eng(client) {
 
 function viewOf(item) {
   if (!item) return null;
-  const ms = item.durationMs || 0;
+  const info = item.info || item; // lavalink-client кладёт поля в info.*
+  const ms = info.length > 0 ? info.length : (info.durationMs || item.durationMs || 0);
+  const live = info.isStream || item.isLive || ms <= 0;
   return {
-    title: item.title || 'Unknown', url: item.url || '', author: item.author || '',
-    thumbnail: item.thumbnail || '', durationMs: ms,
-    durationLabel: ms > 0 ? fmtMs(ms) : 'LIVE',
-    requesterTag: item.requesterTag || null, isLive: !!item.isLive,
+    title: info.title || item.title || 'Unknown',
+    url: info.uri || info.url || item.url || '',
+    author: info.author || item.author || '',
+    thumbnail: info.artworkUrl || info.thumbnail || item.thumbnail || '',
+    durationMs: ms,
+    durationLabel: live ? 'LIVE' : fmtMs(ms),
+    requesterTag: item.requesterTag || null, isLive: !!live,
     source: item.source || '',
   };
 }
