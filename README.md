@@ -1,30 +1,41 @@
 # HPSB Core Bot — Haapsaly Bassline
 
-Многофункциональный бот: музыка в духе Jockie + радио + репостеры + свои новости + honeypot + ModCall + логи.
-Весь код написан с нуля под HPSB (по мотивам Jockie/Carl, без копирования чужого кода).
+Multipurpose Discord bot: Lavalink music engine (Jockie-style) + HPSB radio + reposters + site news + honeypot/automod + ModCall tickets + stats + webhooks. Written from scratch for HPSB (inspired by Jockie/Carl, no copied code).
 
-## Команды (37)
-- Музыка (свой движок hpsb-engine, без discord-player): `/play` (текст/SC/Spotify/Bandcamp/прямые mp3) `/radio` `/skip` `/stop` `/queue` `/nowplaying` (живой NP с кнопками) `/loop` `/shuffle` `/remove` `/move` `/seek` `/volume` `/clear` `/pause` `/resume` + `/voice-debug` `/perms`
-- Провайдеры: прямые mp3/aac/m3u8 и радио, Bandcamp (свой резолвер), SoundCloud (API v2 + потоки), Spotify (метаданные + SC-аудио, иначе превью 30с). YouTube запаркован (сеть режет).
+## Features
+- **Music (Lavalink-only):** `/play` (text / links / playlists / direct mp3), `/radio` (HPSB stations + custom streams), `/bandcamp-fan` (purchased collection into queue), `/queue`, `/nowplaying` (live ticking embed with buttons), `/skip [count]`, `/join`, `/loop`, `/shuffle`, `/remove`, `/move`, `/seek`, `/volume`, `/clear`, `/pause` (toggle), `/stop`, `/onair` (radio station metadata).
+  Sources: YouTube (plugin + OAuth + yt-dlp cookies fallback), SoundCloud, Bandcamp, Vimeo, Deezer/Apple/Tidal/Qobuz (via LavaSrc, need tokens), HTTP radio/files. Spotify is OFF until the Spotify app gets Premium.
+- **Stage speaker:** the bot auto-requests speaker on Stage channels (unsuppress REST + request fallback, re-asks if suppressed).
+- **Reposter:** YouTube / TikTok / Instagram → Discord media posts.
+- **Site publisher:** HPSB releases / events / posts feeds + webhook receiver.
+- **Automod & honeypot:** flood/caps/links/invites/badwords, trap channel, anti-raid.
+- **ModCall:** button → modal → staff ticket thread with two-way DM relay.
+- **Stats:** Member-Count-style voice counters (`/counters setup`).
+- **Ops:** `/health` self-check, `/logs`, `/version`.
 
-## Модули
-- `reposter` — YouTube (Data API ключ → RSS → скрап), TikTok (TikWM), Instagram (Graph → скрап профиля → RSSHub; нужна `IG_SESSIONID`).
-- `site-publisher` — релизы/события/посты HPSB: JSON первичен, RSS фолбэк. Первый запуск только запоминает.
-- `honeypot` — публичная ловушка (первое сообщение = мут 12ч/kick/ban, настраивается) + красный варнинг при старте + скам-фильтр + анти масс-пинг. Владелец и моды не задеваются.
-- `modcall` — кнопка → модалка → тикет в staff-канал (тред) + двусторонний релей через ЛС, включая вложения.
-- `webhook` — `POST :3001/hook/news` от своих сервисов (нужен `WEBHOOK_NEWS_CHANNEL_ID` + секрет).
+## Requirements
+- Node.js 20+, Java 17+ (for Lavalink), a Discord app with bot token.
+- Dev Portal → Bot: enable **Server Members Intent**, **Message Content Intent**, **Presence Intent** (last one is for online/offline counters).
+- Bot permissions: Administrator (or Manage Channels/Threads, Timeout Members, Connect/Speak, Send Messages/Embeds, Read History).
 
-## Запуск
-1. Скопируй `.env.example` → `.env`, заполни (все ID уже вписаны, нужен только `DISCORD_TOKEN`).
-2. Developer Portal → Bot: включи **Server Members Intent**, **Message Content Intent** и **Presence Intent** (последний — для online/offline счётчиков).
-3. `npm install` (если ругнётся на install-scripts — `npm install-scripts approve @discordjs/opus ffmpeg-static` + `npm rebuild`).
-4. `npm run register` — slash-команды на гильдию.
-5. `npm start` (фон: через PM2/планировщик; логи — `data/bot.log`, смотреть через `/logs`).
+## Quickstart
+1. `cp .env.example .env` and fill it (Discord token, guild/channel/role IDs).
+2. Lavalink (see `lavalink/README.md` for details):
+   - download `Lavalink.jar` v4 into `lavalink/`;
+   - `cp lavalink/application.example.yml lavalink/application.yml` and fill passwords/tokens;
+   - keep `LAVALINK_PASSWORD` in sync between `application.yml` and bot `.env`.
+3. `npm install` (if it complains about install-scripts: approve `opencode` + `ffmpeg-static`, then `npm rebuild`).
+4. `npm run register` — guild slash commands.
+5. Start Lavalink: `java "-Djava.net.preferIPv4Stack=true" -jar Lavalink.jar` (quotes matter on PowerShell), wait for `ready to accept connections`.
+6. `npm start` (background: PM2 / scheduler; logs in `data/bot.log`, also via `/logs`).
 
-Права бота: Administrator (или: Manage Channels/Threads, Timeout Members, Connect/Speak, Send Messages/Embeds, Read History).
+## Project layout
+- `src/commands/` — slash commands (41).
+- `src/events/` — `ready` (engine init, pollers), `interactionCreate`, `voiceStateUpdate`, moderation events.
+- `src/modules/music/` — `engine-lavalink.js` (queue/voice), `service.js` (single entry), `resolvers.js` (query routing), `np.js` (live Now Playing), `stage.js` (speaker), `bandcamp-fan.js` (fan collections).
+- `src/modules/` — `reposter`, `site-publisher`, `honeypot`, `modcall`, `stats`, `private` (voice rooms), `automod` (see code).
+- `src/utils/` — embeds (unified overlays), music fmt, selfcheck, logger, store.
+- `lavalink/` — `application.example.yml` (template), `README.md` (sources matrix, tokens, OAuth, yt-dlp cookies), plugins auto-download on first run.
 
-## Свои сервисы → Discord
-POST `http://host:3001/hook/news`, header `x-hpsb-secret` или поле `secret`:
-```json
-{ "secret": "...", "title": "New drop", "description": "...", "url": "https://...", "image": "https://..." }
-```
+## Secrets discipline
+Never committed (all gitignored): `.env`, `lavalink/application.yml`, `lavalink/cookies.txt`, `lavalink/*.jar`, `data/*.json`. Templates with `PASTE_*` placeholders are committed instead. After every `git pull`, re-fill local secrets and restart Lavalink + bot.

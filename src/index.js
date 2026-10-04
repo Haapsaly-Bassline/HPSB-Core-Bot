@@ -1,14 +1,13 @@
 const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
 const { config, validate } = require('./config');
 
-// IPv6-выход у многих провайдеров висит (таймаут вместо отказа), а Node берёт
-// первую запись DNS. Форсим IPv4 первым: браузеры так и делают (Happy Eyeballs).
+// Many ISPs have broken IPv6 (timeout instead of refusal), and Node picks
+// the first DNS record. Force IPv4 first: browsers do the same (Happy Eyeballs).
 try { require('node:dns').setDefaultResultOrder('ipv4first'); } catch {}
 const { logger } = require('./utils/logger');
 const fs = require('node:fs');
 const path = require('node:path');
 
-// FFmpeg: берём бинарник из ffmpeg-static, чтобы войс точно его находил
 try {
   if (!process.env.FFMPEG_PATH) {
     const bin = require('ffmpeg-static');
@@ -24,7 +23,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences, // для online/offline счётчиков (включи в Portal)
+    GatewayIntentBits.GuildPresences,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
   ],
@@ -33,41 +32,30 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// --- Свой музыкальный движок (без discord-player): voice + FFmpeg + свои резолверы ---
-const { MusicEngine } = require('./modules/music/engine');
-const np = require('./modules/music/np');
-client.music = new MusicEngine(client, {
-  onTrackStart: (guildId) => {
-    try {
-      const g = client.music.of(guildId);
-      np.trackStart(client, guildId, g.textChannel);
-    } catch {}
-  },
-  onQueueEnd: (guildId, note) => {
-    try { np.finalize(client, guildId, note || 'Очередь завершена'); } catch {}
-  },
-});
+// Bot runs EXCLUSIVELY on Lavalink (legacy hpsb engine removed).
+// client.music initialized in ready.js (needs client.user.id); until ready no music --
+// commands honestly reply "Music engine not initialized".
+client.music = null;
+client.lavalink = null;
+logger.info('[music] lavalink-only mode (init deferred until ready)');
 
-// Voice self-test: сразу видно, есть ли чем играть (критично для host PC)
 try {
   require('@discordjs/opus');
   logger.info('[voice] opus ok');
 } catch {
-  logger.error('[voice] NO OPUS — звука не будет! npm install-scripts approve @discordjs/opus + npm rebuild');
+  logger.error('[voice] NO OPUS -- no audio! npm install-scripts approve @discordjs/opus + npm rebuild');
 }
 try {
   const bin = require('ffmpeg-static');
   const ok = bin && require('node:fs').existsSync(bin);
   if (ok) logger.info('[voice] ffmpeg ok');
-  else logger.error('[voice] NO FFMPEG binary — звука не будет! npm rebuild ffmpeg-static');
+  else logger.error('[voice] NO FFMPEG binary -- no audio! npm rebuild ffmpeg-static');
 } catch {
-  logger.error('[voice] NO FFMPEG — звука не будет! npm install ffmpeg-static');
+  logger.error('[voice] NO FFMPEG -- no audio! npm install ffmpeg-static');
 }
 
-logger.info('[music] hpsb-engine ready');
-// Ошибки движка логгирует сам engine.js (player/warn). Дамп деталей — в /logs.
+logger.info('[music] engine bootstrap complete');
 
-// --- Load commands ---
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) {
   for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
@@ -77,7 +65,6 @@ if (fs.existsSync(commandsPath)) {
   logger.info(`[core] loaded ${client.commands.size} commands`);
 }
 
-// --- Load events ---
 const eventsPath = path.join(__dirname, 'events');
 if (fs.existsSync(eventsPath)) {
   for (const file of fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
@@ -87,10 +74,7 @@ if (fs.existsSync(eventsPath)) {
   }
 }
 
-// --- Modules (pollers / webhook / honeypot use events, started on ready) ---
 client.modules = {};
-// reposter + site publisher + webhook стартуют в events/ready.js чтобы client уже был залогинен
-
 process.on('unhandledRejection', (e) => logger.error('[unhandled]', e?.stack || e));
 
 client.login(config.token).catch((e) => {

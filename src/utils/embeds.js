@@ -1,6 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-// Дизайн-токены HPSB: новые эмбеды — отсюда, старые мигрируют постепенно
+// HPSB design tokens: new embeds from here, old ones migrate gradually
 const COLORS = {
   primary: 0x7c3aed,
   info: 0x0ea5e9,
@@ -24,7 +24,7 @@ function newsEmbed({ title, description, url, image, source = 'HPSB' }) {
   return baseEmbed({ title: `📰 ${title}`, description, url, image, footer: `HPSB • ${source}` });
 }
 
-// --- RF-style: ряд кнопок-ссылок (до 5 в ряду, ряды чанками) ---
+// --- RF-style: link button rows (up to 5 per row, rows in chunks) ---
 // links: [{ label, url, emoji }]
 function linkButtonRows(links = []) {
   const rows = [];
@@ -40,8 +40,8 @@ function linkButtonRows(links = []) {
   return rows;
 }
 
-// --- Honeypot-варнинг как у RF: красный баннер + DO NOT POST ---
-function honeypotEmbed({ punishment = 'мут 12ч', banner } = {}) {
+// --- Honeypot warning RF-style: red banner + DO NOT POST ---
+function honeypotEmbed({ punishment = 'mute 12h', banner } = {}) {
   const e = new EmbedBuilder()
     .setColor(0xff2020)
     .setTitle('⛔ DO NOT POST IN HERE')
@@ -61,33 +61,15 @@ function trackLink(track) {
   return /^https?:\/\//i.test(track.url || '') ? `**[${title}](${track.url})**` : `**${title}**`;
 }
 
-// --- Jockie-style: Now Playing ---
-function nowPlayingEmbed(track, queue, requester) {
-  const { fmtMs, progressBar, currentProgress } = require('./music');
-  const { currentMs, totalMs } = currentProgress(queue, track);
-  const e = new EmbedBuilder()
-    .setColor(0x1db954)
-    .setTitle('🔊 Now Playing ♪')
-    .setDescription(`Playing\n${trackLink(track)}\n${track.author || ''}`.slice(0, 4000))
-    .setTimestamp();
-  if (track.thumbnail) e.setThumbnail(track.thumbnail);
-  e.addFields({ name: 'Position', value: progressBar(currentMs, totalMs) });
-  e.addFields(
-    { name: 'Position in queue', value: '1', inline: true },
-    { name: 'Position', value: fmtMs(currentMs), inline: true },
-    { name: 'Length', value: totalMs > 0 ? fmtMs(totalMs) : String(track.duration || 'LIVE'), inline: true },
-  );
-  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
-  return e;
-}
-
 // --- Jockie-style: Added Track ---
-function addedTrackEmbed(track, position, requester, eta, nextTitle) {
+// track: { title, url, author, thumbnail, duration, source }
+// source: short source code (spotify/soundcloud/deezer/.../http) -- shown as badge.
+function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
   const { fmtMs } = require('./music');
+  const badge = sourceBadge(source || track.source);
   const e = new EmbedBuilder()
     .setColor(0x5865f2)
-    .setTitle('➕ Added Track')
+    .setTitle(`➕ Added Track${badge ? ` • ${badge}` : ''}`)
     .setDescription(`Track\n${trackLink(track)}\n${track.author || ''}`.slice(0, 4000))
     .setTimestamp();
   if (track.thumbnail) e.setThumbnail(track.thumbnail);
@@ -104,7 +86,71 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle) {
   return e;
 }
 
-// Пинг роли для объявлений (медиа + анонсы). Пусто = без пинга.
+// --- Playlist/album added: unified overlay instead of plain-text ---
+function playlistAddedEmbed({ title, count, first, source }, requester) {
+  const badge = sourceBadge(source || first?.source);
+  const e = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle(`📃 Playlist added${badge ? ` • ${badge}` : ''}`)
+    .setDescription(
+      `**${String(title || 'playlist').slice(0, 300)}**\n` +
+      `Tracks added: **${count}**` +
+      (first?.title ? `\nFirst: ${trackLink(first)}` : '')
+    ).setTimestamp();
+  if (first?.thumbnail) e.setThumbnail(first.thumbnail);
+  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
+  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  return e;
+}
+
+// --- Radio/live stream: unified overlay instead of plain-text ---
+function liveAddedEmbed({ label, url, source }, requester) {
+  const e = new EmbedBuilder()
+    .setColor(0xef4444)
+    .setTitle('📻 Live / Radio')
+    .setDescription(
+      `**${String(label || 'Stream').slice(0, 300)}**\n` +
+      `🔴 LIVE${source && source !== 'http' ? ` • ${sourceBadge(source)}` : ''}` +
+      (url ? `\n${url}` : '')
+    ).setTimestamp();
+  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
+  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  return e;
+}
+
+// --- Bandcamp fan collection: batch of albums from purchases ---
+function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, requester) {
+  const lines = added.slice(0, 10).map((a, i) =>
+    `\`${i + 1}.\` 💿 **${String(a.title).slice(0, 150)}**${a.band ? ` — ${String(a.band).slice(0, 100)}` : ''} (${a.count} tracks)`
+  );
+  const more = added.length > 10 ? `\n…and ${added.length - 10} more` : '';
+  const e = new EmbedBuilder()
+    .setColor(0x1f9d55)
+    .setTitle(`💿 Fan collection • ${String(fanName || 'Bandcamp').slice(0, 200)}`)
+    .setDescription(
+      `Albums/releases added: **${added.length}**, tracks: **${totalTracks}**` +
+      (failed ? ` (failed: ${failed})` : '') +
+      `\n\n${lines.join('\n')}${more}`.slice(0, 3800)
+    ).setTimestamp();
+  if (fanUrl) e.setURL(fanUrl);
+  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
+  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  return e;
+}
+
+// Source badge for overlays. Empty = not shown.
+const SOURCE_BADGES = {
+  spotify: '🟢 Spotify', soundcloud: '🟠 SoundCloud', deezer: '🟣 Deezer',
+  applemusic: '🍎 Apple Music', tidal: '⬛ Tidal', qobuz: '🔵 Qobuz',
+  yandex: '🟡 Yandex', vk: '🔷 VK', youtube: '🔴 YouTube',
+  bandcamp: '💿 Bandcamp', vimeo: '🎬 Vimeo', twitch: '🟪 Twitch',
+  http: '🌐 HTTP', arbitrary: '🌐 Stream',
+};
+function sourceBadge(source) {
+  return SOURCE_BADGES[String(source || '').toLowerCase()] || '';
+}
+
+// Role ping for announcements (media + news). Empty = no ping.
 function announcePing() {
   try {
     const { config } = require('../config');
@@ -112,7 +158,7 @@ function announcePing() {
   } catch { return ''; }
 }
 
-// Пинг роли для МЕДИА (YT/IG/TT). Пусто = падаем на общую announceRoleId.
+// Role ping for MEDIA (YT/IG/TT). Empty = falls back to general announceRoleId.
 function mediaPing() {
   try {
     const { config } = require('../config');
@@ -121,8 +167,8 @@ function mediaPing() {
   } catch { return ''; }
 }
 
-// EN-шаблоны объявлений: {role} {author} {user} {title} {link}
-// roleOverride: mediaPing() для медиа-постов, иначе общая announcePing().
+// EN announcement templates: {role} {author} {user} {title} {link}
+// roleOverride: mediaPing() for media posts, else general announcePing().
 function renderTpl(tpl, vars = {}, roleOverride) {
   const role = roleOverride !== undefined ? roleOverride : announcePing();
   return String(tpl || '')
@@ -132,39 +178,39 @@ function renderTpl(tpl, vars = {}, roleOverride) {
     .trim();
 }
 
-module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
+module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
 
-// --- Мод-действие: единый красивый вывод (и в чат, и в лог) ---
+// --- Mod action: unified pretty output (both in chat and log) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge
 const MOD_STYLE = {
-  warn:   { emoji: '⚠️', color: 0xf59e0b, title: 'Предупреждение' },
-  unwarn: { emoji: '✅', color: 0x22c55e, title: 'Варн снят' },
-  mute:   { emoji: '🔇', color: 0xef4444, title: 'Мут' },
-  unmute: { emoji: '🔈', color: 0x22c55e, title: 'Мут снят' },
-  kick:   { emoji: '👢', color: 0xf97316, title: 'Кик' },
-  ban:    { emoji: '🔨', color: 0xdc2626, title: 'Бан' },
-  unban:  { emoji: '✅', color: 0x22c55e, title: 'Разбан' },
-  purge:  { emoji: '🧹', color: 0x0ea5e9, title: 'Чистка' },
+  warn:   { emoji: '⚠️', color: 0xf59e0b, title: 'Warning' },
+  unwarn: { emoji: '✅', color: 0x22c55e, title: 'Warning removed' },
+  mute:   { emoji: '🔇', color: 0xef4444, title: 'Mute' },
+  unmute: { emoji: '🔈', color: 0x22c55e, title: 'Mute removed' },
+  kick:   { emoji: '👢', color: 0xf97316, title: 'Kick' },
+  ban:    { emoji: '🔨', color: 0xdc2626, title: 'Ban' },
+  unban:  { emoji: '✅', color: 0x22c55e, title: 'Unban' },
+  purge:  { emoji: '🧹', color: 0x0ea5e9, title: 'Purge' },
 };
 
 function modActionEmbed(kind, { target, mod, reason, extra } = {}) {
   const st = MOD_STYLE[kind] || { emoji: '🛡', color: 0x7c3aed, title: kind };
   const e = new EmbedBuilder().setColor(st.color).setTitle(`${st.emoji} ${st.title}`).setTimestamp();
   const lines = [];
-  if (target) lines.push(`**Нарушитель:** ${target}`);
-  if (mod) lines.push(`**Модератор:** ${mod}`);
-  if (reason) lines.push(`**Причина:** ${String(reason).slice(0, 500)}`);
-  if (extra) lines.push(`**Детали:** ${String(extra).slice(0, 500)}`);
+  if (target) lines.push(`**Target:** ${target}`);
+  if (mod) lines.push(`**Moderator:** ${mod}`);
+  if (reason) lines.push(`**Reason:** ${String(reason).slice(0, 500)}`);
+  if (extra) lines.push(`**Details:** ${String(extra).slice(0, 500)}`);
   e.setDescription(lines.join('\n').slice(0, 3500) || '_—_');
   e.setFooter({ text: 'Haapsaly Bassline • Moderation' });
   return e;
 }
 
-// --- Лог наказания honeypot/автомода ---
+// --- Honeypot/automod punishment log ---
 function punishLogEmbed({ what, member, reason, excerpt }) {
   const e = new EmbedBuilder().setColor(0xff2020).setTitle(`🍯 Honeypot • ${what}`).setTimestamp()
-    .setDescription(`**Кто:** ${member}\n**Причина:** ${String(reason).slice(0, 500)}`.slice(0, 3500));
-  if (excerpt) e.addFields({ name: 'Сообщение', value: String(excerpt).slice(0, 900) });
+    .setDescription(`**Who:** ${member}\n**Reason:** ${String(reason).slice(0, 500)}`.slice(0, 3500));
+  if (excerpt) e.addFields({ name: 'Message', value: String(excerpt).slice(0, 900) });
   e.setFooter({ text: 'Haapsaly Bassline • Automod' });
   return e;
 }

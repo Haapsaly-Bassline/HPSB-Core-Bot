@@ -25,7 +25,7 @@ const config = {
   logChannelId: process.env.LOG_CHANNEL_ID || '',
   adminIds: parseIds(process.env.ADMIN_DISCORD_IDS),
 
-  // Для будущей OAuth-связки с сайтом (пока не используется ботом напрямую)
+  // For future OAuth integration with website (not used by bot directly yet)
   siteAuth: {
     clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
     redirectUri: process.env.DISCORD_REDIRECT_URI || '',
@@ -43,7 +43,7 @@ const config = {
     capsMinLen: Number(process.env.AUTOMOD_CAPS_MINLEN || 12),
     capsPct: Number(process.env.AUTOMOD_CAPS_PCT || 75),
     links: (process.env.AUTOMOD_LINKS || 'on') === 'on',
-    linkWhitelist: (process.env.AUTOMOD_LINK_WHITELIST || 'hpsbassline.club,azura.hpsbassline.club,youtube.com,youtu.be,spotify.com,soundcloud.com,bandcamp.com,audiomack.com,discord.gg,discord.com,instagram.com,tiktok.com').split(',').map(s => s.trim()).filter(Boolean),
+    linkWhitelist: (process.env.AUTOMOD_LINK_WHITELIST || 'hpsbassline.club,azura.hpsbassline.club,youtube.com,youtu.be,spotify.com,soundcloud.com,bandcamp.com,audiomack.com,discord.gg,discord.com,streamable.com,reddit.com,github.com,google.com,tiktok.com,instagram.com,twitpic.com,cdn.discordapp.com').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     invites: (process.env.AUTOMOD_INVITES || 'on') === 'on',
     badwords: (process.env.AUTOMOD_BADWORDS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     actionHours: Number(process.env.AUTOMOD_ACTION_HOURS || 1),
@@ -52,20 +52,20 @@ const config = {
   honeypot: {
     trapChannelId: process.env.HONEYPOT_CHANNEL_ID || '1552843652307492935',
     logChannelId: process.env.HONEYPOT_LOG_CHANNEL_ID || '',
-    // Публичная ловушка: кто первым пишет в канал — получает наказание.
-    // action: timeout (мут) | kick | ban; timeoutHours — длительность мута.
+    // Public trap: first message in channel = punishment.
+    // action: timeout (mute) | kick | ban; timeoutHours = mute duration.
     action: process.env.HONEYPOT_ACTION || 'timeout',
     timeoutHours: Number(process.env.HONEYPOT_TIMEOUT_HOURS || 12),
-    // URL баннера для варнинга (залей картинку WARNING в Discord и вставь ссылку). Без него — просто красный эмбед.
+    // Banner URL for warning (upload WARNING image to Discord and paste link). Without it -- plain red embed.
     bannerUrl: process.env.HONEYPOT_BANNER_URL || '',
   },
 
   music: {
-    // Spotify Client ID/Secret больше не нужны (embed-скрап без ключей).
+    // Keys duplicated in lavalink/application.yml (LavaSrc-Spotify). Bot reads them via node.
     spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
     spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
-    // Движок: hpsb (свой) | lavalink (на host PC, см. lavalink/README.md).
-    engine: process.env.MUSIC_ENGINE || 'hpsb',
+    // Single engine -- lavalink. Legacy hpsb engine removed (bot is exclusively on lavalink).
+    engine: (process.env.MUSIC_ENGINE || 'lavalink').toLowerCase(),
     lavalink: {
       host: process.env.LAVALINK_HOST || '127.0.0.1',
       port: Number(process.env.LAVALINK_PORT || 2333),
@@ -79,17 +79,17 @@ const config = {
     tiktok: parseMap(process.env.TIKTOK_MAP),
     instagram: parseMap(process.env.INSTAGRAM_MAP),
     pollMinutes: Number(process.env.REPOST_POLL_MINUTES || 10),
-    // Бесплатный YouTube Data API v3 ключ (console.cloud.google.com, quota хватит за глаза).
-    // Без него: RSS → скрап страницы. С ключом — идеально точно.
+    // Free YouTube Data API v3 key (console.cloud.google.com, quota is plenty).
+    // Without it: RSS -> scrape. With it -> perfectly accurate.
     youtubeApiKey: process.env.YT_API_KEY || '',
-    // EN-шаблоны медиа-постов. Плейсхолдеры: {role} {author} {user} {title} {link}
+    // EN media post templates. Placeholders: {role} {author} {user} {title} {link}
     templates: {
       youtube: process.env.YT_TEMPLATE || '{role} **{author}** uploaded a new video!',
       tiktok: process.env.TT_TEMPLATE || '{role} **@{user}** posted on TikTok!',
       instagram: process.env.IG_TEMPLATE || '{role} **@{user}** posted on Instagram!',
     },
-    // Instagram без подписки: как у других ботов — скрап публичного профиля.
-    // Опционально ускорьте/стабилизируйте через cookie своей сессии (см. .env.example).
+    // Instagram without subscription: like other bots -- scrape public profile.
+    // Optionally speed up/stabilize with your session cookie (see .env.example).
     instagramSessionId: process.env.IG_SESSIONID || '',
     instagramCsrf: process.env.IG_CSRFTOKEN || '',
     instagramDid: process.env.IG_DID || '',
@@ -97,7 +97,7 @@ const config = {
     instagramBusinessId: process.env.IG_BUSINESS_ID || '',
   },
 
-  // HPSB свои сервисы: ОДИН источник на ленту (формат автоопределяется)
+  // HPSB services: ONE source per feed (format auto-detected)
   hpsb: {
     pollMinutes: Number(process.env.HPSB_POLL_MINUTES || process.env.SITE_API_POLL_MINUTES || 5),
     releases: {
@@ -117,14 +117,14 @@ const config = {
     },
   },
 
-  // Anti-raid: всплеск заходов — новичков в мут. 0 = выкл.
+  // Anti-raid: join spike -> mute newcomers. 0 = off.
   antiraid: {
     joins: Number(process.env.ANTIRAID_JOINS || 8),
     secs: Number(process.env.ANTIRAID_SECS || 30),
     hours: Number(process.env.ANTIRAID_HOURS || 1),
   },
 
-  // Member Count parity: 9 счётчиков + шаблоны {count} + on/off
+  // Member Count parity: 9 counters + {count} templates + on/off
   stats: {
     intervalMin: Number(process.env.STATS_INTERVAL_MIN || 10),
     members: process.env.STATS_MEMBERS_CHANNEL_ID || '',
@@ -150,12 +150,12 @@ const config = {
     },
   },
 
-  // Роль для пинга в объявлениях (медиа + анонсы). Пусто = без пинга.
+  // Role for ping in announcements (media + news). Empty = no ping.
   announceRoleId: process.env.ANNOUNCE_ROLE_ID || '',
-  // Отдельная роль для МЕДИА-постов (YT/IG/TT). Пусто = общая announceRoleId.
+  // Separate role for MEDIA posts (YT/IG/TT). Empty = general announceRoleId.
   mediaRoleId: process.env.MEDIA_ROLE_ID || '',
 
-  // Приватки (VoiceMaster-style): зашёл в генератор -> своя комната + панель
+  // Private voice (VoiceMaster-style): joined generator -> own room + panel
   priv: {
     generatorId: process.env.PRIV_GENERATOR_ID || '1555650624912236645',
     categoryId: process.env.PRIV_CATEGORY_ID || '',
@@ -164,10 +164,10 @@ const config = {
     nameTemplate: process.env.PRIV_NAME_TEMPLATE || `{user}'s room`,
   },
 
-  // Автокросспост из announcement-каналов подписчикам (ID через запятую)
+  // Auto-crosspost from announcement channels to subscribers (comma-separated IDs)
   autopublish: parseIds(process.env.AUTOPUBLISH_CHANNEL_IDS),
 
-  // legacy single-feed (осталось для совместимости)
+  // legacy single-feed (kept for compatibility)
   siteApi: {
     url: process.env.SITE_API_URL || '',
     key: process.env.SITE_API_KEY || '',

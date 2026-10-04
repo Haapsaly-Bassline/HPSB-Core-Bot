@@ -1,71 +1,71 @@
-# Переезд бота на host PC под Windows (миграция)
+# Moving bot to host PC on Windows (migration)
 
-Бот полностью виндовый: пути относительные, FFmpeg/Opus с win32-бинарниками,
-Lavalink — jar под любую ОС. Ничего переписывать не надо.
+The bot is fully Windows-native: relative paths, FFmpeg/Opus with win32 binaries,
+Lavalink — jar for any OS. Nothing needs rewriting.
 
-## 0. Сначала проверь сеть host PC — это критично
-Текущий ПК режет голосовой UDP Discord и половину медиа (YouTube/IG/SC).
-Если host PC в той же сети — будет то же самое. Проверка за 2 минуты:
+## 0. First check host PC network — this is critical
+Current PC blocks Discord voice UDP and half of media (YouTube/IG/SC).
+If host PC is on the same network — same issue. 2-minute check:
 
-1. Перенеси папку бота, `npm install`, впиши `.env`, запусти `npm start`.
-2. Зайди в обычный войс, выполни `/voice-debug`.
-3. Смотри вердикт:
-   - `Connection: ready` + пакеты + слышно → сеть годится, едем дальше;
-   - `signalling` + abort → UDP режут и тут, чини сеть/хостинг, а не бота.
+1. Move bot folder, `npm install`, write `.env`, run `npm start`.
+2. Join a regular voice channel, run `/voice-debug`.
+3. Check verdict:
+   - `Connection: ready` + packets + audible → network OK, proceed;
+   - `signalling` + abort → UDP blocked here too, fix network/hosting, not the bot.
 
-## 1. Перенос файлов
-Скопируй на host PC **всю папку `HPSB Core Bot`, КРОМЕ**:
-- `node_modules/` (поставится заново)
-- `.env` (создай заново из `.env.example`, секреты впиши руками!)
+## 1. File transfer
+Copy to host PC **entire `HPSB Core Bot` folder, EXCEPT**:
+- `node_modules/` (will be reinstalled)
+- `.env` (create fresh from `.env.example`, fill secrets manually!)
 
-`data/store.json` скопируй — там память репостеров/варнов/тикетов.
+`data/store.json` copy — contains reposter/warn/ticket memory.
 
-## 2. Установка (Windows)
-1. Node.js LTS 20+ с nodejs.org (`node --version`).
-2. В папке бота: `npm install`.
-3. Если спросит про install-scripts: `npm install-scripts approve @discordjs/opus ffmpeg-static`, затем `npm rebuild`.
-4. Создай `.env` из `.env.example`, впиши `DISCORD_TOKEN` и остальные.
-5. Включи intents в Developer Portal (Server Members + Message Content) — они привязаны к приложению, а не к ПК, уже должны быть.
-6. `npm run register` (один раз), затем `npm start`.
+## 2. Installation (Windows)
+1. Node.js LTS 20+ from nodejs.org (`node --version`).
+2. In bot folder: `npm install`.
+3. If asked about install-scripts: `npm install-scripts approve @discordjs/opus ffmpeg-static`, then `npm rebuild`.
+4. Create `.env` from `.env.example`, fill `DISCORD_TOKEN` and others.
+5. Enable intents in Developer Portal (Server Members + Message Content) — tied to app, not PC, should already be on.
+6. `npm run register` (once), then `npm start`.
 
-## 3. Автозапуск (чтобы жил после перезагрузки)
-Вариант A — PM2 (рекомендую):
+## 3. Auto-start (survive reboot)
+Option A — PM2 (recommended):
 ```powershell
 npm i -g pm2 pm2-windows-startup
 pm2 start src/index.js --name hpsb
 pm2 save
-pm2-startup install   # один раз, из PowerShell с правами админа
+pm2-startup install   # once, from PowerShell as admin
 ```
-Проверка после ребута: `pm2 list` → hpsb online. Логи: `pm2 logs hpsb`. В Discord те же логи через `/logs`.
+Post-reboot check: `pm2 list` → hpsb online. Logs: `pm2 logs hpsb`. Same logs in Discord via `/logs`.
 
-Вариант B — Планировщик заданий Windows (без PM2):
-- Действие: запуск программы `C:\Program Files\nodejs\node.exe`
-- Аргументы: `src/index.js`, рабочая папка: путь к боту
-- Триггер: при входе пользователя (или при запуске системы + автовход)
-- Галочка «выполнять с наивысшими правами» не нужна, зато поставь
-  «перезапускать при сбое» в параметрах задачи.
+Option B — Windows Task Scheduler (no PM2):
+- Action: start program `C:\Program Files\nodejs\node.exe`
+- Arguments: `src/index.js`, working dir: bot path
+- Trigger: at user logon (or at system startup + autologon)
+- "Run with highest privileges" not needed, but set
+  "restart on failure" in task settings.
 
-## 4. Музыка на host PC (порядок тестов)
-1. `/radio` — прямой mp3, без внешних API. Заиграло = голос в порядке.
-2. `/play` Bandcamp-ссылка (свой резолвер), затем Spotify, затем SoundCloud.
-3. YouTube — по ситуации (если сеть host PC не режут, youtubei подхватит).
-4. Этап Lavalink (см. `lavalink/README.md`): Java 17 + `Lavalink.jar` рядом,
-    `MUSIC_ENGINE=lavalink` в `.env`, миграция команд — со звуковыми тестами на месте.
+## 4. Music on host PC (test order)
+1. `/radio` — direct mp3, no external APIs. Played = voice works.
+2. `/play` Bandcamp link (custom resolver), then Spotify, then SoundCloud.
+3. YouTube — depends (if host PC network not blocking, youtubei picks up).
+4. Lavalink stage (see `lavalink/README.md`): Java 17 + `Lavalink.jar` nearby,
+    `MUSIC_ENGINE=lavalink` in `.env`, command migration — with sound tests in place.
 
-## 6. Обновление кода на host PC (важно!)
-Я допиливаю бота тут — после каждого апдейта переноси свежак:
-1. Останови бота там (`pm2 stop hpsb` или закрой окно).
-2. Скопируй с этого ПК **только код**: папки `src/`, `lavalink/`, файлы
+## 6. Updating code on host PC (important!)
+I tweak the bot here — after each update, push fresh code:
+1. Stop bot there (`pm2 stop hpsb` or close window).
+2. Copy from this PC **code only**: folders `src/`, `lavalink/`, files
    `package.json`, `README.md`, `MIGRATION.md`, `.env.example`.
-   НЕ трогай там: `node_modules/`, `.env`, `data/store.json`.
-3. Там: `npm install` (докачает новое) → `npm run register` → запуск.
-4. Проверка версии: `/version` в Discord — сверь номер с `package.json` тут.
-   Если номер старый — работает прошлый код, обновись заново.
+   DO NOT TOUCH there: `node_modules/`, `.env`, `data/store.json`.
+3. There: `npm install` (pulls new) → `npm run register` → run.
+4. Version check: `/version` in Discord — match number with `package.json` here.
+   If old number — running old code, update again.
 
-## 7. Что НЕ переносить/не делать
-- Не запускай две копии бота одновременно (старый ПК + host PC) — будут дубли ответов
-  и драки за войс. Остановил тут → запустил там.
-- Токены и куки (`DISCORD_TOKEN`, `IG_SESSIONID`) — только руками в `.env`, ни в какие чаты.
-- Не запускай две копии бота одновременно (старый ПК + host PC) — будут дубли ответов
-  и драки за войс. Остановил тут → запустил там.
-- Токены и куки (`DISCORD_TOKEN`, `IG_SESSIONID`) — только руками в `.env`, ни в какие чаты.
+## 7. What NOT to copy/do
+- Don't run two bot copies at once (old PC + host PC) — duplicate replies
+  and voice fights. Stopped here → started there.
+- Tokens and cookies (`DISCORD_TOKEN`, `IG_SESSIONID`) — manual in `.env` only, never in chats.
+- Don't run two bot copies at once (old PC + host PC) — duplicate replies
+  and voice fights. Stopped here → started there.
+- Tokens and cookies (`DISCORD_TOKEN`, `IG_SESSIONID`) — manual in `.env` only, never in chats.

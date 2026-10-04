@@ -1,5 +1,5 @@
-// Member Count parity: 9 счётчиков с шаблонами {count}, on/off, setup.
-// Переименование только при изменении (лимит Discord), интервал ≥10 мин.
+// Member Count parity: 9 counters with {count} templates, on/off, setup.
+// Rename only on change (Discord rate limit), interval >= 10 min.
 const { ChannelType } = require('discord.js');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
@@ -17,7 +17,7 @@ function templateFor(key) {
 }
 
 function channelIdsFor(key) {
-  // Один тип -> НЕСКОЛЬКО каналов: env (один) + store (один или массив)
+  // One type -> MULTIPLE channels: env (single) + store (single or array)
   const data = store.load();
   const out = [];
   if (config.stats[key]) out.push(config.stats[key]);
@@ -27,7 +27,7 @@ function channelIdsFor(key) {
   return [...new Set(out.filter(Boolean))];
 }
 
-// Совместимость со старым кодом (первый канал)
+// Compatibility with old code (first channel)
 function channelIdFor(key) {
   return channelIdsFor(key)[0] || '';
 }
@@ -61,7 +61,7 @@ async function setName(client, id, name) {
 }
 
 async function collect(guild) {
-  // полный список участников нужен только части счётчиков
+  // Full member list needed only for some counters
   const needMembers = ['humans', 'bots', 'role', 'online', 'offline'].some(k => channelIdsFor(k).length && isEnabled(k));
   let members = null;
   if (needMembers) {
@@ -104,7 +104,7 @@ async function update(client) {
   if (!vals.presenceSeen && (channelIdsFor('online').length || channelIdsFor('offline').length)) {
     if (!presenceWarned) {
       presenceWarned = true;
-      logger.warn('[stats] online/offline: нет presences — включи Presence Intent в Portal');
+      logger.warn('[stats] online/offline: no presences -- enable Presence Intent in Portal');
     }
   }
   const jobs = [
@@ -129,7 +129,7 @@ function startStats(client) {
   const mins = Math.max(10, config.stats.intervalMin || 10);
   const active = TYPES.filter(k => channelIdFor(k) && isEnabled(k));
   if (!active.length) {
-    logger.warn('[stats] НЕТ настроенных счётчиков — запусти /counters setup (или впиши STATS_*_CHANNEL_ID)');
+    logger.warn('[stats] NO configured counters -- run /counters setup (or set STATS_*_CHANNEL_ID)');
   } else {
     logger.info('[stats] active:', active.map(k => `${k}->${channelIdFor(k)}`).join(', '));
   }

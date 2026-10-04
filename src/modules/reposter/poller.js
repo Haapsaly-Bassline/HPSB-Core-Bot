@@ -12,7 +12,7 @@ function linkBtn(label, url) {
   return new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label.slice(0, 80)).setURL(url);
 }
 
-// embed + текст с пингом медиа-роли + кнопки-ссылки
+// embed + text with media role ping + link buttons
 async function postToChannel(client, channelId, { embed, content, buttons = [] }) {
   const ch = await client.channels.fetch(channelId).catch(() => null);
   if (!ch?.isTextBased()) return false;
@@ -31,10 +31,10 @@ function mediaText(tpl, vars) {
 
 const YT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
-// Возвращает [{ id, title, author }] (до ~8 шт). Цепочка:
-// 1) YouTube Data API v3 (если задан бесплатный YT_API_KEY — самый надёжный),
-// 2) публичный RSS (без ключа, но YouTube иногда режет по IP),
-// 3) скрап страницы /videos + oEmbed-названия (работает почти всегда).
+// Returns [{ id, title, author }] (up to ~8). Chain:
+// 1) YouTube Data API v3 (if free YT_API_KEY set -- most reliable),
+// 2) public RSS (no key, but YouTube sometimes blocks by IP),
+// 3) scrape /videos page + oEmbed titles (works almost always).
 async function fetchLatestYouTube(ytId) {
   const key = config.reposter.youtubeApiKey;
   if (key) {
@@ -67,7 +67,7 @@ async function fetchLatestYouTube(ytId) {
       id: en['yt:videoId'], title: en.title, author: en?.author?.name,
     })).filter(x => x.id);
     if (items.length) return items;
-  } catch (e) { logger.warn(`[reposter/yt] rss blocked (${e.message}), пробую скрап`); }
+  } catch (e) { logger.warn(`[reposter/yt] rss blocked (${e.message}), trying scrape`); }
 
   const { data: html } = await axios.get(`https://www.youtube.com/channel/${ytId}/videos`, {
     timeout: 20000, headers: { 'User-Agent': YT_UA, 'Accept-Language': 'en-US,en;q=0.9' },
@@ -104,8 +104,8 @@ async function postVideo(client, channelId, { id, title, author }) {
   return postToChannel(client, channelId, { embed, content: text, buttons: [linkBtn('▶️ Watch on YouTube', link)] });
 }
 
-// Публикация одного видео с дедупом — для поллера и для PubSubHubbub.
-// channelId: YT-канал (топик). Возвращает true если реально запостили.
+// Publish single video with dedup -- for poller and PubSubHubbub.
+// channelId: YT channel (topic). Returns true if actually posted.
 async function publishYouTubeVideo(client, { videoId, title, author, channelId }) {
   const entry = config.reposter.youtube.find(x => x.key === channelId) || config.reposter.youtube[0];
   if (!entry) { logger.warn('[reposter/yt] unknown channel', channelId); return false; }
@@ -129,13 +129,13 @@ async function checkYouTube(client, state) {
     try {
       const items = await fetchLatestYouTube(ytId);
       found += items.length;
-      if (!items.length) { logger.warn(`[reposter/yt] ${ytId}: пусто везде`); continue; }
-      // known — массив последних ID (порядок скрапа нестабилен, сравниваем по множеству)
+      if (!items.length) { logger.warn(`[reposter/yt] ${ytId}: empty everywhere`); continue; }
+      // known -- array of recent IDs (scrape order unstable, compare by set)
       let known = state.youtube[ytId];
       if (typeof known === 'string') known = [known];
       if (!Array.isArray(known)) known = [];
       if (!known.length) {
-        state.youtube[ytId] = items.map(i => i.id); // первый запуск — только запоминаем
+        state.youtube[ytId] = items.map(i => i.id); // first run -- only remember
         continue;
       }
       const knownSet = new Set(known);
@@ -159,7 +159,7 @@ async function checkTikTok(client, state) {
   for (const { key: username, channelId } of config.reposter.tiktok) {
     try {
       const uname = username.replace(/^@/, '');
-      // Бесплатный TikWM без ключа, может rate-limit'ить
+      // Free TikWM without key, may rate-limit
       const { data } = await axios.get(`https://www.tikwm.com/api/user/posts?unique_id=${encodeURIComponent(uname)}&count=3`, { timeout: 15000 });
       const videos = data?.data?.videos || data?.data?.posts || [];
       found += videos.length;
@@ -169,7 +169,7 @@ async function checkTikTok(client, state) {
       if (!vid) continue;
       const prev = state.tiktok[uname];
       if (prev === vid) continue;
-      if (!prev) { state.tiktok[uname] = vid; continue; } // первый запуск — запоминаем
+      if (!prev) { state.tiktok[uname] = vid; continue; } // first run -- remember
       const link = `https://www.tiktok.com/@${uname}/video/${vid}`;
       const text = mediaText(config.reposter.templates.tiktok, { user: uname, title: latest.title || latest.desc || '', link });
       if (await postToChannel(client, channelId, { embed: new EmbedBuilder()
@@ -194,7 +194,7 @@ async function runReposterOnce(client) {
   running = true;
   try {
     const state = store.load();
-    // Instagram идёт через Make-вебхук, скрапер удалён.
+    // Instagram goes via Make webhook, scraper removed.
     const out = { youtube: { ...ZERO }, tiktok: { ...ZERO } };
     out.youtube = await checkYouTube(client, state);
     out.tiktok = await checkTikTok(client, state);

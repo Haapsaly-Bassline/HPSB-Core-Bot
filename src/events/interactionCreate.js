@@ -12,13 +12,13 @@ module.exports = {
         await cmd.execute(interaction, client);
         return;
       }
-      // Кнопки живого Now Playing
+      // Live Now Playing buttons
       if (interaction.isButton() && interaction.customId.startsWith('np:')) {
         const np = require('../modules/music/np');
         const handled = await np.handleButton(interaction, client);
         if (handled) return;
       }
-      // Кнопки-фиксы аудита ролей
+      // Roles audit fix buttons
       if (interaction.isButton() && interaction.customId.startsWith('roles:fix:')) {
         const cmd = client.commands.get('roles');
         if (cmd?.handleButton) {
@@ -26,7 +26,7 @@ module.exports = {
           if (handled) return;
         }
       }
-      // Приватки: кнопки/модалки/селекты
+      // Private rooms: buttons/modals/selects
       if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isUserSelectMenu())
         && interaction.customId.startsWith('priv:')) {
         const priv = require('../modules/private/rooms');
@@ -42,7 +42,7 @@ module.exports = {
     } catch (e) {
       logger.error('[interaction]', e?.stack || e);
       if (!interaction.isRepliable()) return;
-      const payload = { content: '❌ Ошибка выполнения.', flags: MessageFlags.Ephemeral };
+      const payload = { content: '❌ Execution error.', flags: MessageFlags.Ephemeral };
       try {
         if (interaction.deferred) await interaction.followUp(payload);
         else if (!interaction.replied) await interaction.reply(payload);

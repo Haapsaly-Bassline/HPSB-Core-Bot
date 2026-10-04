@@ -1,97 +1,140 @@
-// MusicService — единая точка входа музыки. Свой движок (engine.js) + свои резолверы.
-// Формы ответов как раньше — команды и NP не менялись.
-const { resolve } = require('./resolvers');
+// MusicService -- single entry point for music. Lavalink ONLY (legacy hpsb engine removed).
+// Response shapes are stable -- commands and NP build overlays on top.
+const { resolveSearchQuery } = require('./resolvers');
 const { fmtMs } = require('../../utils/music');
 
 function eng(client) {
-  if (!client.music) throw new Error('Music engine не инициализирован');
-  return client.music;
+  const e = client.music;
+  if (!e || typeof e.play !== 'function') throw new Error('Music engine is not initialized (Lavalink is not connected)');
+  return e;
 }
 
 function viewOf(item) {
   if (!item) return null;
-  const ms = item.durationMs || 0;
+  const info = item.info || item; // lavalink-client puts fields in info.* (duration, not length!)
+  const ms = info.length > 0 ? info.length : (info.duration > 0 ? info.duration : (info.durationMs || item.durationMs || 0));
+  const live = info.isStream || item.isLive || ms <= 0;
   return {
-    title: item.title || 'Unknown', url: item.url || '', author: item.author || '',
-    thumbnail: item.thumbnail || '', durationMs: ms,
-    durationLabel: ms > 0 ? fmtMs(ms) : 'LIVE',
-    requesterTag: item.requesterTag || null, isLive: !!item.isLive,
+    title: info.title || item.title || 'Unknown',
+    url: info.uri || info.url || item.url || '',
+    author: info.author || item.author || '',
+    thumbnail: info.artworkUrl || info.thumbnail || item.thumbnail || '',
+    durationMs: ms,
+    durationLabel: live ? 'LIVE' : fmtMs(ms),
+    requesterTag: item.requesterTag || null, isLive: !!live,
+    source: item.source || '',
   };
 }
 
 async function play(client, voiceChannel, query, { requester, textChannel, radioLabel } = {}) {
-  const r = await resolve(query);
-  const guildId = voiceChannel.guild.id;
-  const items = r.tracks.map(t => ({
-    ...t,
-    requesterTag: requester?.tag || null,
-    requesterId: requester?.id || null,
-    radioLabel: radioLabel || null,
-  }));
-  const { waitMs } = await eng(client).playItems(voiceChannel, items, { requester, textChannel, radioLabel });
+  const engine = eng(client);
+  const q = resolveSearchQuery(query);
+// Spotify disabled on node (no Premium on app): reply immediately with clear message,
+// not vague "No results" after timeouts.
+  if (q.engine === 'spotify') {
+    throw new Error('Spotify is temporarily disabled: the Spotify app has no Premium. Search by text (YouTube/SoundCloud) or paste a direct track link.');
+  }
+  // ETA: how long until our track plays (remaining current + queue BEFORE addition)
+  let etaMs = 0;
+  let nextTitle = null;
+  try {
+    const before = engine.queueViewFull(voiceChannel.guild.id);
+    if (before) {
+      etaMs = before.totalMs || 0;
+      nextTitle = before.size > 0 ? (before.upcoming[0]?.title || null) : null;
+    }
+  } catch {}
+  const result = await engine.play(voiceChannel, q.query, {
+    requester,
+    metadata: { channel: textChannel, radioLabel: radioLabel || null },
+    engine: q.engine,
+  });
 
-  if (r.kind === 'bandcamp-album') {
-    return {
-      kind: 'bandcamp',
-      album: { title: r.albumTitle, artist: r.albumArtist, count: items.length, tracks: items.map(t => t.title) },
-      waitMs,
-    };
-  }
-  if (r.kind === 'playlist') {
-    return {
-      kind: 'playlist', track: viewOf(items[0]),
-      playlist: { title: r.title || 'playlist', author: '', url: '', count: items.length },
-      waitMs,
-    };
-  }
-  const v = eng(client).queueView(guildId);
-  const upcoming = v ? v.size : items.length - 1;
   return {
-    kind: 'track',
-    track: viewOf(items[0]),
-    position: upcoming === 0 ? '▶ сейчас' : upcoming,
-    nextTitle: v && v.upcoming.length ? v.upcoming[0].title : (items[1]?.title || null),
-    waitMs,
+    kind: result?.playlist ? 'playlist' : 'track',
+    track: viewOf(result?.track || null),
+    playlist: result?.playlist ? {
+      title: result.playlist.title || result.playlist.name || 'playlist',
+      author: '',
+      url: '',
+      count: Number(result.playlist.count || 0),
+    } : null,
+    // 0 = playing now, N = position in upcoming (1-based, like /queue)
+    position: !result?.position ? '▶ playing now' : `#${result.position} in queue`,
+    nextTitle,
+    waitMs: etaMs,
   };
 }
 
+// Bandcamp fan collection: batch of albums/tracks from purchases -> queue.
+// Returns { fan, added: [{band, title, kind, count}], failed, totalTracks }.
+async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, limit = 10, onProgress } = {}) {
+  const engine = eng(client);
+  const { fetchCollection } = require('./bandcamp-fan');
+  const { fan, items } = await fetchCollection(fanUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
+  const added = [];
+  let failed = 0;
+  let n = 0;
+  for (const it of items) {
+    n += 1;
+    if (n === 1 || n % 5 === 0 || n === items.length) {
+      try { await onProgress?.(n, items.length); } catch {}
+    }
+    try {
+      const r = await engine.enqueueUrl(voiceChannel, it.url, {
+        requester, metadata: { channel: textChannel },
+      });
+      added.push({ band: it.band, title: it.kind === 'album' ? (r.title || it.title) : it.title, kind: it.kind, count: r.count });
+    } catch {
+      failed += 1;
+    }
+  }
+  // Start if idle
+  try {
+    const p = engine.getPlayer(voiceChannel.guild.id);
+    if (p && !p.playing && !p.paused) await p.play().catch(() => {});
+  } catch {}
+  if (!added.length) throw new Error('Nothing was added (all releases are unavailable)');
+  return { fan, added, failed, totalTracks: added.reduce((a, x) => a + x.count, 0) };
+}
+
 module.exports = {
-  engineName: () => 'hpsb-engine',
+  engineName: () => 'lavalink',
 
   play,
-  skip: (client, guildId) => eng(client).skip(guildId),
-  stop: async (client, guildId) => { await eng(client).stop(guildId); return true; },
-  pause: (client, guildId, on) => {
-    if (!eng(client).hasQueue(guildId)) return false;
-    return eng(client).pause(guildId, on !== false);
-  },
+  playFan,
+
+  skip: (client, guildId, amount = 1) => eng(client).skip(guildId, amount),
+  stop: async (client, guildId) => eng(client).stop(guildId),
+  pause: (client, guildId, on) => eng(client).pause(guildId, on !== false),
+  resume: (client, guildId) => eng(client).pause(guildId, false),
   seek: (client, guildId, ms) => eng(client).seek(guildId, ms),
-  volume: (client, guildId, vol) => {
-    if (!eng(client).hasQueue(guildId)) return false;
-    return eng(client).setVolume(guildId, vol);
-  },
+  volume: (client, guildId, vol) => eng(client).volume(guildId, vol),
   loop: (client, guildId, mode) => {
-    if (!eng(client).hasQueue(guildId)) return false;
-    const m = mode === 3 ? 0 : mode; // autoplay у своего движка нет — маппим в off
-    return eng(client).setLoop(guildId, m);
+    const m = mode === 3 ? 0 : mode;
+    return eng(client).loop(guildId, m);
   },
-  shuffle: (client, guildId) => {
-    const v = eng(client).queueView(guildId);
-    if (!v || v.size === 0) return false;
-    return eng(client).shuffle(guildId);
-  },
-  clear: (client, guildId) => {
-    if (!eng(client).hasQueue(guildId)) return false;
-    return eng(client).clear(guildId);
-  },
-  remove: (client, guildId, idx) => {
-    const t = eng(client).removeAt(guildId, idx);
-    return t ? { title: t.title } : null;
+  shuffle: (client, guildId) => eng(client).shuffle(guildId),
+  clear: (client, guildId) => eng(client).clear(guildId),
+  remove: async (client, guildId, idx) => {
+    const t = await eng(client).remove(guildId, idx);
+    return t ? { title: t?.info?.title || t?.title || 'Unknown' } : null;
   },
   move: (client, guildId, from, to) => eng(client).move(guildId, from, to),
-  prev: (client, guildId) => eng(client).prevTrack(guildId),
+  prev: (client, guildId) => eng(client).prev(guildId),
 
-  queueView: (client, guildId) => eng(client).queueView(guildId),
+  queueView: (client, guildId) => eng(client).queueViewFull(guildId),
   npSnapshot: (client, guildId) => eng(client).npSnapshot(guildId),
-  voiceChannelId: (client, guildId) => eng(client).voiceChannelId(guildId),
+  voiceChannelId: (client, guildId) => eng(client).getPlayer(guildId)?.voiceChannelId || null,
+  // Join/switch voice (without music): creation and move handled in engine's ensurePlayer
+  join: async (client, voiceChannel, textChannelId) => {
+    const engine = eng(client);
+    await engine.ensurePlayer(voiceChannel, textChannelId || null);
+    return true;
+  },
+  // Stage speaker status (null = not stage / not requested)
+  speakerStatus: (client, guildId) => {
+    const e = eng(client);
+    return typeof e.getSpeakerStatus === 'function' ? e.getSpeakerStatus(guildId) : null;
+  },
 };

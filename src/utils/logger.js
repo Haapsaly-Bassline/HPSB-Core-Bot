@@ -5,8 +5,8 @@ function ts() {
   return new Date().toISOString();
 }
 
-// Файловый транспорт: /logs работает при любом способе запуска (PM2/консоль/фон).
-// Ротация: при старте хвост >5МБ уезжает в bot.old.log.
+// File transport: /logs works with any run method (PM2/console/background).
+// Rotation: on startup tail >5MB moves to bot.old.log.
 const LOG_FILE = path.join(__dirname, '..', '..', 'data', 'bot.log');
 try {
   const dir = path.dirname(LOG_FILE);

@@ -4,9 +4,9 @@ const music = require('../modules/music/service');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Play: SoundCloud / Spotify / Bandcamp / прямые mp3 / радио')
-    .addStringOption(o => o.setName('query').setDescription('Название, ссылка SC/Spotify/Bandcamp или прямая mp3').setRequired(true))
-    .addChannelOption(o => o.setName('channel').setDescription('Войс-канал (по умолчанию твой)').setRequired(false)),
+    .setDescription('Play: text search / SoundCloud / Spotify / Deezer / Apple / Tidal / Qobuz / Bandcamp / mp3 / radio')
+    .addStringOption(o => o.setName('query').setDescription('Title, track/playlist link or direct mp3').setRequired(true))
+    .addChannelOption(o => o.setName('channel').setDescription('Voice channel (defaults to yours)').setRequired(false)),
   async execute(interaction, client) {
     const query = interaction.options.getString('query', true);
     await interaction.deferReply();
@@ -15,59 +15,87 @@ module.exports = {
       || interaction.member?.voice?.channel;
 
     if (!voiceChannel || ![2, 13].includes(voiceChannel.type)) {
-      await interaction.editReply('❌ Зайди в войс или на сцену (или укажи канал параметром).');
+      await interaction.editReply('❌ Join a voice channel or stage (or specify one via the channel option).');
       return;
     }
 
-    // Префлайт: бот сам проверяет свои права в ЭТОМ войсе
+    // Preflight: bot checks its own permissions in THIS voice
     try {
       const { checkVoice } = require('../utils/selfcheck');
       const pre = await checkVoice(client, voiceChannel);
       if (!pre.ok) {
-        await interaction.editReply(`❌ Не могу зайти в войс:\n❌ ${pre.problems.join('\n❌ ')}`);
+        await interaction.editReply(`❌ Can't join that voice channel:\n❌ ${pre.problems.join('\n❌ ')}`);
         return;
       }
     } catch {}
 
+    // Bandcamp fan profile -- this is a collection, not a track: route to /bandcamp-fan logic
     try {
-      const { addedTrackEmbed } = require('../utils/embeds');
+      const { FAN_RE } = require('../modules/music/bandcamp-fan');
+      if (FAN_RE.test(query.trim())) {
+        const { fanCollectionEmbed } = require('../utils/embeds');
+        const fanRes = await music.playFan(client, voiceChannel, query.trim(), {
+          requester: interaction.user,
+          textChannel: interaction.channel,
+          limit: 10,
+        });
+        const { stageWarning } = require('../modules/music/stage');
+        const fanWarn = voiceChannel.type === 13 ? stageWarning(client, interaction.guildId) : '';
+        await interaction.editReply({ embeds: [fanCollectionEmbed(
+          {
+            fanName: `${fanRes.fan.name} (@${fanRes.fan.username})`,
+            fanUrl: `https://bandcamp.com/${fanRes.fan.username}`,
+            added: fanRes.added, failed: fanRes.failed, totalTracks: fanRes.totalTracks,
+          },
+          interaction.user,
+        )], content: fanWarn || undefined });
+        return;
+      }
+    } catch (e) {
+      await interaction.editReply(`❌ Couldn't load the collection: ${String(e.message || e).slice(0, 300)}`);
+      return;
+    }
+
+    try {
+      const { addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed } = require('../utils/embeds');
+      const { stageWarning } = require('../modules/music/stage');
       const res = await music.play(client, voiceChannel, query, {
         requester: interaction.user,
         textChannel: interaction.channel,
       });
+      // Stage warning read AFTER play (status set in ensurePlayer during join)
+      const stageWarn = voiceChannel.type === 13 ? stageWarning(client, interaction.guildId) : '';
+      const warnPayload = stageWarn ? { content: stageWarn } : {};
 
       if (res.kind === 'playlist') {
-        const pl = res.playlist;
-        await interaction.editReply(
-          `📃 Плейлист **${pl.title}** (${pl.author || ''}) — добавлено треков: **${pl.count}**.\n${pl.url || ''}`
+        const emb = playlistAddedEmbed(
+          { title: res.playlist.title, count: res.playlist.count, first: res.track },
+          interaction.user,
         );
+        await interaction.editReply({ embeds: [emb], ...warnPayload });
         return;
       }
-      if (res.kind === 'bandcamp') {
-        const a = res.album;
-        await interaction.editReply(
-          `💿 **Bandcamp:** ${a.title || ''} — ${a.artist || ''}\n` +
-          `Треков в очереди: **${a.count}**\n` +
-          a.tracks.slice(0, 8).map((t, i) => `${i + 1}. ${t}`).join('\n')
+      // Direct stream/radio via /play (mp3 link): LIVE overlay instead of duration
+      if (res.track.isLive) {
+        const emb = liveAddedEmbed(
+          { label: res.track.title, url: res.track.url, source: res.track.source },
+          interaction.user,
         );
+        await interaction.editReply({ embeds: [emb], ...warnPayload });
         return;
       }
       const emb = addedTrackEmbed(
         {
           title: res.track.title, url: res.track.url, author: res.track.author,
           thumbnail: res.track.thumbnail, duration: res.track.durationLabel,
+          source: res.track.source,
         },
         res.position, interaction.user,
         res.waitMs, res.nextTitle,
       );
-      if (res.viaFallback) {
-        await interaction.editReply(`🔎 Прямая ссылка не открылась, включил через поиск: «${String(res.viaFallback).slice(0, 100)}»`);
-        await interaction.followUp({ embeds: [emb] });
-      } else {
-        await interaction.editReply({ embeds: [emb] });
-      }
+      await interaction.editReply({ embeds: [emb], ...warnPayload });
     } catch (e) {
-      await interaction.editReply(`❌ Не смог включить: ${String(e.message || e).slice(0, 300)}`);
+      await interaction.editReply(`❌ Couldn't play: ${String(e.message || e).slice(0, 300)}`);
     }
   },
 };

@@ -4,22 +4,22 @@ const { requireMod, resolveMember, protectedTarget, modLog } = require('../utils
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('ban')
-    .setDescription('Забанить (с удалением сообщений за N дней)')
+    .setDescription('Ban (deletes messages from the last N days)')
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
-    .addUserOption(o => o.setName('user').setDescription('Кого').setRequired(true))
-    .addStringOption(o => o.setName('reason').setDescription('Причина').setRequired(false))
-    .addIntegerOption(o => o.setName('delete_days').setDescription('Удалить сообщения за дней (0–7)').setMinValue(0).setMaxValue(7)),
+    .addUserOption(o => o.setName('user').setDescription('Who').setRequired(true))
+    .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(false))
+    .addIntegerOption(o => o.setName('delete_days').setDescription('Delete messages from the last N days (0–7)').setMinValue(0).setMaxValue(7)),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const user = interaction.options.getUser('user', true);
-    const reason = interaction.options.getString('reason') || 'Без причины';
+    const reason = interaction.options.getString('reason') || 'No reason';
     const member = await resolveMember(interaction, user);
-    // забанить можно и вышедшего — тогда проверок иерархии нет, только админы бота
+    // Can ban user who left -- then no hierarchy checks, only bot admins
     if (member) {
       const blocked = protectedTarget(member, interaction.user.id);
       if (blocked) { await interaction.reply({ content: `❌ ${blocked}`, flags: MessageFlags.Ephemeral }); return; }
     } else if (require('../config').config.adminIds.includes(user.id)) {
-      await interaction.reply({ content: '❌ Нельзя: владелец бота.', flags: MessageFlags.Ephemeral }); return;
+      await interaction.reply({ content: '❌ Forbidden: bot owner.', flags: MessageFlags.Ephemeral }); return;
     }
     try {
       await interaction.guild.members.ban(user.id, {
@@ -31,7 +31,7 @@ module.exports = {
       await interaction.reply({ embeds: [emb] });
       await modLog(client, { embeds: [emb] });
     } catch {
-      await interaction.reply({ content: '❌ Не смог забанить (роль бота ниже?).', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '❌ Could not ban (bot role too low?).', flags: MessageFlags.Ephemeral });
     }
   },
 };

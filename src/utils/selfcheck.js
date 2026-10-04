@@ -1,22 +1,22 @@
-// Самопроверка прав: при старте (аудит) и перед заходом в войс (префлайт).
-// Никаких плейсхолдеров — всё читается живьём из Discord API.
+// Self-check permissions: at startup (audit) and before joining voice (preflight).
+// No placeholders -- everything read live from Discord API.
 const { PermissionFlagsBits } = require('discord.js');
 const { config } = require('../config');
 const { logger } = require('./logger');
 
 const LABELS = new Map([
-  [PermissionFlagsBits.ViewChannel, 'Просмотр канала'],
-  [PermissionFlagsBits.SendMessages, 'Отправка сообщений'],
-  [PermissionFlagsBits.EmbedLinks, 'Вставка ссылок/эмбедов'],
-  [PermissionFlagsBits.ReadMessageHistory, 'Чтение истории'],
-  [PermissionFlagsBits.Connect, 'Подключение к войсу'],
-  [PermissionFlagsBits.Speak, 'Говорить в войсе'],
-  [PermissionFlagsBits.ManageChannels, 'Управление каналами'],
-  [PermissionFlagsBits.ManageMessages, 'Управление сообщениями'],
-  [PermissionFlagsBits.ManageRoles, 'Управление ролями'],
-  [PermissionFlagsBits.ModerateMembers, 'Мут участников'],
-  [PermissionFlagsBits.KickMembers, 'Кик'],
-  [PermissionFlagsBits.BanMembers, 'Бан'],
+  [PermissionFlagsBits.ViewChannel, 'View Channel'],
+  [PermissionFlagsBits.SendMessages, 'Send Messages'],
+  [PermissionFlagsBits.EmbedLinks, 'Embed Links'],
+  [PermissionFlagsBits.ReadMessageHistory, 'Read Message History'],
+  [PermissionFlagsBits.Connect, 'Connect'],
+  [PermissionFlagsBits.Speak, 'Speak'],
+  [PermissionFlagsBits.ManageChannels, 'Manage Channels'],
+  [PermissionFlagsBits.ManageMessages, 'Manage Messages'],
+  [PermissionFlagsBits.ManageRoles, 'Manage Roles'],
+  [PermissionFlagsBits.ModerateMembers, 'Moderate Members'],
+  [PermissionFlagsBits.KickMembers, 'Kick Members'],
+  [PermissionFlagsBits.BanMembers, 'Ban Members'],
 ]);
 
 const WANT_GUILD = [
@@ -31,7 +31,7 @@ function labelOf(flag) {
   return LABELS.get(flag) || String(flag);
 }
 
-// Аудит при старте: чего не хватает на сервере. Возвращает { me, missing[] }.
+// Startup audit: what's missing on server. Returns { me, missing[] }.
 async function auditGuild(client) {
   const guild = await client.guilds.fetch(config.guildId).catch(() => null);
   if (!guild) {
@@ -46,51 +46,62 @@ async function auditGuild(client) {
   const missing = WANT_GUILD.filter(f => !me.permissions.has(f)).map(labelOf);
   if (missing.length) logger.warn('[selfcheck] missing guild perms:', missing.join(', '));
   else logger.info('[selfcheck] guild perms OK');
-  // Роли по ID: которых нет — пинги будут «неизвестными»
+  // Roles by ID: missing ones -> pings will be "unknown"
   const roles = {
-    'MOD_ROLE_ID (модерация/тикеты)': config.modRoleId,
-    'ANNOUNCE_ROLE_ID (анонсы)': config.announceRoleId,
-    'MEDIA_ROLE_ID (медиа)': config.mediaRoleId || config.announceRoleId,
+    'MOD_ROLE_ID (moderation/tickets)': config.modRoleId,
+    'ANNOUNCE_ROLE_ID (announcements)': config.announceRoleId,
+    'MEDIA_ROLE_ID (media)': config.mediaRoleId || config.announceRoleId,
   };
+  // role.members read from MEMBER CACHE -- on startup it's nearly empty,
+  // without warmup "empty role" check fires falsely. Warm up with full fetch
+  // (needs privileged Server Members Intent in Dev Portal + GuildMembers in index.js).
+  let cacheWarmed = false;
+  try {
+    await guild.members.fetch();
+    cacheWarmed = true;
+  } catch (e) {
+    logger.warn('[selfcheck] failed to warm member cache -- skipping empty role check (enable Server Members Intent in Dev Portal):', e.message);
+  }
   for (const [label, id] of Object.entries(roles)) {
     if (!id) {
-      missing.push(`${label}: не задан`);
+      missing.push(`${label}: not set`);
       continue;
     }
     const role = await guild.roles.fetch(id).catch(() => null);
     if (!role) {
-      missing.push(`${label}: ${id} НЕТ НА СЕРВЕРЕ`);
+      missing.push(`${label}: ${id} NOT ON SERVER`);
       logger.warn(`[selfcheck] role missing: ${label} = ${id}`);
     } else if (role.members.size === 0 && /ANNOUNCE|MEDIA/.test(label)) {
-      logger.warn(`[selfcheck] role empty (пинг в пустоту): ${label} = ${role.name}`);
-      missing.push(`${label}: роль пустая (${role.name}) — пинг никто не получит`);
+      if (!cacheWarmed) continue; // cache not warmed -- silent to avoid false positives
+      logger.warn(`[selfcheck] role empty (ping into void): ${label} = ${role.name}`);
+      missing.push(`${label}: role empty (${role.name}) -- ping reaches no one`);
     }
   }
   return { me, missing };
 }
 
-// Префлайт войса: эффективные права именно в этом канале + лимит + мьют бота.
-// Поддерживает обычные войсы (2) и сцены Stage (13) — на сцене Speak не требуем,
-// бот после входа пробует стать спикером (unsuppress).
-// Возвращает { ok, problems[], me, isStage }
+// Voice preflight: effective permissions in THIS channel + limit + bot mute.
+// Supports regular voice (2) and Stage channels (13) -- on stage Speak not required,
+// bot tries to become speaker after joining (unsuppress).
+// Returns { ok, problems[], me, isStage }
 async function checkVoice(client, voiceChannel) {
   const problems = [];
   const guild = voiceChannel.guild;
   const me = await guild.members.fetch(client.user.id).catch(() => null);
-  if (!me) return { ok: false, problems: ['бота нет на сервере'], me: null, isStage: false };
+  if (!me) return { ok: false, problems: ['bot not in guild'], me: null, isStage: false };
   const isStage = voiceChannel.type === 13;
   const eff = voiceChannel.permissionsFor(me);
   const need = isStage
     ? [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect]
     : [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak];
   for (const f of need) {
-    if (!eff?.has(f)) problems.push(`нет права «${labelOf(f)}» в канале ${voiceChannel.name}`);
+    if (!eff?.has(f)) problems.push(`missing "${labelOf(f)}" permission in channel ${voiceChannel.name}`);
   }
   if (voiceChannel.userLimit > 0 && voiceChannel.members.size >= voiceChannel.userLimit && !voiceChannel.members.has(me.id)) {
-    problems.push(`канал ${voiceChannel.name} полон (лимит ${voiceChannel.userLimit})`);
+    problems.push(`channel ${voiceChannel.name} is full (limit ${voiceChannel.userLimit})`);
   }
-  if (me.voice.serverMute) problems.push('бот замьючен на сервере (Server Mute)');
-  if (me.voice.serverDeaf) problems.push('бот оглушён на сервере (Server Deaf)');
+  if (me.voice.serverMute) problems.push('bot is server-muted (Server Mute)');
+  if (me.voice.serverDeaf) problems.push('bot is server-deafened (Server Deaf)');
   return { ok: problems.length === 0, problems, me, isStage };
 }
 

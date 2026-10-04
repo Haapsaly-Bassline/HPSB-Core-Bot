@@ -1,8 +1,8 @@
-// HPSB site-publisher: releases / events / posts + напоминания.
-// Принцип: ОДИН источник на ленту (без цепочек JSON->RSS):
-//   releases -> JSON releases API, events -> RSS (JSON мёртв), posts -> JSON.
-// Формат определяется по ответу. Ошибки: бэкофф (3 провала = молчим 30 мин).
-// Первый запуск только запоминает (без спама историей).
+// HPSB site-publisher: releases / events / posts + reminders.
+// Principle: ONE source per feed (no JSON->RSS chains):
+//   releases -> JSON releases API, events -> RSS (JSON dead), posts -> JSON.
+// Format detected from response. Errors: backoff (3 failures = silent 30 min).
+// First run only remembers (no history spam).
 const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
 const { XMLParser } = require('fast-xml-parser');
@@ -15,7 +15,7 @@ const parser = new XMLParser({ ignoreAttributes: false });
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 let timer = null;
 
-// fails: { key -> { n, until, warned } } — бэкофф в памяти
+// fails: { key -> { n, until, warned } } -- backoff in memory
 const fails = {};
 
 function backoffSkip(key) {
@@ -30,7 +30,7 @@ function backoffFail(key, err) {
     f.until = Date.now() + 30 * 60 * 1000;
     if (!f.warned) {
       f.warned = true;
-      logger.warn(`[hpsb/${key}] 3 провала подряд (${err}) — молчу 30 мин`);
+      logger.warn(`[hpsb/${key}] 3 failures in a row (${err}) -- silent 30 min`);
     }
   } else {
     logger.warn(`[hpsb/${key}] fail ${f.n}/3: ${err}`);
@@ -39,7 +39,7 @@ function backoffFail(key, err) {
 
 function backoffOk(key) {
   const f = fails[key];
-  if (f && (f.n > 0 || f.warned)) logger.info(`[hpsb/${key}] источник ожил`);
+  if (f && (f.n > 0 || f.warned)) logger.info(`[hpsb/${key}] source revived`);
   delete fails[key];
 }
 
@@ -69,7 +69,7 @@ function pingLine(text) {
   return ping ? `${ping} ${text}` : text;
 }
 
-// Один fetch на ленту. Возвращает унифицированные items:
+// Single fetch per feed. Returns unified items:
 // { uid, title, link, desc, date, image, raw }
 async function fetchFeed(url) {
   const { data } = await axios.get(url, { timeout: 20000, headers: { 'User-Agent': UA } });
@@ -105,7 +105,7 @@ function releaseEmbed(r) {
     .setColor(0x7c3aed)
     .setTitle(`💿 ${truncate(r.title, 200)} — ${truncate(r.artist || 'HPSB', 100)}`)
     .setURL(page)
-    .setDescription(truncate(r.description || '', 1500) || '_Новый релиз HPSB_')
+    .setDescription(truncate(r.description || '', 1500) || '_New HPSB release_')
     .setTimestamp(r.createdAt ? new Date(r.createdAt) : new Date());
   const img = abs(config.hpsb.releases.baseUrl, r.cover);
   if (img) e.setImage(img);
@@ -188,7 +188,7 @@ function simpleEventEmbed(item) {
 }
 
 function eventLike(ev) {
-  // JSON-вариант с полями API
+  // JSON variant with API fields
   if (ev && (ev.start || ev.startUnix)) {
     return { name: ev.name, link: ev.link, description: ev.description || ev.descriptionRaw, image: ev.image, location: ev.location, status: ev.status, start: ev.start, startUnix: ev.startUnix };
   }
@@ -230,8 +230,8 @@ async function checkEvents(client, state, opts = {}) {
   }
 }
 
-// ---------- Напоминания о будущих эвентах (24ч и 1ч до старта) ----------
-// Старт берём из date (RSS pubDate = старт, JSON start).
+// ---------- Future event reminders (24h and 1h before start) ----------
+// Start from date (RSS pubDate = start, JSON start).
 async function checkReminders(client, state) {
   const KEY = 'remind';
   const { channelId, feedUrl } = config.hpsb.events;
@@ -347,7 +347,7 @@ async function checkLegacy(client, state) {
 const ZERO = { found: 0, posted: 0 };
 let running = false;
 
-// Один полный прогон (для поллера и для /sync). opts.backfill — докинуть последние N.
+// One full run (for poller and for /sync). opts.backfill -- add last N.
 async function runHpsbOnce(client, opts = {}) {
   if (running) { logger.warn('[hpsb] previous run still active, skipping'); return null; }
   running = true;

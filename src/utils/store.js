@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-// Простой JSON store без нативных зависимостей: data/store.json
+// Simple JSON store without native deps: data/store.json
 // { youtube: {}, tiktok: {}, instagram: {}, site: {lastIds: []},
 //   releases: {ids: []}, events: {ids: []}, posts: {ids: []}, modcall: {} }
 

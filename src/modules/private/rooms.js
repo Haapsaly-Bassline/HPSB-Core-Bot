@@ -1,6 +1,6 @@
-// Приватные войсы как VoiceMaster: зашёл в генератор -> своя комната + панель.
-// Панель: замок, rename, лимит, передача, кик. Пустая комната удаляется,
-// владелец вышел — комната переходит первому оставшемуся.
+// Private voices like VoiceMaster: join generator -> own room + panel.
+// Panel: lock, rename, limit, transfer, kick. Empty room deleted,
+// owner left -> room passes to first remaining member.
 const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle,
@@ -32,18 +32,18 @@ function roomName(user) {
 }
 
 function panelEmbed(owner) {
-  return new EmbedBuilder().setColor(0x7c3aed).setTitle('🔊 Твоя приватка').setTimestamp()
-    .setDescription(`Владелец: ${owner}\n\n🔒 — закрыть/открыть для всех\n✏️ — переименовать\n👥 — лимит мест (0 = без лимита)\n➡️ — передать владение\n👢 — кикнуть (отключить)`)
+  return new EmbedBuilder().setColor(0x7c3aed).setTitle('🔊 Your Private Room').setTimestamp()
+    .setDescription(`Owner: ${owner}\n\n🔒 — lock/unlock for everyone\n✏️ — rename\n👥 — slot limit (0 = unlimited)\n➡️ — transfer ownership\n👢 — kick (disconnect)`)
     .setFooter({ text: 'Haapsaly Bassline • Private' });
 }
 
 function panelRows(locked) {
   return [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(BTN_LOCK).setEmoji(locked ? '🔓' : '🔒').setLabel(locked ? 'Открыть' : 'Закрыть').setStyle(locked ? ButtonStyle.Success : ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(BTN_RENAME).setEmoji('✏️').setLabel('Название').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(BTN_LIMIT).setEmoji('👥').setLabel('Лимит').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(BTN_GIVE).setEmoji('➡️').setLabel('Передать').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(BTN_KICK).setEmoji('👢').setLabel('Кик').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(BTN_LOCK).setEmoji(locked ? '🔓' : '🔒').setLabel(locked ? 'Unlock' : 'Lock').setStyle(locked ? ButtonStyle.Success : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(BTN_RENAME).setEmoji('✏️').setLabel('Rename').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(BTN_LIMIT).setEmoji('👥').setLabel('Limit').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(BTN_GIVE).setEmoji('➡️').setLabel('Transfer').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(BTN_KICK).setEmoji('👢').setLabel('Kick').setStyle(ButtonStyle.Danger),
   )];
 }
 
@@ -54,8 +54,8 @@ async function refreshPanel(client, channelId) {
     if (!rec?.msgId) return;
     const ch = await client.channels.fetch(channelId).catch(() => null);
     if (!ch?.isTextBased?.() && !ch?.isVoiceBased?.()) return;
-    // панель живёт в самой приватке? нет — панель шлём в текстовый? VoiceMaster шлёт в войс-чат.
-    // У нас: сообщение в voice-textchat приватной комнаты (isTextBased у войсов = voice text).
+// Does the panel live in the private room itself? No -- panel sent to text? VoiceMaster sends to voice chat.
+// Ours: message in voice-textchat of private room (isTextBased on voice = voice text).
     const msg = await ch.messages.fetch(rec.msgId).catch(() => null);
     if (!msg) return;
     const locked = await isLocked(ch);
@@ -83,9 +83,9 @@ async function handleVoiceState(oldS, newS, client) {
   const member = newS.member || oldS.member;
   if (!member || member.user.bot) return;
 
-  // Зашёл в генератор
+  // Joined generator
   if (newS.channelId === genId) {
-    // уже есть своя — кидаем туда
+    // already has own -> move there
     const existing = myRoom(member.id);
     if (existing) {
       const ch = await client.channels.fetch(existing).catch(() => null);
@@ -119,7 +119,7 @@ async function handleVoiceState(oldS, newS, client) {
     return;
   }
 
-  // Вышел из отслеживаемой комнаты
+  // Left tracked room
   const leftId = oldS.channelId;
   if (!leftId || leftId === genId) return;
   const d = state();
@@ -134,16 +134,16 @@ async function handleVoiceState(oldS, newS, client) {
     logger.info(`[priv] deleted empty ${leftId}`);
     return;
   }
-  // владелец ушёл, люди остались — передаём первому
+  // owner left, members remain -> transfer to first
   if (rec.ownerId && !members.some(m => m.id === rec.ownerId)) {
     rec.ownerId = members[0].id;
     save(d);
     await refreshPanel(client, leftId);
-    ch.send(`➡️ Владелец ушёл — комната перешла к ${members[0]}.`).catch(() => {});
+    ch.send(`➡️ Owner left -- room passed to ${members[0]}.`).catch(() => {});
   }
 }
 
-// owner или админ бота
+// owner or bot admin
 function canControl(interaction, ownerId) {
   if (interaction.user.id === ownerId) return true;
   if (config.adminIds.includes(interaction.user.id)) return true;
@@ -152,14 +152,14 @@ function canControl(interaction, ownerId) {
 }
 
 async function roomOf(interaction, client) {
-  // комната = войс, где сидит жмущий (должен быть своей приваткой)
+  // room = voice where clicker sits (must be their private)
   const voiceId = interaction.member?.voice?.channelId;
-  if (!voiceId) return { error: 'Зайди в свою приватку.' };
+  if (!voiceId) return { error: 'Join your private room.' };
   const d = state();
   const rec = d.privates[voiceId];
-  if (!rec) return { error: 'Это не приватная комната бота.' };
+  if (!rec) return { error: 'This is not a bot private room.' };
   const ch = await client.channels.fetch(voiceId).catch(() => null);
-  if (!ch) return { error: 'Комната не найдена.' };
+  if (!ch) return { error: 'Room not found.' };
   return { channel: ch, rec };
 }
 
@@ -170,47 +170,47 @@ async function handleInteraction(interaction, client) {
     if (id === BTN_LOCK) {
       const r = await roomOf(interaction, client);
       if (r.error) { await interaction.reply({ content: `❌ ${r.error}`, flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
-      if (!canControl(interaction, r.rec.ownerId)) { await interaction.reply({ content: '❌ Только владелец.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      if (!canControl(interaction, r.rec.ownerId)) { await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
       const locked = await isLocked(r.channel);
       try {
         if (locked) await r.channel.permissionOverwrites.delete(interaction.guild.id);
         else await r.channel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
         await refreshPanel(client, r.channel.id);
-        await interaction.reply({ content: locked ? '🔓 Открыто для всех.' : '🔒 Закрыто (только кто внутри + владелец).', flags: MessageFlags.Ephemeral }).catch(() => {});
-      } catch { await interaction.reply({ content: '❌ Не смог (прав не хватает?).', flags: MessageFlags.Ephemeral }).catch(() => {}); }
+        await interaction.reply({ content: locked ? '🔓 Unlocked for everyone.' : '🔒 Locked (only those inside + owner).', flags: MessageFlags.Ephemeral }).catch(() => {});
+      } catch { await interaction.reply({ content: '❌ Failed (missing permissions?).', flags: MessageFlags.Ephemeral }).catch(() => {}); }
       return true;
     }
     if (id === BTN_RENAME) {
       const r = await roomOf(interaction, client);
-      if (r.error || !canControl(interaction, r.rec.ownerId)) { await interaction.reply({ content: `❌ ${r.error || 'Только владелец.'}`, flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
-      const modal = new ModalBuilder().setCustomId(`${MODAL_RENAME}:${r.channel.id}`).setTitle('Название приватки');
+      if (r.error || !canControl(interaction, r.rec.ownerId)) { await interaction.reply({ content: `❌ ${r.error || 'Owner only.'}`, flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      const modal = new ModalBuilder().setCustomId(`${MODAL_RENAME}:${r.channel.id}`).setTitle('Private Room Name');
       modal.addComponents(new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('name').setLabel('Новое название').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(2).setMaxLength(90),
+        new TextInputBuilder().setCustomId('name').setLabel('New name').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(2).setMaxLength(90),
       ));
       await interaction.showModal(modal).catch(() => {});
       return true;
     }
     if (id === BTN_LIMIT) {
       const r = await roomOf(interaction, client);
-      if (r.error || !canControl(interaction, r.rec.ownerId)) { await interaction.reply({ content: `❌ ${r.error || 'Только владелец.'}`, flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
-      const modal = new ModalBuilder().setCustomId(`${MODAL_LIMIT}:${r.channel.id}`).setTitle('Лимит мест (0 = без лимита)');
+      if (r.error || !canControl(interaction, r.rec.ownerId)) { await interaction.reply({ content: `❌ ${r.error || 'Owner only.'}`, flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      const modal = new ModalBuilder().setCustomId(`${MODAL_LIMIT}:${r.channel.id}`).setTitle('Slot Limit (0 = unlimited)');
       modal.addComponents(new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('limit').setLabel('Число 0–99').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(2),
+        new TextInputBuilder().setCustomId('limit').setLabel('Number 0–99').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(2),
       ));
       await interaction.showModal(modal).catch(() => {});
       return true;
     }
     if (id === BTN_GIVE || id === BTN_KICK) {
       const r = await roomOf(interaction, client);
-      if (r.error || !canControl(interaction, r.rec.ownerId)) { await interaction.reply({ content: `❌ ${r.error || 'Только владелец.'}`, flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      if (r.error || !canControl(interaction, r.rec.ownerId)) { await interaction.reply({ content: `❌ ${r.error || 'Owner only.'}`, flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
       const inRoom = [...(r.channel.members?.values() || [])].filter(m => !m.user.bot && m.id !== interaction.user.id).slice(0, 20);
-      if (!inRoom.length) { await interaction.reply({ content: '❌ В комнате никого кроме тебя.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      if (!inRoom.length) { await interaction.reply({ content: '❌ No one else in the room.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
       const menu = new UserSelectMenuBuilder()
         .setCustomId(`${id === BTN_GIVE ? 'priv:dogive' : 'priv:dokick'}:${r.channel.id}`)
-        .setPlaceholder(id === BTN_GIVE ? 'Кому передать?' : 'Кого кикнуть?')
+        .setPlaceholder(id === BTN_GIVE ? 'Transfer to whom?' : 'Kick whom?')
         .setMinValues(1).setMaxValues(1);
       await interaction.reply({
-        content: id === BTN_GIVE ? '➡️ Выбери нового владельца:' : '👢 Выбери кого отключить:',
+        content: id === BTN_GIVE ? '➡️ Select new owner:' : '👢 Select who to disconnect:',
         components: [new ActionRowBuilder().addComponents(menu)],
         flags: MessageFlags.Ephemeral,
       }).catch(() => {});
@@ -223,29 +223,29 @@ async function handleInteraction(interaction, client) {
       const channelId = interaction.customId.split(':').pop();
       const d = state();
       if (d.privates[channelId]?.ownerId !== interaction.user.id && !config.adminIds.includes(interaction.user.id)) {
-        await interaction.reply({ content: '❌ Только владелец.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
+        await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
       }
       const name = interaction.fields.getTextInputValue('name').trim();
       const ch = await client.channels.fetch(channelId).catch(() => null);
-      if (!ch) { await interaction.reply({ content: '❌ Комната не найдена.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      if (!ch) { await interaction.reply({ content: '❌ Room not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
       await ch.setName(name.slice(0, 90)).catch(() => {});
-      await interaction.reply({ content: `✏️ Переименовано: **${name.slice(0, 90)}**`, flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.reply({ content: `✏️ Renamed: **${name.slice(0, 90)}**`, flags: MessageFlags.Ephemeral }).catch(() => {});
       return true;
     }
     if (interaction.customId.startsWith(MODAL_LIMIT)) {
       const channelId = interaction.customId.split(':').pop();
       const d = state();
       if (d.privates[channelId]?.ownerId !== interaction.user.id && !config.adminIds.includes(interaction.user.id)) {
-        await interaction.reply({ content: '❌ Только владелец.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
+        await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
       }
       const n = Number(interaction.fields.getTextInputValue('limit').trim());
       if (!Number.isInteger(n) || n < 0 || n > 99) {
-        await interaction.reply({ content: '❌ Число 0–99.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
+        await interaction.reply({ content: '❌ Number 0–99.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
       }
       const ch = await client.channels.fetch(channelId).catch(() => null);
-      if (!ch) { await interaction.reply({ content: '❌ Комната не найдена.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      if (!ch) { await interaction.reply({ content: '❌ Room not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
       await ch.setUserLimit(n).catch(() => {});
-      await interaction.reply({ content: n === 0 ? '👥 Лимит снят.' : `👥 Лимит: ${n}.`, flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.reply({ content: n === 0 ? '👥 Limit removed.' : `👥 Limit: ${n}.`, flags: MessageFlags.Ephemeral }).catch(() => {});
       return true;
     }
   }
@@ -254,7 +254,7 @@ async function handleInteraction(interaction, client) {
     const [kind, channelId] = [interaction.customId.startsWith('priv:dogive') ? 'give' : 'kick', interaction.customId.split(':').pop()];
     const d = state();
     if (d.privates[channelId]?.ownerId !== interaction.user.id && !config.adminIds.includes(interaction.user.id)) {
-      await interaction.reply({ content: '❌ Только владелец.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
+      await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
     }
     const targetId = interaction.values?.[0];
     if (!targetId) { await interaction.deferUpdate().catch(() => {}); return true; }
@@ -262,14 +262,14 @@ async function handleInteraction(interaction, client) {
       d.privates[channelId].ownerId = targetId;
       save(d);
       await refreshPanel(client, channelId);
-      await interaction.reply({ content: `➡️ Новый владелец: <@${targetId}>`, flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.reply({ content: `➡️ New owner: <@${targetId}>`, flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
       const member = await interaction.guild.members.fetch(targetId).catch(() => null);
       if (member?.voice?.channelId === channelId) {
         await member.voice.disconnect('Kicked from private').catch(() => {});
-        await interaction.reply({ content: `👢 Отключён: <@${targetId}>`, flags: MessageFlags.Ephemeral }).catch(() => {});
+        await interaction.reply({ content: `👢 Disconnected: <@${targetId}>`, flags: MessageFlags.Ephemeral }).catch(() => {});
       } else {
-        await interaction.reply({ content: '❌ Его уже нет в комнате.', flags: MessageFlags.Ephemeral }).catch(() => {});
+        await interaction.reply({ content: '❌ They are no longer in the room.', flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     }
     return true;

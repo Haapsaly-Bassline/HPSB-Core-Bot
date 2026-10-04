@@ -1,0 +1,159 @@
+# Lavalink for HPSB Core Bot — runs on host PC.
+# Bot runs exclusively on Lavalink (MUSIC_ENGINE=lavalink in bot .env).
+# On host PC: Java 17+ -> java -jar Lavalink.jar -> MUSIC_ENGINE=lavalink
+#
+# Get fresh Lavalink.jar (v4): https://github.com/lavalink-devs/Lavalink/releases
+# Versions below verified 2026-09-25, check against releases before running:
+#   YouTube plugin: https://github.com/lavalink-devs/youtube-source/releases
+#   LavaSrc:        https://github.com/topi314/LavaSrc/releases (Spotify/Apple/Deezer via API keys)
+
+server:
+  port: 2333
+  address: 0.0.0.0
+
+lavalink:
+server:
+      # Same password in bot .env -> LAVALINK_PASSWORD
+      password: "CHANGE-ME-AND-MIRROR-IN-BOT-ENV"
+      sources:
+        youtube: false                # MUST be false: built-in source is deprecated and intercepts
+                                      # ytsearch: from plugin (400 from YouTube). Plugin is below, separate.
+        bandcamp: true
+        soundcloud: true
+        twitch: false
+        vimeo: false                      # OFF 2026-10-04: not working (source dead)
+        nico: false
+        http: true
+        local: false
+    filters:
+      volume: true
+    bufferDurationMs: 400
+    opusEncodingProfile: "OPUS"        # pure opus to Discord
+    resamplingQuality: LOW             # less CPU
+    trackStuckThresholdMs: 10000
+    useChronicle: true                 # requires Java 17+ (chronicle bytebuffer off-heap)
+    youtubePlaylistLoadLimit: 6
+    playerUpdateInterval: 5
+    youtubeSearchEnabled: true               # TEST 2026-10-04: trying to restore YouTube
+    soundcloudSearchEnabled: true
+    httpSearchEnabled: false
+    localSearchEnabled: false
+  plugins:
+    # YouTube via official plugin (more stable than built-in source).
+    # DISABLED: home IP flagged by YouTube as bot. Return only via OAuth
+    # (burner account!) — see commented block below.
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+    # Other music integrations via LavaSrc (Spotify / Apple / Deezer / Tidal / Qobuz ...).
+    # IMPORTANT: source enabled (sources.*: true) ONLY with real token.
+    # PASTE_* placeholder in enabled source CRASHES START (verified on Apple Music).
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+    # lava-lyrics-plugin REMOVED: no 4.8.3 artifact on maven.lavalink.dev (404 -> crashes PluginManager),
+    # bot doesn't use lyrics. Don't add back without verifying URL on maven.
+
+plugins:
+  youtube:
+    # SCHEMA 2026-10-04: search/metadata via plugin; DIRECT LINKS via ytdlp with burner cookies
+    # (allowDirect* disabled: plugin passes URLs, ytdlp picks them up -- otherwise all links
+    # resolved by plugin hit login/bot-check on PLAYBACK).
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: false
+    allowDirectPlaylistIds: false
+    # How to return YouTube: enabled -> true, uncomment oauth below, restart Lavalink,
+    # do device-flow in console with BURNER Google account (NOT main -- ban risk!),
+    # paste issued refreshToken in yml. Or add WEB/ANDROID_VR clients below --
+    # sometimes works, but with IP ban usually not.
+    # OAuth 2026-10-04: works (token refreshes itself, device-flow no longer needed).
+    # Token NOT committed! In git PASTE Refresh token -- after pull fill locally and restart node.
+    oauth:
+      enabled: true
+      refreshToken: "PASTE_REFRESH_TOKEN"
+    clients:
+      - MUSIC
+      - TV                 # OAuth client (without it OAuth enabled is useless -- plugin warning)
+      - ANDROID_VR
+      - WEB
+      - TVHTML5_SIMPLY
+lavasrc:
+    # Mirror (Spotify/Apple/Tidal) searches providers TOP-DOWN.
+    # Deezer first: Direct and independent of banned YouTube.
+    providers:
+      - "dzisrc:%ISRC%"                  # Deezer by ISRC -- exact matches, no YouTube
+      - "dzsearch:%QUERY%"               # Deezer search as mirror fallback
+      - "ytsearch:\"%ISRC%\""            # YouTube by ISRC -- lives with youtube-plugin/OAuth
+      - "ytsearch:%QUERY%"
+    sources:
+      spotify: false                     # OFF 2026-10-04: app has no Premium (owner listens via mod).
+                                         # Spotify API blocks ALL requests without Premium on owner. Return: renew
+                                         # Premium + spotify:true. Keys in block below intact.
+      applemusic: false                  # OFF until token: placeholder CRASHES START (AppleMusicTokenManager).
+                                         # Paste mediaAPIToken below and set true.
+      deezer: false                       # OFF until tokens: Direct (no YouTube!). Paste arl +
+                                         # masterDecryptionKey below and set true -- then Spotify
+                                         # also works as mirror via Deezer without YouTube.
+      yandexmusic: false                 # REMOVED 2026-10-04 per owner decision (config block deleted).
+      vkmusic: false                     # not selected; enable + userToken (+ RU proxy, server not in RU)
+      tidal: false                       # OFF until token (placeholder may crash start).
+                                         # Paste token below and set true; audio via mirror.
+      qobuz: false                       # OFF until token. Paste userOauthToken below and set true (Direct).
+      ytdlp: true                         # ON 2026-10-04: handles DIRECT YT links (plugin skips them,
+                                         # see allowDirect* above) and plays via yt-dlp with burner cookies.
+                                         # Text search stays on plugin. Audiomack NOT provided (YouTube only).
+      flowerytts: false                  # TTS text-to-speech, not music
+      jiosaavn: false                    # needs own secretKey
+      youtube: false                     # LavaSearch YouTube search (dead without youtube-plugin)
+    lyrics-sources:                      # lyrics not needed by bot -- all off
+      spotify: false
+      deezer: false
+      youtube: false
+      yandexmusic: false
+      vkmusic: false
+      lrcLib: false
+    spotify:
+      preferAnonymousToken: false
+      # Keys NOT committed (would leak to GitHub): take from bot .env (SPOTIFY_*)
+      # and fill LOCAL after git pull. Without them spsearch/Spotify links won't resolve.
+      clientId: "PASTE_SPOTIFY_CLIENT_ID"
+      clientSecret: "PASTE_SPOTIFY_CLIENT_SECRET"
+      countryCode: "EE"
+      playlistLoadLimit: 6
+      albumLoadLimit: 6
+    applemusic:
+      countryCode: "EE"
+      # Free but manual: token WITHOUT Apple developer account --
+      # guide https://github.com/topi314/LavaSrc#apple-music . Paste token, set applemusic: true.
+      mediaAPIToken: "PASTE_APPLE_MUSIC_TOKEN"
+    deezer:
+      # Free, manual, 5 minutes:
+      #  1) create/open Deezer account (free enough for MP3_128),
+      #  2) login on deezer.com -> F12 -> Application -> Cookies -> copy `arl`,
+      #  3) master key already filled LOCALLY (in git -- placeholder, don't post anywhere else).
+      # Paste arl, set deezer: true. Gives direct audio + revives Spotify mirror without YouTube.
+      arl: "PASTE_DEEZER_ARL"
+      masterDecryptionKey: "PASTE_DEEZER_MASTER_KEY"
+      formats: [ "MP3_128" ]
+    tidal:
+      # Token: https://github.com/topi314/LavaSrc#tidal
+      countryCode: "EE"
+      token: "PASTE_TIDAL_TOKEN"
+    qobuz:
+      # Token: https://github.com/topi314/LavaSrc#qobuz
+      userOauthToken: "PASTE_QOBUZ_TOKEN"
+    ytdlp:
+      # Burner cookies (logged-in session beats login-required and bot-check).
+      # File LOCAL ONLY (gitignore), expires -- re-export from browser.
+      path: "C:/Users/Host-PC/AppData/Local/Microsoft/WinGet/Links/yt-dlp.exe"
+      searchLimit: 10
+      customLoadArgs: ["--cookies", "J:/DESKROP/HPSB-Core-Bot/lavalink/cookies.txt", "-q", "--no-warnings", "--flat-playlist", "--skip-download", "-J"]
+      customPlaybackArgs: ["--cookies", "J:/DESKROP/HPSB-Core-Bot/lavalink/cookies.txt", "-q", "--no-warnings", "-f", "bestaudio", "-J"]
+
+logging:
+  level:
+    lavalink: INFO
+    root: WARN
+    # OAuth device-flow prints link+code HERE (otherwise silent under root=WARN)
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO

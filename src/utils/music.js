@@ -1,4 +1,4 @@
-// Хелперы времени/прогресса музыкального модуля.
+// Time formatting and progress bar for music overlays.
 
 function parseDuration(str) {
   // '3:38' | '1:02:09' | 'LIVE' -> ms
@@ -10,12 +10,6 @@ function parseDuration(str) {
   let ms = 0;
   for (const p of parts) ms = ms * 60 + p;
   return ms * 1000;
-}
-
-function trackMs(track) {
-  if (!track) return 0;
-  if (Number.isFinite(track.durationMS) && track.durationMS > 0) return track.durationMS;
-  return parseDuration(track.duration);
 }
 
 function fmtMs(ms) {
@@ -34,48 +28,4 @@ function progressBar(currentMs, totalMs, len = 12) {
   return '▬'.repeat(pos) + '🔘' + '▬'.repeat(Math.max(len - pos, 0));
 }
 
-// { currentMs, totalMs } текущего трека — пробуем все известные формы API
-function currentProgress(queue, track) {
-  try {
-    const ts = queue?.node?.getTimestamp?.();
-    const pick = (v) => {
-      if (v == null) return 0;
-      if (typeof v === 'number') return v;
-      if (typeof v?.value === 'number') return v.value;
-      if (typeof v?.value === 'string') return parseDuration(v.value);
-      if (typeof v === 'string') return parseDuration(v);
-      return 0;
-    };
-    if (ts) {
-      // v6: { current: {label,value}, total: {label,value}, progress }
-      const cur = pick(ts.current);
-      const end = pick(ts.total) || pick(ts.end) || trackMs(track);
-      if (end > 0) return { currentMs: cur, totalMs: end };
-    }
-  } catch {}
-  return { currentMs: 0, totalMs: trackMs(track) };
-}
-
-// Сколько ждать до трека: остаток текущего + всё впереди стоящее
-function etaMs(queue) {
-  try {
-    let ms = 0;
-    const cur = queue?.currentTrack;
-    if (cur) {
-      const { currentMs, totalMs } = currentProgress(queue, cur);
-      ms += Math.max(totalMs - currentMs, 0);
-    }
-    for (const t of queue?.tracks?.data || []) ms += trackMs(t);
-    return ms;
-  } catch { return 0; }
-}
-
-function queueTotalMs(queue) {
-  try {
-    let ms = trackMs(queue?.currentTrack);
-    for (const t of queue?.tracks?.data || []) ms += trackMs(t);
-    return ms;
-  } catch { return 0; }
-}
-
-module.exports = { parseDuration, trackMs, fmtMs, progressBar, currentProgress, etaMs, queueTotalMs };
+module.exports = { parseDuration, fmtMs, progressBar };

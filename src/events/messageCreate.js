@@ -10,7 +10,7 @@ module.exports = {
 
     // 1) honeypot / automod (guild messages)
     if (message.guild) {
-      // автопаблиш анонсов подписчикам (не ждём)
+      // autopublish announcements to followers (fire and forget)
       if (config.autopublish.includes(message.channelId) && message.crosspostable) {
         message.crosspost().catch(() => {});
       }

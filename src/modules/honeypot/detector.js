@@ -1,6 +1,6 @@
-// Honeypot + базовый автомод против "взломов", скам-ссылок и нюков.
-// Публичная ловушка: кто первым пишет в канал — получает наказание (по умолч. мут 12ч).
-// Плюс скам-фильтр (nitro/gift/airdrop) и анти масс-пинг.
+// Honeypot + basic automod against "compromised accounts", scam links and nukes.
+// Public trap: first message in channel = punishment (default mute 12h).
+// Plus scam filter (nitro/gift/airdrop) and anti mass-ping.
 const { PermissionFlagsBits } = require('discord.js');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
@@ -26,16 +26,16 @@ async function logToStaff(client, text) {
 async function punish(client, message, reason, opts = {}) {
   const member = message.member;
   if (!member || member.user.bot) return false;
-  // не трогаем модов/админов и владельцев из ADMIN_DISCORD_IDS
+  // don't touch mods/admins and owners from ADMIN_DISCORD_IDS
   if (config.adminIds.includes(member.id)) return false;
   if (member.permissions.has(PermissionFlagsBits.ManageMessages)) return false;
 
-  // Ловушка бьёт сильно (по умолчанию мут 12ч), скам-фильтр — мягче.
+  // Trap hits hard (default mute 12h), scam filter -- softer.
   const action = opts.action || (opts.trap ? config.honeypot.action : 'timeout');
   const hours = opts.hours ?? (opts.trap ? config.honeypot.timeoutHours : 1);
   const audit = `Honeypot/Automod: ${reason}`;
 
-  // Честно отслеживаем, сработало ли наказание — лог не должен врать
+  // Honestly track if punishment worked -- log shouldn't lie
   let ok = true;
   try {
     if (action === 'ban') {
@@ -45,7 +45,7 @@ async function punish(client, message, reason, opts = {}) {
       await member.kick(audit);
       try { await message.delete(); } catch {}
     } else {
-      const ms = Math.min(Math.max(hours, 1), 672) * 60 * 60 * 1000; // 1ч..28дн
+      const ms = Math.min(Math.max(hours, 1), 672) * 60 * 60 * 1000; // 1h..28d
       await member.timeout(ms, audit);
       try { await message.delete(); } catch {}
     }
@@ -53,10 +53,10 @@ async function punish(client, message, reason, opts = {}) {
     ok = false;
     logger.warn('[honeypot] punish failed', member.id, e.message);
   }
-  const what = action === 'ban' ? 'бан' : action === 'kick' ? 'кик' : `мут ${hours}ч`;
+  const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick' : `mute ${hours}h`;
   const { punishLogEmbed } = require('../../utils/embeds');
   if (!ok) {
-    await logToStaff(client, `❌ **Honeypot FAILED** (${what} не сработал — проверь роль/права бота): ${member} (${member.id}) — ${reason}`);
+    await logToStaff(client, `❌ **Honeypot FAILED** (${what} failed -- check bot role/perms): ${member} (${member.id}) -- ${reason}`);
     return false;
   }
   await logToStaff(client, { embeds: [punishLogEmbed({
@@ -68,55 +68,55 @@ async function punish(client, message, reason, opts = {}) {
 async function handleMessage(message, client) {
   const content = message.content || '';
 
-  // 1) Ловушка: публичный канал, писать в него нельзя — первое сообщение = наказание.
-  // Владельцы из ADMIN_DISCORD_IDS не наказываются (чтобы сам себя не замутить при настройке прав).
+// 1) Trap: public channel, posting forbidden -- first message = punishment.
+// Owners from ADMIN_DISCORD_IDS not punished (so you don't mute yourself while setting perms).
   if (config.honeypot.trapChannelId && message.channelId === config.honeypot.trapChannelId) {
     if (config.adminIds.includes(message.author.id)) return;
-    await punish(client, message, 'сообщение в honeypot-ловушку', { trap: true });
+    await punish(client, message, 'message in honeypot trap', { trap: true });
     return;
   }
 
-  // 2) Флуд: N сообщений за M секунд
+  // 2) Flood: N messages in M seconds
   if (hitFlood(message)) {
-    await punish(client, message, 'флуд', { hours: config.automod.actionHours });
+    await punish(client, message, 'flood', { hours: config.automod.actionHours });
     return;
   }
 
-  // 2.5) Ссылки не из вайтлиста / инвайты / мат
+  // 2.5) Links not in whitelist / invites / badwords
   const linkHit = checkLinks(message);
   if (linkHit) {
     await punish(client, message, linkHit, { hours: config.automod.actionHours });
-    try { await message.author.send('⚠️ Ссылка удалена автомодом HPSB. Разрешённые домены + свой сервер. Вопросы — через ModCall.'); } catch {}
+    try { await message.author.send('⚠️ Link removed by HPSB automod. Allowed domains + own server. Questions -- via ModCall.'); } catch {}
     return;
   }
   if (SCAM_PATTERNS.some(re => re.test(content))) {
-    await punish(client, message, 'скам-паттерн (nitro/gift/airdrop)');
-    try { await message.author.send('⚠️ Твоё сообщение на HPSB удалено как подозрительное (скам-фильтр). Если это ошибка — напиши через ModCall.'); } catch {}
+    await punish(client, message, 'scam pattern (nitro/gift/airdrop)');
+    try { await message.author.send('⚠️ Your message on HPSB removed as suspicious (scam filter). If this is a mistake -- use ModCall.'); } catch {}
     return;
   }
 
-  // 3) Капс (удаление + лог, без мута — бывают ложные)
+  // 3) Caps (delete + log, no mute -- false positives happen)
   if (checkCaps(content)) {
     if (!message.member?.permissions.has(PermissionFlagsBits.ManageMessages)
       && !config.adminIds.includes(message.author.id)) {
       try { await message.delete(); } catch {}
-      await logToStaff(client, `🔠 **Automod (капс)**: ${message.author} (${message.author.id}) в <#${message.channelId}>\n${content.slice(0, 300)}`);
+      await logToStaff(client, `🔠 **Automod (caps)**: ${message.author} (${message.author.id}) in <#${message.channelId}>\n${content.slice(0, 300)}`);
     }
     return;
   }
 
-  // 4) Масс-меншн от немода
+  // 4) Mass-mention from non-mod
   const mentionsEveryone = message.mentions?.everyone;
   const manyMentions = (message.mentions?.users?.size || 0) >= 5;
   if ((mentionsEveryone || manyMentions) && !message.member?.permissions.has(PermissionFlagsBits.ManageMessages)) {
-    await punish(client, message, 'массовый пинг');
+    await punish(client, message, 'mass ping');
   }
 }
 
 module.exports = { handleMessage, ensureTrapWarning, joinBeat };
 
-// Держит в публичной ловушке предупреждение в стиле RF (красный эмбед + баннер).
-// Вызывается при старте; не спамит — проверяет последние сообщения по метке в футере.
+// Keeps RF-style warning in public trap (red embed + banner).
+// Called on startup; no spam -- checks recent messages by footer marker.
 async function ensureTrapWarning(client) {
   const id = config.honeypot.trapChannelId;
   if (!id) return;
@@ -131,14 +131,14 @@ async function ensureTrapWarning(client) {
     );
     if (hasOurs) return;
     const action = config.honeypot.action;
-    const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick' : `мут ${config.honeypot.timeoutHours}ч`;
+    const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick' : `mute ${config.honeypot.timeoutHours}h`;
     await ch.send({ embeds: [honeypotEmbed({ punishment: what, banner: config.honeypot.bannerUrl || undefined })] });
   } catch (e) { logger.warn('[honeypot] warn failed', e.message); }
 }
 
 // ---------- Automod helpers ----------
 
-// Флуд: больше floodCount сообщений за floodSecs секунд (память только в RAM)
+// Flood: more than floodCount messages in floodSecs seconds (memory only in RAM)
 const floodMap = new Map(); // userId -> [timestamps]
 function hitFlood(message) {
   if (message.member?.permissions.has(PermissionFlagsBits.ManageMessages)) return false;
@@ -156,7 +156,7 @@ function hostOf(url) {
   try { return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.toLowerCase(); } catch { return ''; }
 }
 
-// Возвращает причину или null
+// Returns reason or null
 function checkLinks(message) {
   const content = message.content || '';
   const hasInvite = /discord\.gg\/|discord\.com\/invite|discord\.app\.com\/invite/i.test(content);
@@ -164,20 +164,20 @@ function checkLinks(message) {
   const wl = config.automod.linkWhitelist.map(d => d.toLowerCase());
 
   if (hasInvite && config.automod.invites) {
-    // код инвайта без лишнего запроса не проверить — режем все;
-    // модерация exempt'ится в punish()
-    return 'инвайт на сторонний сервер';
+    // invite code can't be verified without extra request -- block all;
+    // moderation exempted in punish()
+    return 'invite to external server';
   }
   if (config.automod.links && urls.length) {
     const bad = urls.some(u => {
       const h = hostOf(u).replace(/^www\./, '');
       return h && !wl.some(w => h === w || h.endsWith(`.${w}`));
     });
-    if (bad) return 'ссылка вне вайтлиста';
+    if (bad) return 'link outside whitelist';
   }
   const low = content.toLowerCase();
   if (config.automod.badwords.length && config.automod.badwords.some(w => low.includes(w))) {
-    return 'запрещённое слово';
+    return 'forbidden word';
   }
   return null;
 }
@@ -189,8 +189,8 @@ function checkCaps(content) {
   return (upper / letters) * 100 >= (config.automod.capsPct || 75);
 }
 
-// ---------- Anti-raid: всплеск заходов ----------
-// Возвращает 'raid' если рейд-режим активен (новичка надо мутить), иначе 'ok'.
+// ---------- Anti-raid: join spike ----------
+// Returns 'raid' if raid mode active (newcomer must be muted), else 'ok'.
 const joinTimes = [];
 let raidUntil = 0;
 function joinBeat(member, client) {
@@ -204,7 +204,7 @@ function joinBeat(member, client) {
   if (joinTimes.length >= cfg.joins) {
     raidUntil = now + 10 * 60 * 1000;
     joinTimes.length = 0;
-    logToStaff(client, `🚨 **Anti-raid ON**: всплеск заходов (≥${cfg.joins} за ${cfg.secs}с). Новички мутятся на ${cfg.hours}ч, режим 10 мин.`)
+    logToStaff(client, `🚨 **Anti-raid ON**: join spike (>=${cfg.joins} in ${cfg.secs}s). Newcomers muted for ${cfg.hours}h, mode 10 min.`)
       .catch(() => {});
     return 'raid';
   }

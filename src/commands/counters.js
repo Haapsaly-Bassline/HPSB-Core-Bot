@@ -4,7 +4,7 @@ const { requireMod } = require('../utils/mod');
 const { config } = require('../config');
 const store = require('../utils/store');
 
-function fmt(n) { return Number(n || 0).toLocaleString('ru-RU'); }
+function fmt(n) { return Number(n || 0).toLocaleString('en-US'); }
 
 const TYPE_CHOICES = TYPES.map(t => ({ name: t, value: t }));
 
@@ -16,24 +16,24 @@ function asArray(v) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('counters')
-    .setDescription('Счётчики Member Count: setup/list/on/off/link/template')
+    .setDescription('Member Count counters: setup/list/on/off/link/template')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addSubcommand(s => s.setName('setup').setDescription('Создать категорию 📊 и все счётчики')
-      .addRoleOption(o => o.setName('role').setDescription('Роль для role-счётчика').setRequired(false)))
-    .addSubcommand(s => s.setName('list').setDescription('Статус всех счётчиков'))
-    .addSubcommand(s => s.setName('toggle').setDescription('Вкл/выкл счётчик (выкл удаляет его каналы)')
-      .addStringOption(o => o.setName('type').setDescription('Тип').setRequired(true).addChoices(...TYPE_CHOICES))
-      .addBooleanOption(o => o.setName('on').setDescription('Вкл?').setRequired(true))
-      .addRoleOption(o => o.setName('role').setDescription('Роль для role-счётчика').setRequired(false)))
-    .addSubcommand(s => s.setName('link').setDescription('Привязать ЕЩЁ канал к счётчику')
-      .addStringOption(o => o.setName('type').setDescription('Тип').setRequired(true).addChoices(...TYPE_CHOICES))
-      .addChannelOption(o => o.setName('channel').setDescription('Канал (войс/текст)').setRequired(true)))
-    .addSubcommand(s => s.setName('unlink').setDescription('Отвязать канал от счётчика (канал не удаляется)')
-      .addStringOption(o => o.setName('type').setDescription('Тип').setRequired(true).addChoices(...TYPE_CHOICES))
-      .addChannelOption(o => o.setName('channel').setDescription('Канал').setRequired(true)))
-    .addSubcommand(s => s.setName('template').setDescription('Шаблон имени, {count} — число')
-      .addStringOption(o => o.setName('type').setDescription('Тип').setRequired(true).addChoices(...TYPE_CHOICES))
-      .addStringOption(o => o.setName('text').setDescription('Напр. Members: {count}').setRequired(true).setMaxLength(100))),
+    .addSubcommand(s => s.setName('setup').setDescription('Create 📊 category and all counters')
+      .addRoleOption(o => o.setName('role').setDescription('Role for role counter').setRequired(false)))
+    .addSubcommand(s => s.setName('list').setDescription('Status of all counters'))
+    .addSubcommand(s => s.setName('toggle').setDescription('Enable/disable counter (disable deletes its channels)')
+      .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true).addChoices(...TYPE_CHOICES))
+      .addBooleanOption(o => o.setName('on').setDescription('On?').setRequired(true))
+      .addRoleOption(o => o.setName('role').setDescription('Role for role counter').setRequired(false)))
+    .addSubcommand(s => s.setName('link').setDescription('Link ANOTHER channel to counter')
+      .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true).addChoices(...TYPE_CHOICES))
+      .addChannelOption(o => o.setName('channel').setDescription('Channel (voice/text)').setRequired(true)))
+    .addSubcommand(s => s.setName('unlink').setDescription('Unlink channel from counter (channel not deleted)')
+      .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true).addChoices(...TYPE_CHOICES))
+      .addChannelOption(o => o.setName('channel').setDescription('Channel').setRequired(true)))
+    .addSubcommand(s => s.setName('template').setDescription('Name template, {count} = number')
+      .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true).addChoices(...TYPE_CHOICES))
+      .addStringOption(o => o.setName('text').setDescription('E.g. Members: {count}').setRequired(true).setMaxLength(100))),
 
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
@@ -46,7 +46,7 @@ module.exports = {
         data.statsChannels = data.statsChannels || {};
         const roleOpt = interaction.options.getRole('role');
         if (roleOpt) data.statsRoleId = roleOpt.id;
-        // Идемпотентность: уже настроенные типы не трогаем (иначе дубли каналов)
+        // Idempotency: already configured types untouched (otherwise duplicate channels)
         const already = [];
         const order = ['members', 'humans', 'bots', 'role', 'online', 'offline', 'roles', 'channels', 'boosts'];
         const missing = order.filter(key => {
@@ -56,7 +56,7 @@ module.exports = {
           return !has;
         });
         if (!missing.length) {
-          await interaction.editReply('✅ Все счётчики уже настроены — дубли не создаю. Смотри /counters list.');
+          await interaction.editReply('✅ All counters already set up -- not creating duplicates. See /counters list.');
           return;
         }
         const cat = await interaction.guild.channels.create({
@@ -77,10 +77,10 @@ module.exports = {
         const dis = data.statsDisabled || [];
         data.statsDisabled = dis.filter(k => order.includes(k));
         store.save(data);
-        const skipNote = already.length ? `\n\nПропущены (уже есть): ${already.join(', ')}` : '';
-        await interaction.editReply(`✅ Категория ${cat} + счётчики:\n${made.join('\n')}${skipNote}\n\nИмена обновятся при следующем тике (≤10 мин). Шаблоны — /counters template.`);
+        const skipNote = already.length ? `\n\nSkipped (already exist): ${already.join(', ')}` : '';
+        await interaction.editReply(`✅ Category ${cat} + counters:\n${made.join('\n')}${skipNote}\n\nNames update on next tick (≤10 min). Templates via /counters template.`);
       } catch (e) {
-        await interaction.editReply(`❌ Не смог создать (нужны Manage Channels): ${String(e.message || e).slice(0, 200)}`);
+        await interaction.editReply(`❌ Could not create (need Manage Channels): ${String(e.message || e).slice(0, 200)}`);
       }
       return;
     }
@@ -92,16 +92,16 @@ module.exports = {
         const on = isEnabled(t) ? '🟢' : '⚪';
         const ids = channelIdsFor(t);
         const tpl = templateFor(t);
-        const extra = t === 'role' ? ` (роль: ${data.statsRoleId ? `<@&${data.statsRoleId}>` : 'не задана'})` : '';
+        const extra = t === 'role' ? ` (role: ${data.statsRoleId ? `<@&${data.statsRoleId}>` : 'not set'})` : '';
         return `${on} **${t}** → ${ids.length ? ids.map(id => `<#${id}>`).join(' ') : '—'} \`${tpl}\`${extra}`;
       });
       const anyChannel = TYPES.some(t => channelIdsFor(t).length > 0);
       const noPresence = (channelIdsFor('online').length || channelIdsFor('offline').length) && s && !s.presenceSeen;
-      const e = new EmbedBuilder().setColor(0x7c3aed).setTitle('📊 Счётчики').setTimestamp()
+      const e = new EmbedBuilder().setColor(0x7c3aed).setTitle('📊 Counters').setTimestamp()
         .setDescription(lines.join('\n').slice(0, 3400)
-          + (noPresence ? '\n\n⚠️ online/offline стоят, но presences нет — включи **Presence Intent** в Portal и перезапусти бота.' : '')
-          + (!anyChannel ? '\n\n⚠️ Ни один счётчик не привязан к каналу — запусти **/counters setup**.' : ''))
-        .setFooter({ text: s ? `Сейчас: ${fmt(s.total)} уч. • ${fmt(s.online)} онлайн` : 'Haapsaly Bassline' });
+          + (noPresence ? '\n\n⚠️ online/offline set but no presences -- enable **Presence Intent** in Portal and restart bot.' : '')
+          + (!anyChannel ? '\n\n⚠️ No counter linked to channel -- run **/counters setup**.' : ''))
+        .setFooter({ text: s ? `Now: ${fmt(s.total)} members • ${fmt(s.online)} online` : 'Haapsaly Bassline' });
       await interaction.editReply({ embeds: [e] });
       return;
     }
@@ -115,12 +115,12 @@ module.exports = {
       data.statsChannels = data.statsChannels || {};
       if (type === 'role' && roleOpt) data.statsRoleId = roleOpt.id;
       if (type === 'role' && on && !(data.statsRoleId || config.stats.roleId)) {
-        await interaction.editReply('❌ Для role-счётчика укажи роль параметром.');
+        await interaction.editReply('❌ For role counter specify role as parameter.');
         return;
       }
 
       if (!on) {
-        // Выкл: останавливаем обновления + СНОСИМ созданные каналы (все привязанные)
+        // Disable: stop updates + DELETE created channels (all linked)
         if (!data.statsDisabled.includes(type)) data.statsDisabled.push(type);
         const stored = asArray(data.statsChannels[type]);
         const envId = config.stats[type];
@@ -134,15 +134,15 @@ module.exports = {
         }
         if (stored.length) delete data.statsChannels[type];
         store.save(data);
-        await interaction.editReply(
-          deleted ? `⚪ Выключен + каналов удалено: ${deleted} (**${type}**)`
-          : envId ? `⚪ Выключен (обновления остановлены): **${type}**\nКанал из .env не трогаю — удали руками если надо.`
-          : `⚪ Выключен: **${type}**`
+await interaction.editReply(
+          deleted ? `⚪ Disabled + channels deleted: ${deleted} (**${type}**)`
+            : envId ? `⚪ Disabled (updates stopped): **${type}**\nChannel from .env not touched -- delete manually if needed.`
+            : `⚪ Disabled: **${type}**`
         );
         return;
       }
 
-      // Вкл: снимаем флаг + создаём канал если вообще ни одного нет
+      // Enable: clear flag + create channel if none at all
       data.statsDisabled = data.statsDisabled.filter(k => k !== type);
       const ids = channelIdsFor(type);
       const alive = [];
@@ -162,10 +162,10 @@ module.exports = {
         });
         data.statsChannels[type] = ch.id;
         store.save(data);
-        await interaction.editReply(`🟢 Включён + канал создан: **${type}** → <#${ch.id}>\nИмя обновится при следующем тике (≤10 мин).`);
+        await interaction.editReply(`🟢 Enabled + channel created: **${type}** → <#${ch.id}>\nName updates on next tick (≤10 min).`);
       } else {
         store.save(data);
-        await interaction.editReply(`🟢 Включён: **${type}** (${alive.length} кан.)`);
+        await interaction.editReply(`🟢 Enabled: **${type}** (${alive.length} ch.)`);
       }
       return;
     }
@@ -177,15 +177,15 @@ module.exports = {
       data.statsChannels = data.statsChannels || {};
       const cur = asArray(data.statsChannels[type]);
       if (cur.includes(ch.id)) {
-        await interaction.editReply(`ℹ️ <#${ch.id}> уже привязан к **${type}**.`);
+        await interaction.editReply(`ℹ️ <#${ch.id}> already linked to **${type}**.`);
         return;
       }
       cur.push(ch.id);
       data.statsChannels[type] = cur.length === 1 ? cur[0] : cur;
-      // раз привязали — включаем
+      // now linked -- enable
       data.statsDisabled = (data.statsDisabled || []).filter(k => k !== type);
       store.save(data);
-      await interaction.editReply(`🔗 Привязан: **${type}** → <#${ch.id}> (всего каналов: ${cur.length}). Имя обновится при следующем тике.`);
+      await interaction.editReply(`🔗 Linked: **${type}** → <#${ch.id}> (total channels: ${cur.length}). Name updates on next tick.`);
       return;
     }
 
@@ -197,15 +197,15 @@ module.exports = {
       if (!cur.includes(ch.id)) {
         const envHit = config.stats[type] === ch.id;
         await interaction.editReply(envHit
-          ? '❌ Этот канал задан в .env — убери его там, из Discord не отвязать.'
-          : `ℹ️ <#${ch.id}> не привязан к **${type}**.`);
+          ? '❌ This channel is set in .env -- remove it there, cannot unlink from Discord.'
+          : `ℹ️ <#${ch.id}> not linked to **${type}**.`);
         return;
       }
       const rest = cur.filter(id => id !== ch.id);
       if (rest.length) data.statsChannels[type] = rest.length === 1 ? rest[0] : rest;
       else delete data.statsChannels[type];
       store.save(data);
-      await interaction.editReply(`🔓 Отвязан (канал НЕ удалён): **${type}** ✕ <#${ch.id}>. Осталось каналов: ${rest.length}.`);
+      await interaction.editReply(`🔓 Unlinked (channel NOT deleted): **${type}** ✕ <#${ch.id}>. Remaining channels: ${rest.length}.`);
       return;
     }
 
@@ -217,7 +217,7 @@ module.exports = {
       data.statsTemplates = data.statsTemplates || {};
       data.statsTemplates[type] = text;
       store.save(data);
-      await interaction.editReply(`✅ Шаблон **${type}**: \`${text}\`\nПрименится при следующем тике.`);
+      await interaction.editReply(`✅ Template **${type}**: \`${text}\`\nApplies on next tick.`);
       return;
     }
   },

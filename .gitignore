@@ -1,6 +1,25 @@
 node_modules/
 .env
+.env.bak
+.env.local
+.env.*.local
 data/*.json
 data/bot.log
 data/bot.err.log
 !data/.gitkeep
+# Config files with secrets (never commit)
+src/config.js
+# Lavalink: only application.example.yml + README.md go to repo.
+# Working application.yml (passwords/tokens) stays local, never in git.
+lavalink/application.yml
+lavalink/*.jar
+lavalink/plugins/
+# YouTube account cookies (account access!): local only, never in git.
+lavalink/*cookies*.txt
+lavalink/cookies.txt
+# Test/debug files
+test_*.js
+*_test.js
+*.log
+.DS_Store
+Thumbs.db
