@@ -59,10 +59,38 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
   };
 }
 
+// Fan-коллекция Bandcamp: пачка альбомов/треков из купленного -> в очередь.
+// Возвращает { fan, added: [{band, title, kind, count}], failed, totalTracks }.
+async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, limit = 10 } = {}) {
+  const engine = eng(client);
+  const { fetchCollection } = require('./bandcamp-fan');
+  const { fan, items } = await fetchCollection(fanUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
+  const added = [];
+  let failed = 0;
+  for (const it of items) {
+    try {
+      const r = await engine.enqueueUrl(voiceChannel, it.url, {
+        requester, metadata: { channel: textChannel },
+      });
+      added.push({ band: it.band, title: it.kind === 'album' ? (r.title || it.title) : it.title, kind: it.kind, count: r.count });
+    } catch {
+      failed += 1;
+    }
+  }
+  // Стартуем, если тихо
+  try {
+    const p = engine.getPlayer(voiceChannel.guild.id);
+    if (p && !p.playing && !p.paused) await p.play().catch(() => {});
+  } catch {}
+  if (!added.length) throw new Error('Ничего не добавилось (все релизы недоступны)');
+  return { fan, added, failed, totalTracks: added.reduce((a, x) => a + x.count, 0) };
+}
+
 module.exports = {
   engineName: () => 'lavalink',
 
   play,
+  playFan,
 
   skip: (client, guildId) => eng(client).skip(guildId),
   stop: async (client, guildId) => { await eng(client).stop(guildId); return true; },

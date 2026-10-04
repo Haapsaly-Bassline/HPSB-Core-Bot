@@ -139,6 +139,26 @@ function liveAddedEmbed({ label, url, source }, requester) {
   return e;
 }
 
+// --- Bandcamp fan-коллекция: пачка альбомов из купленного ---
+function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, requester) {
+  const lines = added.slice(0, 10).map((a, i) =>
+    `\`${i + 1}.\` 💿 **${String(a.title).slice(0, 150)}**${a.band ? ` — ${String(a.band).slice(0, 100)}` : ''} (${a.count} тр.)`
+  );
+  const more = added.length > 10 ? `\n…и ещё ${added.length - 10}` : '';
+  const e = new EmbedBuilder()
+    .setColor(0x1f9d55)
+    .setTitle(`💿 Fan collection • ${String(fanName || 'Bandcamp').slice(0, 200)}`)
+    .setDescription(
+      `Альбомов/релизов добавлено: **${added.length}**, треков: **${totalTracks}**` +
+      (failed ? ` (не открылось: ${failed})` : '') +
+      `\n\n${lines.join('\n')}${more}`.slice(0, 3800)
+    ).setTimestamp();
+  if (fanUrl) e.setURL(fanUrl);
+  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
+  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  return e;
+}
+
 // Бейдж источника для оверлеев. Пусто = не показываем.
 const SOURCE_BADGES = {
   spotify: '🟢 Spotify', soundcloud: '🟠 SoundCloud', deezer: '🟣 Deezer',
@@ -179,7 +199,7 @@ function renderTpl(tpl, vars = {}, roleOverride) {
     .trim();
 }
 
-module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
+module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
 
 // --- Мод-действие: единый красивый вывод (и в чат, и в лог) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge

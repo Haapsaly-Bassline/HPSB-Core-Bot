@@ -141,6 +141,26 @@ class LavalinkEngine {
     return { track: viewOf(track, requester), queue: player.queue, playlist: null };
   }
 
+  // Поставить ОДИН URL в очередь без автостарта наружу (для пачек: fan-коллекции и т.п.).
+  // Возвращает { loadType, count, title }. Ошибки резолва бросает наружу.
+  async enqueueUrl(voiceChannel, url, { requester, metadata = {} } = {}) {
+    const player = await this.ensurePlayer(voiceChannel, metadata.channel?.id);
+    const src = urlSource(String(url));
+    const res = await player.search({ query: String(url), source: src }, requester).catch((e) => {
+      logger.warn('[lavalink] search failed', String(e?.message || e).slice(0, 160));
+      return null;
+    });
+    if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
+      throw new Error(`No results for "${String(url).slice(0, 120)}"`);
+    }
+    player.setData({ requesterId: requester?.id || null, requesterTag: requester?.tag || null, radioLabel: null });
+    await player.queue.add(res.tracks);
+    const title = res.loadType === 'playlist'
+      ? (res.playlist?.name || res.playlist?.title || 'playlist')
+      : (res.tracks[0]?.info?.title || 'Unknown');
+    return { loadType: res.loadType, count: res.tracks.length, title };
+  }
+
   async onTrackStart(player, track) {
     try {
       const np = require('./np');
