@@ -2,7 +2,7 @@ const { SlashCommandBuilder, MessageFlags, EmbedBuilder } = require('discord.js'
 const music = require('../modules/music/service');
 const { fmtMs } = require('../utils/music');
 
-const LOOP_NAMES = ['Off', 'Track', 'Queue', 'Autoplay'];
+const LOOP_NAMES = ['Off', 'Track', 'Queue'];
 
 module.exports = {
   data: new SlashCommandBuilder().setName('queue').setDescription('Показать очередь'),

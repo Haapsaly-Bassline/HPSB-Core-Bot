@@ -31,10 +31,14 @@ module.exports = {
 
     try {
       const { fanCollectionEmbed } = require('../utils/embeds');
+      await interaction.editReply('⏳ Читаю коллекцию…');
       const res = await music.playFan(client, voiceChannel, url, {
         requester: interaction.user,
         textChannel: interaction.channel,
         limit: count,
+        onProgress: (done, total) => {
+          interaction.editReply(`⏳ Ставлю в очередь: ${done}/${total}…`).catch(() => {});
+        },
       });
       const emb = fanCollectionEmbed(
         {

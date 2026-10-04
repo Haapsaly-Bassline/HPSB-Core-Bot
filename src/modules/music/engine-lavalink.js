@@ -84,6 +84,10 @@ class LavalinkEngine {
     this.manager.on('trackStuck', (player, track) => {
       logger.warn('[lavalink] trackStuck', track?.info?.title || '');
     });
+    this.manager.on('queueEnd', (player) => {
+      // Очередь кончилась — гасим живой NP, иначе висит вечный "Now Playing"
+      try { require('./np').finalize(this.client, player.guildId, 'Очередь завершена'); } catch {}
+    });
 
     await this.manager.init({ id: this.client.user.id, username: this.client.user.username || this.client.user.tag });
     logger.info('[lavalink] engine ready');
@@ -105,11 +109,37 @@ class LavalinkEngine {
         selfDeaf: true,
         selfMute: false,
       });
-    } else if (player.voiceChannelId !== voiceChannel.id) {
+      await player.connect().catch(() => {});
+      return player;
+    }
+    if (player.voiceChannelId !== voiceChannel.id) {
+      // Бота позвали в другой войс — ПЕРЕЕЗЖАЕМ (connect() без смены id остаётся в старом!)
+      try {
+        await player.changeVoiceState({ voiceChannelId: voiceChannel.id });
+      } catch {
+        await player.connect().catch(() => {});
+      }
+    } else {
       await player.connect().catch(() => {});
     }
-    await player.connect().catch(() => {});
     return player;
+  }
+
+  // setData в клиенте — ТОЛЬКО key/value (объект одним аргументом молча теряется!).
+  setPlayerMeta(player, { requester, radioLabel } = {}, keepRadioLabel = false) {
+    try {
+      const prev = (typeof player.getAllData === 'function' ? player.getAllData() : {}) || {};
+      player.setData('requesterId', requester?.id || null);
+      player.setData('requesterTag', requester?.tag || null);
+      player.setData('radioLabel', keepRadioLabel ? (prev.radioLabel || radioLabel || null) : (radioLabel || null));
+    } catch {}
+  }
+
+  playerData(player) {
+    try {
+      if (player && typeof player.getAllData === 'function') return player.getAllData() || {};
+    } catch {}
+    return {};
   }
 
   // query: URL или текст; engine: 'youtube'|'soundcloud'|'spotify'|'arbitrary'|'deezer'|…
@@ -128,17 +158,21 @@ class LavalinkEngine {
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
       throw new Error(`No results for "${String(query).slice(0, 120)}"`);
     }
-    player.setData({ requesterId: requester?.id || null, requesterTag: requester?.tag || null, radioLabel: metadata.radioLabel || null });
+    this.setPlayerMeta(player, { requester, radioLabel: metadata.radioLabel || null });
+    // позиция в upcoming ДО добавления (0 = играет сейчас)
+    const upcomingBefore = player.queue.tracks.length;
+    const wasIdle = !player.playing && !player.paused;
+    const position = wasIdle && upcomingBefore === 0 ? 0 : upcomingBefore + 1;
 
     if (res.loadType === 'playlist') {
       await player.queue.add(res.tracks);
-      if (!player.playing && !player.paused) await player.play().catch(() => {});
-      return { track: viewOf(res.tracks[0], requester), queue: player.queue, playlist: { title: res.playlist?.name || res.playlist?.title, count: res.tracks.length } };
+      if (wasIdle) await player.play().catch(() => {});
+      return { track: viewOf(res.tracks[0], requester), queue: player.queue, playlist: { title: res.playlist?.name || res.playlist?.title, count: res.tracks.length }, position };
     }
     const track = res.tracks[0];
     await player.queue.add(track);
-    if (!player.playing && !player.paused) await player.play().catch(() => {});
-    return { track: viewOf(track, requester), queue: player.queue, playlist: null };
+    if (wasIdle) await player.play().catch(() => {});
+    return { track: viewOf(track, requester), queue: player.queue, playlist: null, position };
   }
 
   // Поставить ОДИН URL в очередь без автостарта наружу (для пачек: fan-коллекции и т.п.).
@@ -153,7 +187,8 @@ class LavalinkEngine {
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
       throw new Error(`No results for "${String(url).slice(0, 120)}"`);
     }
-    player.setData({ requesterId: requester?.id || null, requesterTag: requester?.tag || null, radioLabel: null });
+    // setData — только key/value; radioLabel чужого эфира не затираем (keepRadioLabel)
+    this.setPlayerMeta(player, { requester }, true);
     await player.queue.add(res.tracks);
     const title = res.loadType === 'playlist'
       ? (res.playlist?.name || res.playlist?.title || 'playlist')
@@ -172,26 +207,76 @@ class LavalinkEngine {
   }
 
   // --- Управление (имена как в командах) ---
-  skip(guildId) { const p = this.getPlayer(guildId); if (!p) return false; return p.skip() != null; }
-  async stop(guildId) { const p = this.getPlayer(guildId); if (!p) return; await p.destroy().catch(() => {}); }
-  async pause(guildId, state = true) { const p = this.getPlayer(guildId); if (!p) return false; state ? await p.pause() : await p.resume(); return true; }
-  async seek(guildId, ms) { const p = this.getPlayer(guildId); if (!p) return false; await p.seek(ms); return true; }
-  async volume(guildId, vol) { const p = this.getPlayer(guildId); if (!p) return false; await p.setVolume(vol); return true; }
-  async loop(guildId, modeNum) { const p = this.getPlayer(guildId); if (!p) return false; await p.setRepeatMode(LOOP_MAP[modeNum] || 'off'); return true; }
-  async shuffle(guildId) { const p = this.getPlayer(guildId); if (!p || !p.queue.tracks.length) return false; await p.queue.shuffle(); return true; }
-  async clear(guildId) { const p = this.getPlayer(guildId); if (!p) return false; p.queue.tracks.length = 0; return true; }
+  // Все методы НЕ бросают наружу: false/null = "нечего делать", команды показывают чистые ответы.
+  async skip(guildId) {
+    const p = this.getPlayer(guildId);
+    if (!p) return false;
+    try { await p.skip(); return true; }
+    catch { return false; } // пустая очередь: RangeError внутри клиента
+  }
+  async stop(guildId) {
+    const p = this.getPlayer(guildId);
+    if (!p) return false;
+    await p.destroy().catch(() => {});
+    return true;
+  }
+  async pause(guildId, state = true) {
+    const p = this.getPlayer(guildId);
+    if (!p) return false;
+    const want = state !== false;
+    if (!!p.paused === want) return true; // уже в нужном состоянии (клиент кидает throw при повторе!)
+    try { want ? await p.pause() : await p.resume(); return true; }
+    catch { return false; }
+  }
+  async seek(guildId, ms) {
+    const p = this.getPlayer(guildId);
+    if (!p) return false;
+    const cur = p.queue?.current;
+    // эфиры/несикабельное клиент роняет с RangeError — отвечаем false, а не исключением
+    if (!cur || cur.info?.isStream || cur.info?.isSeekable === false) return false;
+    try { await p.seek(ms); return true; }
+    catch { return false; }
+  }
+  async volume(guildId, vol) {
+    const p = this.getPlayer(guildId);
+    if (!p) return false;
+    try { await p.setVolume(vol); return true; }
+    catch { return false; }
+  }
+  async loop(guildId, modeNum) {
+    const p = this.getPlayer(guildId);
+    if (!p) return false;
+    try { await p.setRepeatMode(LOOP_MAP[modeNum] || 'off'); return true; }
+    catch { return false; }
+  }
+  async shuffle(guildId) {
+    const p = this.getPlayer(guildId);
+    if (!p || !p.queue.tracks.length) return false;
+    try { await p.queue.shuffle(); return true; }
+    catch { return false; }
+  }
+  async clear(guildId) {
+    const p = this.getPlayer(guildId);
+    if (!p || !p.queue.tracks.length) return false;
+    try { await p.queue.splice(0, p.queue.tracks.length); return true; } // официальный splice (синк стора!)
+    catch { return false; }
+  }
   async remove(guildId, index) {
     const p = this.getPlayer(guildId);
     if (!p || index < 0 || index >= p.queue.tracks.length) return null;
-    const [t] = p.queue.tracks.splice(index, 1);
-    return t || null;
+    const title = p.queue.tracks[index]?.info?.title || 'Unknown';
+    try { await p.queue.splice(index, 1); return { title }; }
+    catch { return null; }
   }
   async move(guildId, from, to) {
     const p = this.getPlayer(guildId);
     if (!p || from < 0 || from >= p.queue.tracks.length || to < 0 || to >= p.queue.tracks.length) return false;
-    const [t] = p.queue.tracks.splice(from, 1);
-    p.queue.tracks.splice(to, 0, t);
-    return true;
+    try {
+      const t = p.queue.tracks[from];
+      await p.queue.splice(from, 1);
+      await p.queue.splice(to, 0, t);
+      return true;
+    } catch { return false; }
   }
   queueInfo(guildId) {
     const p = this.getPlayer(guildId);
@@ -209,12 +294,14 @@ class LavalinkEngine {
   queueViewFull(guildId) {
     const p = this.getPlayer(guildId);
     if (!p || !p.queue?.current) return null;
-    const data = p.getData?.() || {};
+    const data = this.playerData(p);
     const cur = infoMs(p.queue.current);
     if (data.radioLabel) cur.title = `📻 ${data.radioLabel}`;
     cur.requesterTag = data.requesterTag || null;
     const upcoming = p.queue.tracks.slice(0, 15).map((t, i) => ({ n: i + 1, ...infoMs(t) }));
-    const totalMs = cur.durationMs + p.queue.tracks.reduce((a, t) => a + (t?.info?.length > 0 ? t.info.length : 0), 0);
+    const pos = p.position ?? 0;
+    const remaining = cur.durationMs > 0 ? Math.max(cur.durationMs - pos, 0) : 0;
+    const totalMs = remaining + p.queue.tracks.reduce((a, t) => a + (t?.info?.length > 0 ? t.info.length : 0), 0);
     return {
       current: cur, upcoming, size: p.queue.tracks.length, totalMs,
       repeatMode: LOOP_BACK[p.repeatMode] ?? 0, paused: !!p.paused,
@@ -224,7 +311,7 @@ class LavalinkEngine {
   npSnapshot(guildId) {
     const v = this.queueViewFull(guildId);
     if (!v) return null;
-    const data = this.getPlayer(guildId)?.getData?.() || {};
+    const data = this.playerData(this.getPlayer(guildId));
     return {
       track: v.current, positionMs: this.getPlayer(guildId)?.position ?? 0,
       durationMs: v.current.durationMs, repeatMode: v.repeatMode,
@@ -239,9 +326,8 @@ class LavalinkEngine {
       const prevArr = Array.isArray(p.queue.previous) ? p.queue.previous : null;
       const t = prevArr?.length ? prevArr[prevArr.length - 1] : null;
       if (!t) return false;
-      p.queue.tracks.splice(0, 0, t);
-      await p.skip();
-      return true;
+      await p.queue.splice(0, 0, t);
+      return await this.skip(guildId);
     } catch { return false; }
   }
 }

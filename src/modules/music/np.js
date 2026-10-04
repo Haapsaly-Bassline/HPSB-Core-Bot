@@ -74,11 +74,26 @@ async function render(client, guildId) {
 
 async function trackStart(client, guildId, channel) {
   stopTimer(guildId);
-  sessions.delete(guildId);
-  if (!channel?.isTextBased?.()) return;
   let snap = null;
   try { snap = music.npSnapshot(client, guildId); } catch { snap = null; }
-  if (!snap) return;
+  if (!snap) { sessions.delete(guildId); return; }
+  // Уже есть живое NP-сообщение (луп/рестарт трека) — правим его, а не спамим новым
+  const prev = sessions.get(guildId);
+  if (prev?.messageId) {
+    try {
+      const ch = await client.channels.fetch(prev.channelId).catch(() => null);
+      const msg = ch?.isTextBased?.() ? await ch.messages.fetch(prev.messageId).catch(() => null) : null;
+      if (msg) {
+        await msg.edit({ embeds: [buildEmbed(snap)], components: [buildRow(snap)] });
+        const timer = setInterval(() => render(client, guildId).catch(() => {}), UPDATE_SECS * 1000);
+        timer.unref?.();
+        sessions.set(guildId, { channelId: channel?.id || prev.channelId, messageId: msg.id, timer });
+        return;
+      }
+    } catch {}
+    sessions.delete(guildId);
+  }
+  if (!channel?.isTextBased?.()) return;
   try {
     const msg = await channel.send({ embeds: [buildEmbed(snap)], components: [buildRow(snap)] });
     const timer = setInterval(() => render(client, guildId).catch(() => {}), UPDATE_SECS * 1000);

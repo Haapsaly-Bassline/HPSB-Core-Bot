@@ -53,7 +53,8 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
       url: '',
       count: Number(result.playlist.count || 0),
     } : null,
-    position: '▶ сейчас',
+    // 0 = играет сейчас, N = номер в upcoming (1-based, как в /queue)
+    position: !result?.position ? '▶ сейчас' : `#${result.position} в очереди`,
     nextTitle: null,
     waitMs: 0,
   };
@@ -61,13 +62,18 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
 
 // Fan-коллекция Bandcamp: пачка альбомов/треков из купленного -> в очередь.
 // Возвращает { fan, added: [{band, title, kind, count}], failed, totalTracks }.
-async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, limit = 10 } = {}) {
+async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, limit = 10, onProgress } = {}) {
   const engine = eng(client);
   const { fetchCollection } = require('./bandcamp-fan');
   const { fan, items } = await fetchCollection(fanUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
   const added = [];
   let failed = 0;
+  let n = 0;
   for (const it of items) {
+    n += 1;
+    if (n === 1 || n % 5 === 0 || n === items.length) {
+      try { await onProgress?.(n, items.length); } catch {}
+    }
     try {
       const r = await engine.enqueueUrl(voiceChannel, it.url, {
         requester, metadata: { channel: textChannel },
@@ -93,7 +99,7 @@ module.exports = {
   playFan,
 
   skip: (client, guildId) => eng(client).skip(guildId),
-  stop: async (client, guildId) => { await eng(client).stop(guildId); return true; },
+  stop: async (client, guildId) => eng(client).stop(guildId),
   pause: (client, guildId, on) => eng(client).pause(guildId, on !== false),
   resume: (client, guildId) => eng(client).pause(guildId, false),
   seek: (client, guildId, ms) => eng(client).seek(guildId, ms),

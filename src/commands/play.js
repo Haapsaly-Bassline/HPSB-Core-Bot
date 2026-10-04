@@ -29,6 +29,31 @@ module.exports = {
       }
     } catch {}
 
+    // Fan-профиль Bandcamp — это коллекция, а не трек: ведём в /bandcamp-fan логику
+    try {
+      const { FAN_RE } = require('../modules/music/bandcamp-fan');
+      if (FAN_RE.test(query.trim())) {
+        const { fanCollectionEmbed } = require('../utils/embeds');
+        const fanRes = await music.playFan(client, voiceChannel, query.trim(), {
+          requester: interaction.user,
+          textChannel: interaction.channel,
+          limit: 10,
+        });
+        await interaction.editReply({ embeds: [fanCollectionEmbed(
+          {
+            fanName: `${fanRes.fan.name} (@${fanRes.fan.username})`,
+            fanUrl: `https://bandcamp.com/${fanRes.fan.username}`,
+            added: fanRes.added, failed: fanRes.failed, totalTracks: fanRes.totalTracks,
+          },
+          interaction.user,
+        )] });
+        return;
+      }
+    } catch (e) {
+      await interaction.editReply(`❌ Не смог собрать коллекцию: ${String(e.message || e).slice(0, 300)}`);
+      return;
+    }
+
     try {
       const { addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed } = require('../utils/embeds');
       const res = await music.play(client, voiceChannel, query, {
