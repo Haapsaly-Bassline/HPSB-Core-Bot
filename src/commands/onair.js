@@ -8,8 +8,8 @@ const STATIONS = {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('np')
-    .setDescription('Что сейчас в эфире радио HPSB')
+    .setName('onair')
+    .setDescription('Что сейчас в эфире радио HPSB (метаданные станции)')
     .addStringOption(o => o.setName('station').setDescription('Станция').setRequired(false)
       .addChoices({ name: 'Haapsaly Bassline', value: 'hpsb' }, { name: 'Hardcore Predictor FM', value: 'predictor' })),
   async execute(interaction) {

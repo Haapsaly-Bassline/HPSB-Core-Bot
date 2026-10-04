@@ -74,26 +74,25 @@ async function render(client, guildId) {
 
 async function trackStart(client, guildId, channel) {
   stopTimer(guildId);
-  let snap = null;
-  try { snap = music.npSnapshot(client, guildId); } catch { snap = null; }
-  if (!snap) { sessions.delete(guildId); return; }
-  // Уже есть живое NP-сообщение (луп/рестарт трека) — правим его, а не спамим новым
+  // Старое NP-сообщение гасим (футер + убрать кнопки), новый трек — всегда НОВОЕ
+  // сообщение: править похороненный в истории NP никто не увидит.
   const prev = sessions.get(guildId);
+  sessions.delete(guildId);
   if (prev?.messageId) {
     try {
       const ch = await client.channels.fetch(prev.channelId).catch(() => null);
       const msg = ch?.isTextBased?.() ? await ch.messages.fetch(prev.messageId).catch(() => null) : null;
       if (msg) {
-        await msg.edit({ embeds: [buildEmbed(snap)], components: [buildRow(snap)] });
-        const timer = setInterval(() => render(client, guildId).catch(() => {}), UPDATE_SECS * 1000);
-        timer.unref?.();
-        sessions.set(guildId, { channelId: channel?.id || prev.channelId, messageId: msg.id, timer });
-        return;
+        const e = EmbedBuilder.from(msg.embeds[0] || new EmbedBuilder().setTitle('Now Playing'));
+        e.setFooter({ text: 'Сыграно • Haapsaly Bassline' });
+        await msg.edit({ embeds: [e], components: [] }).catch(() => {});
       }
     } catch {}
-    sessions.delete(guildId);
   }
   if (!channel?.isTextBased?.()) return;
+  let snap = null;
+  try { snap = music.npSnapshot(client, guildId); } catch { snap = null; }
+  if (!snap) return;
   try {
     const msg = await channel.send({ embeds: [buildEmbed(snap)], components: [buildRow(snap)] });
     const timer = setInterval(() => render(client, guildId).catch(() => {}), UPDATE_SECS * 1000);
