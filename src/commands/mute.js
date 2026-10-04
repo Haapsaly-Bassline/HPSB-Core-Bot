@@ -13,7 +13,7 @@ function parseDur(raw) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('mute')
-    .setDescription('Mute (timeout): 10m, 2h, 1d. No duration — 1h')
+    .setDescription('Mute (timeout): 10m, 2h, 1d. No duration - 1h')
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .addUserOption(o => o.setName('user').setDescription('Who').setRequired(true))
     .addStringOption(o => o.setName('duration').setDescription('Duration: 10m / 2h / 1d').setRequired(false))

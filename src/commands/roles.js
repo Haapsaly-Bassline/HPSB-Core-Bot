@@ -46,10 +46,10 @@ module.exports = {
         const n = guild.members.cache.filter(m => m.roles.cache.has(r.id)).size;
         const d = dangerOf(r);
         const tags = [r.managed ? '🤖' : '', r.mentionable ? '📣' : '', r.hoist ? '📌' : ''].join('');
-        return `\`${r.position}\` **${r.name}** ${tags} — ${n} members.${d.length ? ` ⚠️ ${d.join(', ')}` : ''} (\`${r.id}\`)`;
+        return `\`${r.position}\` **${r.name}** ${tags} - ${n} members.${d.length ? ` ⚠️ ${d.join(', ')}` : ''} (\`${r.id}\`)`;
       });
       const e = new EmbedBuilder().setColor(0x7c3aed).setTitle(`🎭 Roles: ${roles.length}`).setTimestamp()
-        .setDescription(lines.slice(0, 25).join('\n').slice(0, 3900) || '—')
+        .setDescription(lines.slice(0, 25).join('\n').slice(0, 3900) || '-')
         .setFooter({ text: roles.length > 25 ? 'First 25 + full list as a file' : 'Haapsaly Bassline' });
       const files = [];
       if (roles.length > 25 || lines.join('\n').length > 3900) {
@@ -67,17 +67,17 @@ module.exports = {
     const admins = roles.filter(r => r.id !== guild.id && r.permissions.has(PermissionFlagsBits.Administrator));
     for (const r of admins) {
       const holders = guild.members.cache.filter(m => m.roles.cache.has(r.id) && !m.user.bot).size;
-      const human = `**${r.name}** — Administrator, held by ${holders} members.`;
+      const human = `**${r.name}** - Administrator, held by ${holders} members.`;
       if (botTop && r.position < botTop.position && !r.managed) {
-        issues.push({ text: `🔴 ${human}\nUnneeded admin? Press — I will remove Administrator (other permissions stay).`, fix: { label: `Remove admin: ${r.name.slice(0, 40)}`, customId: `roles:fix:admin:${r.id}` } });
+        issues.push({ text: `🔴 ${human}\nUnneeded admin? Press - I will remove Administrator (other permissions stay).`, fix: { label: `Remove admin: ${r.name.slice(0, 40)}`, customId: `roles:fix:admin:${r.id}` } });
       } else {
-        issues.push({ text: `🟡 ${human}\nRole is above/at bot level — fix manually in server settings.` });
+        issues.push({ text: `🟡 ${human}\nRole is above/at bot level - fix manually in server settings.` });
       }
     }
     // @everyone separately
     const everyone = guild.roles.everyone;
     if (everyone && dangerOf(everyone).length) {
-      issues.push({ text: `🔴 @everyone has dangerous permissions: ${dangerOf(everyone).join(', ')} — this should not happen!` });
+      issues.push({ text: `🔴 @everyone has dangerous permissions: ${dangerOf(everyone).join(', ')} - this should not happen!` });
     }
 
     // 2) Hierarchy: bot below mod roles = punish fails
@@ -87,7 +87,7 @@ module.exports = {
           || r.permissions.has(PermissionFlagsBits.KickMembers) || r.permissions.has(PermissionFlagsBits.BanMembers)
           || r.permissions.has(PermissionFlagsBits.Administrator)));
       if (above.length) {
-        issues.push({ text: `🔴 Bot role (**${botTop.name}**, pos. ${botTop.position}) is BELOW: ${above.map(r => `**${r.name}** (${r.position})`).join(', ')}\nThe bot will not be able to mute/kick/ban their holders. Manual fix only: drag the bot role higher in Settings → Roles.` });
+        issues.push({ text: `🔴 Bot role (**${botTop.name}**, pos. ${botTop.position}) is BELOW: ${above.map(r => `**${r.name}** (${r.position})`).join(', ')}\nThe bot will not be able to mute/kick/ban their holders. Manual fix only: drag the bot role higher in Settings -> Roles.` });
       } else {
         issues.push({ text: `🟢 Hierarchy OK: bot role **${botTop.name}** is above all mod roles.` });
       }
@@ -111,7 +111,7 @@ module.exports = {
         if (ow.deny.has(PermissionFlagsBits.Speak)) denied.push('Speak');
         if (denied.length) {
           const role = guild.roles.cache.get(roleId);
-          voiceCuts.push(`#${ch.name} → **${role?.name || roleId}**: no ${denied.join('/')}`);
+          voiceCuts.push(`#${ch.name} -> **${role?.name || roleId}**: no ${denied.join('/')}`);
         }
       }
       if (voiceCuts.length >= 12) break;
@@ -146,7 +146,7 @@ module.exports = {
     if (!role) { await interaction.reply({ content: '❌ Role not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
     const me = await interaction.guild.members.fetch(client.user.id).catch(() => null);
     if (me && role.position >= me.roles.highest.position) {
-      await interaction.reply({ content: '❌ Role is above the bot — manual fix only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
+      await interaction.reply({ content: '❌ Role is above the bot - manual fix only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
     }
     try {
       await role.setPermissions(role.permissions.remove(PermissionFlagsBits.Administrator), 'Roles audit fix');

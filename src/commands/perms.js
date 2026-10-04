@@ -71,19 +71,19 @@ module.exports = {
         problems.push('No Connect/Speak in THIS voice channel (channel overwrite overrides the role)');
       }
     }
-    if (vs.serverMute) problems.push('Bot is MUTED on the server — no audio!');
+    if (vs.serverMute) problems.push('Bot is MUTED on the server - no audio!');
     if (vs.serverDeaf) problems.push('Bot is deafened on the server (deaf)');
 
     const e = new EmbedBuilder()
       .setColor(problems.length ? 0xef4444 : 0x22c55e)
       .setTitle(`🔐 Permissions: ${client.user.tag}`)
-      .setDescription(isAdmin ? 'Administrator ✅ — channel permissions do not matter.' : 'No Administrator — checking in detail:')
+      .setDescription(isAdmin ? 'Administrator ✅ - channel permissions do not matter.' : 'No Administrator - checking in detail:')
       .addFields(
         { name: 'Server', value: gLines.join('\n').slice(0, 1000) },
-        { name: `Voice: ${voiceChannel?.name || '—'}`, value: vLines.join('\n').slice(0, 1000) },
+        { name: `Voice: ${voiceChannel?.name || '-'}`, value: vLines.join('\n').slice(0, 1000) },
         { name: 'State', value: vState.join('\n') },
-        { name: 'All voice channels (❌=no access, 🔶=visible but no connect/speak)', value: (voiceList.join('\n') || '—').slice(0, 1000) },
-        { name: 'Verdict', value: problems.length ? '❌ ' + problems.join('\n❌ ') : '✅ All clear — not a permission issue.' },
+        { name: 'All voice channels (❌=no access, 🔶=visible but no connect/speak)', value: (voiceList.join('\n') || '-').slice(0, 1000) },
+        { name: 'Verdict', value: problems.length ? '❌ ' + problems.join('\n❌ ') : '✅ All clear - not a permission issue.' },
       )
       .setTimestamp()
       .setFooter({ text: 'Haapsaly Bassline • Perms' });

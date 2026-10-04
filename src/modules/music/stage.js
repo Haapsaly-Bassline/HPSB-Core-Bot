@@ -44,7 +44,7 @@ function stageWarning(client, guildId) {
   let st = null;
   try { st = require('./service').speakerStatus(client, guildId); } catch { st = null; }
   if (!st || st.ok !== false) return '';
-  if (st.reason === 'moderator') return '\n⚠️ I am a listener: speak request sent — ask a stage moderator to give me the floor.';
+  if (st.reason === 'moderator') return '\n⚠️ I am a listener: speak request sent - ask a stage moderator to give me the floor.';
   if (st.reason === 'cooldown') return '';
   return `\n⚠️ Couldn't become a speaker (${st.reason || 'error'}): no sound on stage. Check my stage permissions.`;
 }

@@ -79,7 +79,7 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
   );
   e.addFields(
     { name: 'Position in upcoming', value: String(position ?? '?'), inline: true },
-    { name: 'Next', value: nextTitle ? String(nextTitle).slice(0, 200) : '—', inline: true },
+    { name: 'Next', value: nextTitle ? String(nextTitle).slice(0, 200) : '-', inline: true },
   );
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
   e.setFooter({ text: 'Haapsaly Bassline • Music' });
@@ -121,7 +121,7 @@ function liveAddedEmbed({ label, url, source }, requester) {
 // --- Bandcamp fan collection: batch of albums from purchases ---
 function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, requester) {
   const lines = added.slice(0, 10).map((a, i) =>
-    `\`${i + 1}.\` 💿 **${String(a.title).slice(0, 150)}**${a.band ? ` — ${String(a.band).slice(0, 100)}` : ''} (${a.count} tracks)`
+    `\`${i + 1}.\` 💿 **${String(a.title).slice(0, 150)}**${a.band ? ` - ${String(a.band).slice(0, 100)}` : ''} (${a.count} tracks)`
   );
   const more = added.length > 10 ? `\n…and ${added.length - 10} more` : '';
   const e = new EmbedBuilder()
@@ -201,7 +201,7 @@ function modActionEmbed(kind, { target, mod, reason, extra } = {}) {
   if (mod) lines.push(`**Moderator:** ${mod}`);
   if (reason) lines.push(`**Reason:** ${String(reason).slice(0, 500)}`);
   if (extra) lines.push(`**Details:** ${String(extra).slice(0, 500)}`);
-  e.setDescription(lines.join('\n').slice(0, 3500) || '_—_');
+  e.setDescription(lines.join('\n').slice(0, 3500) || '_-_');
   e.setFooter({ text: 'Haapsaly Bassline • Moderation' });
   return e;
 }

@@ -121,8 +121,8 @@ module.exports = {
       .setColor(0x7c3aed).setTitle(`🩺 Health: v${pkg.version}`).setTimestamp()
       .setDescription(`**${guild.name}** • uptime ${Math.floor(process.uptime() / 60)} min • Node ${process.version}`)
       .addFields(
-        { name: '📡 Channels', value: channels.join('\n').slice(0, 1000) || '—' },
-        { name: '🌐 API', value: apis.join('\n').slice(0, 500) || '—' },
+        { name: '📡 Channels', value: channels.join('\n').slice(0, 1000) || '-' },
+        { name: '🌐 API', value: apis.join('\n').slice(0, 500) || '-' },
         { name: '🔊 Voice & Music', value: [...checkVoice(), ...lavalink].join('\n') },
         { name: '⚙️ Config & Store', value: [...checkEnv(), ...checkStore()].join('\n').slice(0, 500) },
       )

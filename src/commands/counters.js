@@ -72,7 +72,7 @@ module.exports = {
           const cur = asArray(data.statsChannels[key]);
           cur.push(ch.id);
           data.statsChannels[key] = cur.length === 1 ? cur[0] : cur;
-          made.push(`${key} → <#${ch.id}>`);
+          made.push(`${key} -> <#${ch.id}>`);
         }
         const dis = data.statsDisabled || [];
         data.statsDisabled = dis.filter(k => order.includes(k));
@@ -93,7 +93,7 @@ module.exports = {
         const ids = channelIdsFor(t);
         const tpl = templateFor(t);
         const extra = t === 'role' ? ` (role: ${data.statsRoleId ? `<@&${data.statsRoleId}>` : 'not set'})` : '';
-        return `${on} **${t}** → ${ids.length ? ids.map(id => `<#${id}>`).join(' ') : '—'} \`${tpl}\`${extra}`;
+        return `${on} **${t}** -> ${ids.length ? ids.map(id => `<#${id}>`).join(' ') : '-'} \`${tpl}\`${extra}`;
       });
       const anyChannel = TYPES.some(t => channelIdsFor(t).length > 0);
       const noPresence = (channelIdsFor('online').length || channelIdsFor('offline').length) && s && !s.presenceSeen;
@@ -162,7 +162,7 @@ await interaction.editReply(
         });
         data.statsChannels[type] = ch.id;
         store.save(data);
-        await interaction.editReply(`🟢 Enabled + channel created: **${type}** → <#${ch.id}>\nName updates on next tick (≤10 min).`);
+        await interaction.editReply(`🟢 Enabled + channel created: **${type}** -> <#${ch.id}>\nName updates on next tick (<=10 min).`);
       } else {
         store.save(data);
         await interaction.editReply(`🟢 Enabled: **${type}** (${alive.length} ch.)`);
@@ -185,7 +185,7 @@ await interaction.editReply(
       // now linked -- enable
       data.statsDisabled = (data.statsDisabled || []).filter(k => k !== type);
       store.save(data);
-      await interaction.editReply(`🔗 Linked: **${type}** → <#${ch.id}> (total channels: ${cur.length}). Name updates on next tick.`);
+      await interaction.editReply(`🔗 Linked: **${type}** -> <#${ch.id}> (total channels: ${cur.length}). Name updates on next tick.`);
       return;
     }
 

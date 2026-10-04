@@ -12,8 +12,8 @@ module.exports = {
       flags: MessageFlags.Ephemeral,
       content:
         `🔁 Poll every ${pollMinutes} min.\n` +
-        `YouTube: ${youtube.length ? youtube.map(x => `${x.key} → <#${x.channelId}>`).join('\n') : '_empty_'}\n` +
-        `TikTok: ${tiktok.length ? tiktok.map(x => `${x.key} → <#${x.channelId}>`).join('\n') : '_empty_'}\n` +
+        `YouTube: ${youtube.length ? youtube.map(x => `${x.key} -> <#${x.channelId}>`).join('\n') : '_empty_'}\n` +
+        `TikTok: ${tiktok.length ? tiktok.map(x => `${x.key} -> <#${x.channelId}>`).join('\n') : '_empty_'}\n` +
         `Instagram: via Make webhook (scraper removed)`,
     });
   },

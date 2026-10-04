@@ -62,7 +62,7 @@ module.exports = {
     const out = {
       exportedAt: new Date().toISOString(),
       guildId: g.id,
-      note: 'Old IDs — the re-creator bot maps by name. Permissions as bitfield string.',
+      note: 'Old IDs - the re-creator bot maps by name. Permissions as bitfield string.',
     };
 
     if (what === 'full' || what === 'settings') {
@@ -145,7 +145,7 @@ module.exports = {
       out.guild ? `emojis: ${out.emojis.length}, stickers: ${out.stickers.length}` : null,
     ].filter(Boolean).join(', ');
     const e = new EmbedBuilder().setColor(0x7c3aed).setTitle('📦 Server dump').setTimestamp()
-      .setDescription(`\`${what}\`: ${counts || '—'}\n${(buf.length / 1024).toFixed(1)} KB\n\nTo recreate: roles by \`position\` top-down (except managed bots), channels by category, overwrites by old ID→name.`)
+      .setDescription(`\`${what}\`: ${counts || '-'}\n${(buf.length / 1024).toFixed(1)} KB\n\nTo recreate: roles by \`position\` top-down (except managed bots), channels by category, overwrites by old ID->name.`)
       .setFooter({ text: 'Haapsaly Bassline' });
     await interaction.editReply({
       embeds: [e],

@@ -13,7 +13,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(0x7c3aed)
       .setTitle('📞 Contact moderation')
-      .setDescription('Press the button below, describe the issue — moderation will reply to your DMs via the bot.\nDo not spam, one open ticket at a time.')
+      .setDescription('Press the button below, describe the issue - moderation will reply to your DMs via the bot.\nDo not spam, one open ticket at a time.')
       .setFooter({ text: 'Haapsaly Bassline • ModCall' })
       .setTimestamp();
 

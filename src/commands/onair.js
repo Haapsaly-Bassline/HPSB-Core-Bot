@@ -23,15 +23,15 @@ module.exports = {
       const live = st.live?.is_live ? `🔴 LIVE: ${st.live.streamer_name || ''}` : null;
       const e = new EmbedBuilder()
         .setColor(0x7c3aed)
-        .setTitle(`📻 ${st.station.name} — on air now`)
+        .setTitle(`📻 ${st.station.name} - on air now`)
         .setURL(st.station.public_player_url || undefined)
-        .setDescription(`**${np.artist || ''} — ${np.title || '...'}**${live ? `\n${live}` : ''}`.slice(0, 2000))
+        .setDescription(`**${np.artist || ''} - ${np.title || '...'}**${live ? `\n${live}` : ''}`.slice(0, 2000))
         .setTimestamp();
       if (np.art) e.setThumbnail(np.art);
       const rows = [];
       if (np.album) rows.push(`Album: ${np.album}`.slice(0, 200));
-      rows.push(`Listeners: ${st.listeners?.current ?? '—'}`);
-      if (st.playing_next?.song) rows.push(`Up next: ${st.playing_next.song.artist || ''} — ${st.playing_next.song.title || ''}`.slice(0, 250));
+      rows.push(`Listeners: ${st.listeners?.current ?? '-'}`);
+      if (st.playing_next?.song) rows.push(`Up next: ${st.playing_next.song.artist || ''} - ${st.playing_next.song.title || ''}`.slice(0, 250));
       e.addFields({ name: 'On air', value: rows.join('\n').slice(0, 900) });
       e.setFooter({ text: 'Haapsaly Bassline • Radio' });
       await interaction.editReply({ embeds: [e] });

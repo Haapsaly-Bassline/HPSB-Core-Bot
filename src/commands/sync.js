@@ -21,7 +21,7 @@ module.exports = {
       const h = await runHpsbOnce(client, { backfill });
       const r = await runReposterOnce(client);
       if (!h || !r) {
-        await interaction.editReply('⏳ Previous sync is still running — try again in a minute.');
+        await interaction.editReply('⏳ Previous sync is still running - try again in a minute.');
         return;
       }
       const e = new EmbedBuilder()

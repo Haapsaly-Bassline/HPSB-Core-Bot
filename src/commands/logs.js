@@ -63,7 +63,7 @@ module.exports = {
     } else {
       const buf = Buffer.from(clean, 'utf8');
       await interaction.reply({
-        content: `Log is long — sending as a file (last ${n} lines, secrets redacted):`,
+        content: `Log is long - sending as a file (last ${n} lines, secrets redacted):`,
         files: [new AttachmentBuilder(buf, { name: `${src}.log.txt` })],
         flags: MessageFlags.Ephemeral,
       });

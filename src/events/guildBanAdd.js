@@ -7,7 +7,7 @@ module.exports = {
     try {
       const reason = ban.reason || 'No reason';
       // audit-log: who banned
-      let by = '—';
+      let by = '-';
       try {
         const logs = await ban.guild.fetchAuditLogs({ type: 22, limit: 3 });
         const hit = logs.entries.find(e => e.target?.id === ban.user.id);

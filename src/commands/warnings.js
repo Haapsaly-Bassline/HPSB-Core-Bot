@@ -15,7 +15,7 @@ module.exports = {
     if (!list.length) { await interaction.reply({ content: `✅ ${user} has no warnings.`, flags: MessageFlags.Ephemeral }); return; }
     const e = new EmbedBuilder()
       .setColor(0xf59e0b).setTitle(`⚠️ Warnings: ${user.tag}`)
-      .setDescription(list.map((w, i) => `\`${i + 1}.\` ${w.reason} — ${w.mod} (<t:${Math.floor(new Date(w.at).getTime() / 1000)}:R>)`).join('\n').slice(0, 3900))
+      .setDescription(list.map((w, i) => `\`${i + 1}.\` ${w.reason} - ${w.mod} (<t:${Math.floor(new Date(w.at).getTime() / 1000)}:R>)`).join('\n').slice(0, 3900))
       .setFooter({ text: `Total: ${list.length} • Haapsaly Bassline` });
     await interaction.reply({ embeds: [e], flags: MessageFlags.Ephemeral });
   },

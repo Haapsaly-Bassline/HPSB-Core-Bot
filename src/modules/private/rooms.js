@@ -33,7 +33,7 @@ function roomName(user) {
 
 function panelEmbed(owner) {
   return new EmbedBuilder().setColor(0x7c3aed).setTitle('🔊 Your Private Room').setTimestamp()
-    .setDescription(`Owner: ${owner}\n\n🔒 — lock/unlock for everyone\n✏️ — rename\n👥 — slot limit (0 = unlimited)\n➡️ — transfer ownership\n👢 — kick (disconnect)`)
+    .setDescription(`Owner: ${owner}\n\n🔒 - lock/unlock for everyone\n✏️ - rename\n👥 - slot limit (0 = unlimited)\n➡️ - transfer ownership\n👢 - kick (disconnect)`)
     .setFooter({ text: 'Haapsaly Bassline • Private' });
 }
 

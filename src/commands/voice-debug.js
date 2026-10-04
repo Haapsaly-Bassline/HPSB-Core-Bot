@@ -72,8 +72,8 @@ module.exports = {
       await sleep(12000);
       lines.push(`Player: ${player.state.status}, playbackDuration=${player.state.playbackDuration}ms, opusPackets=${packets}`);
       lines.push(packets > 100
-        ? 'Packets are flowing. LISTEN TO THE VOICE CHANNEL for 60 sec: radio audible — keep fixing the engine; silence with packets — UDP to Discord or mute.'
-        : 'Packets are NOT flowing — the problem is local in transcoding (see /logs).');
+        ? 'Packets are flowing. LISTEN TO THE VOICE CHANNEL for 60 sec: radio audible - keep fixing the engine; silence with packets - UDP to Discord or mute.'
+        : 'Packets are NOT flowing - the problem is local in transcoding (see /logs).');
 
       const timer = setTimeout(() => { try { connection.destroy(); } catch {} sessions.delete(interaction.guildId); }, 60000);
       sessions.set(interaction.guildId, { connection, player, timer });
@@ -87,14 +87,14 @@ module.exports = {
       lines.push(`❌ FAIL: ${String(err.message || err).slice(0, 250)}`);
       lines.push(`State at failure: ${st}`);
       if (transitions.length) lines.push('Transitions:\n' + transitions.join('\n'));
-      else lines.push('No transitions at all — the gateway sent no voice events (no session/token).');
+      else lines.push('No transitions at all - the gateway sent no voice events (no session/token).');
       // Did our own voice-state reach Discord?
       try {
         const me = await interaction.guild.members.fetch(client.user.id).catch(() => null);
         lines.push(`Our voice state: ${me?.voice?.channelId ? `in channel ${me.voice.channelId}, session=${me.voice.sessionId ? 'present' : 'NONE'}` : 'not in a voice channel'}`);
       } catch {}
       if (/abort/i.test(String(err.message || err))) {
-        lines.push('Abort while waiting for Ready = UDP handshake did NOT pass in 15s: the network is blocking voice UDP — a local bot will not be heard here, hosting/VPS is needed.');
+        lines.push('Abort while waiting for Ready = UDP handshake did NOT pass in 15s: the network is blocking voice UDP - a local bot will not be heard here, hosting/VPS is needed.');
       }
       try { connection?.destroy(); } catch {}
       const e = new EmbedBuilder().setColor(0xef4444).setTitle('🔬 Voice Debug').setTimestamp()

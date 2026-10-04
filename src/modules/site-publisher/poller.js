@@ -103,7 +103,7 @@ function releaseEmbed(r) {
   const links = services.slice(0, 10).map(s => `[${SERVICE_LABEL[s.type] || s.type}](${s.url})`).join(' • ');
   const e = new EmbedBuilder()
     .setColor(0x7c3aed)
-    .setTitle(`💿 ${truncate(r.title, 200)} — ${truncate(r.artist || 'HPSB', 100)}`)
+    .setTitle(`💿 ${truncate(r.title, 200)} - ${truncate(r.artist || 'HPSB', 100)}`)
     .setURL(page)
     .setDescription(truncate(r.description || '', 1500) || '_New HPSB release_')
     .setTimestamp(r.createdAt ? new Date(r.createdAt) : new Date());
