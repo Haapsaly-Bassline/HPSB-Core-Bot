@@ -55,7 +55,9 @@ class LavalinkEngine {
       throw new Error('[lavalink] LAVALINK_PASSWORD пуст — впиши в .env тот же пароль, что в lavalink/application.yml -> lavalink.server.password');
     }
     this.manager = new LavalinkManager({
-      nodes: [{ host, port, authorization: password, secure, id: 'hpsb-main' }],
+      // requestTimeout 30s: ytdlp-резолв прямых YT-ссылок занимает ~13с (спавн процесса),
+      // дефолтный таймаут рвал такие запросы "operation aborted due to timeout".
+      nodes: [{ host, port, authorization: password, secure, id: 'hpsb-main', requestTimeout: 30000, requestSignalTimeoutMS: 30000 }],
       sendToShard: (guildId, payload) => {
         const guild = this.client.guilds.cache.get(guildId);
         if (guild?.shard) guild.shard.send(payload);
@@ -294,7 +296,7 @@ class LavalinkEngine {
     const upcoming = p.queue.tracks.slice(0, 15).map((t, i) => ({ n: i + 1, ...infoMs(t) }));
     const pos = p.position ?? 0;
     const remaining = cur.durationMs > 0 ? Math.max(cur.durationMs - pos, 0) : 0;
-    const totalMs = remaining + p.queue.tracks.reduce((a, t) => a + (t?.info?.length > 0 ? t.info.length : 0), 0);
+    const totalMs = remaining + p.queue.tracks.reduce((a, t) => a + trackLenMs(t?.info || t), 0);
     return {
       current: cur, upcoming, size: p.queue.tracks.length, totalMs,
       repeatMode: LOOP_BACK[p.repeatMode] ?? 0, paused: !!p.paused,
@@ -325,6 +327,16 @@ class LavalinkEngine {
   }
 }
 
+function trackLenMs(info) {
+  // Сервер шлёт length, lavalink-client пересобирает в duration, плоские вью — durationMs.
+  // Проверено 2026-10-04: у клиентских треков есть ТОЛЬКО duration (length=undefined!).
+  for (const k of ['length', 'duration', 'durationMs']) {
+    const v = Number(info?.[k]);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return 0;
+}
+
 function fmtDur(ms) {
   if (!ms || ms <= 0) return 'LIVE';
   const s = Math.floor(ms / 1000);
@@ -342,7 +354,7 @@ function viewOf(t, requester) {
 
 function infoMs(t) {
   const info = t?.info || t || {};
-  const ms = info.length > 0 ? info.length : (info.durationMs || 0);
+  const ms = trackLenMs(info);
   return {
     title: info.title || 'Unknown', author: info.author || '',
     url: info.uri || info.url || '', thumbnail: info.artworkUrl || info.thumbnail || '',

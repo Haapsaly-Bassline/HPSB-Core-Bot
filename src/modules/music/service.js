@@ -11,8 +11,8 @@ function eng(client) {
 
 function viewOf(item) {
   if (!item) return null;
-  const info = item.info || item; // lavalink-client кладёт поля в info.*
-  const ms = info.length > 0 ? info.length : (info.durationMs || item.durationMs || 0);
+  const info = item.info || item; // lavalink-client кладёт поля в info.* (duration, не length!)
+  const ms = info.length > 0 ? info.length : (info.duration > 0 ? info.duration : (info.durationMs || item.durationMs || 0));
   const live = info.isStream || item.isLive || ms <= 0;
   return {
     title: info.title || item.title || 'Unknown',
