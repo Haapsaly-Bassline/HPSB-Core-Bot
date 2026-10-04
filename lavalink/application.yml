@@ -21,7 +21,7 @@ lavalink:
       bandcamp: true
       soundcloud: true
       twitch: false
-      vimeo: true
+      vimeo: false                      # ВЫКЛ 2026-10-04: не работает (источник мёртв)
       nico: false
       http: true
       local: false

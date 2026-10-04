@@ -47,7 +47,8 @@
 
 | Источник | Статус | Что нужно |
 |---|---|---|
-| SoundCloud / Bandcamp / Vimeo / HTTP-радио | ✅ работают | ничего |
+| SoundCloud / Bandcamp / HTTP-радио | ✅ работают | ничего |
+| Vimeo | ❌ выкл | источник мёртв (2026-10-04) |
 | Spotify (ссылки + `spsearch:`) | ⚠️ метаданные да, звук нет | звук — зеркалом через Deezer или YouTube (оба пока недоступны) |
 | Deezer | ⏳ ждёт токены | `arl` (cookie deezer.com) + `masterDecryptionKey`; как только появятся — звук появится и у Spotify |
 | Apple Music / Tidal / Qobuz | ⏳ ждут токены | блоки уже разведены в yml, включи `sources.*: true` после вставки токена |
