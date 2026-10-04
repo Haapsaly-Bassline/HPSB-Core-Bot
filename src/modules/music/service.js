@@ -126,6 +126,12 @@ module.exports = {
   queueView: (client, guildId) => eng(client).queueViewFull(guildId),
   npSnapshot: (client, guildId) => eng(client).npSnapshot(guildId),
   voiceChannelId: (client, guildId) => eng(client).getPlayer(guildId)?.voiceChannelId || null,
+  // Зайти/перейти в войс (без музыки): создание и переезд — в ensurePlayer движка
+  join: async (client, voiceChannel, textChannelId) => {
+    const engine = eng(client);
+    await engine.ensurePlayer(voiceChannel, textChannelId || null);
+    return true;
+  },
   // Статус спикера на трибуне (null = не сцена / не запрашивали)
   speakerStatus: (client, guildId) => {
     const e = eng(client);
