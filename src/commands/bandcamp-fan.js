@@ -48,7 +48,15 @@ module.exports = {
         },
         interaction.user,
       );
-      await interaction.editReply({ embeds: [emb] });
+      let warnPayload = {};
+      try {
+        if (voiceChannel.type === 13) {
+          const { stageWarning } = require('../modules/music/stage');
+          const w = stageWarning(client, interaction.guildId);
+          if (w) warnPayload = { content: w };
+        }
+      } catch {}
+      await interaction.editReply({ embeds: [emb], ...warnPayload });
     } catch (e) {
       await interaction.editReply(`❌ Не смог собрать коллекцию: ${String(e.message || e).slice(0, 300)}`);
     }

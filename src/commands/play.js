@@ -39,6 +39,8 @@ module.exports = {
           textChannel: interaction.channel,
           limit: 10,
         });
+        const { stageWarning } = require('../modules/music/stage');
+        const fanWarn = voiceChannel.type === 13 ? stageWarning(client, interaction.guildId) : '';
         await interaction.editReply({ embeds: [fanCollectionEmbed(
           {
             fanName: `${fanRes.fan.name} (@${fanRes.fan.username})`,
@@ -46,7 +48,7 @@ module.exports = {
             added: fanRes.added, failed: fanRes.failed, totalTracks: fanRes.totalTracks,
           },
           interaction.user,
-        )] });
+        )], content: fanWarn || undefined });
         return;
       }
     } catch (e) {
@@ -56,17 +58,21 @@ module.exports = {
 
     try {
       const { addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed } = require('../utils/embeds');
+      const { stageWarning } = require('../modules/music/stage');
       const res = await music.play(client, voiceChannel, query, {
         requester: interaction.user,
         textChannel: interaction.channel,
       });
+      // Варнинг трибуны читаем ПОСЛЕ play (статус выставляется в ensurePlayer во время захода)
+      const stageWarn = voiceChannel.type === 13 ? stageWarning(client, interaction.guildId) : '';
+      const warnPayload = stageWarn ? { content: stageWarn } : {};
 
       if (res.kind === 'playlist') {
         const emb = playlistAddedEmbed(
           { title: res.playlist.title, count: res.playlist.count, first: res.track },
           interaction.user,
         );
-        await interaction.editReply({ embeds: [emb] });
+        await interaction.editReply({ embeds: [emb], ...warnPayload });
         return;
       }
       // Прямой эфир/радио через /play (mp3-ссылка): оверлей LIVE вместо длительности
@@ -75,7 +81,7 @@ module.exports = {
           { label: res.track.title, url: res.track.url, source: res.track.source },
           interaction.user,
         );
-        await interaction.editReply({ embeds: [emb] });
+        await interaction.editReply({ embeds: [emb], ...warnPayload });
         return;
       }
       const emb = addedTrackEmbed(
@@ -87,7 +93,7 @@ module.exports = {
         res.position, interaction.user,
         res.waitMs, res.nextTitle,
       );
-      await interaction.editReply({ embeds: [emb] });
+      await interaction.editReply({ embeds: [emb], ...warnPayload });
     } catch (e) {
       await interaction.editReply(`❌ Не смог включить: ${String(e.message || e).slice(0, 300)}`);
     }

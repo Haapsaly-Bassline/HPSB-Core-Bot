@@ -32,6 +32,11 @@ class LavalinkEngine {
     this.client = client;
     this.cfg = musicCfg;
     this.manager = null;
+    this.speakerStatus = new Map(); // guildId -> { ok, reason, message, at } (трибуна)
+  }
+
+  getSpeakerStatus(guildId) {
+    return this.speakerStatus.get(guildId) || null;
   }
 
   async init() {
@@ -101,6 +106,7 @@ class LavalinkEngine {
 
   async ensurePlayer(voiceChannel, textChannelId) {
     let player = this.getPlayer(voiceChannel.guild.id);
+    let isNew = false;
     if (!player) {
       player = this.manager.createPlayer({
         guildId: voiceChannel.guild.id,
@@ -110,18 +116,30 @@ class LavalinkEngine {
         selfDeaf: true,
         selfMute: false,
       });
+      isNew = true;
       await player.connect().catch(() => {});
-      return player;
-    }
-    if (player.voiceChannelId !== voiceChannel.id) {
+    } else if (player.voiceChannelId !== voiceChannel.id) {
       // Бота позвали в другой войс — ПЕРЕЕЗЖАЕМ (connect() без смены id остаётся в старом!)
       try {
         await player.changeVoiceState({ voiceChannelId: voiceChannel.id });
       } catch {
         await player.connect().catch(() => {});
       }
+      isNew = true; // новый канал — спикера просить заново
     } else {
       await player.connect().catch(() => {});
+    }
+    // Трибуна: сразу просим слово, иначе бот немой слушатель (suppress)
+    if (voiceChannel?.type === 13) {
+      try {
+        const { becomeSpeaker } = require('./stage');
+        // Discord применяет voice state не мгновенно — при свежем заходе даём осесть
+        if (isNew) await new Promise((r) => setTimeout(r, 1500));
+        const res = await becomeSpeaker(this.client, voiceChannel.guild.id, voiceChannel.id, { force: isNew });
+        this.speakerStatus.set(voiceChannel.guild.id, { ...res, at: Date.now() });
+      } catch (e) {
+        this.speakerStatus.set(voiceChannel.guild.id, { ok: false, reason: 'error', message: e?.message });
+      }
     }
     return player;
   }

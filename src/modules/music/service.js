@@ -126,4 +126,9 @@ module.exports = {
   queueView: (client, guildId) => eng(client).queueViewFull(guildId),
   npSnapshot: (client, guildId) => eng(client).npSnapshot(guildId),
   voiceChannelId: (client, guildId) => eng(client).getPlayer(guildId)?.voiceChannelId || null,
+  // Статус спикера на трибуне (null = не сцена / не запрашивали)
+  speakerStatus: (client, guildId) => {
+    const e = eng(client);
+    return typeof e.getSpeakerStatus === 'function' ? e.getSpeakerStatus(guildId) : null;
+  },
 };

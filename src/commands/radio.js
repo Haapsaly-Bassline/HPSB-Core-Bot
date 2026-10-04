@@ -41,12 +41,18 @@ module.exports = {
     const label = custom || st.name;
     try {
       const { liveAddedEmbed } = require('../utils/embeds');
+      const { stageWarning } = require('../modules/music/stage');
       await music.play(client, voiceChannel, url, {
         requester: interaction.user,
         textChannel: interaction.channel,
         radioLabel: label,
       });
-      await interaction.editReply({ embeds: [liveAddedEmbed({ label, url, source: 'http' }, interaction.user)] });
+      const warnPayload = (() => {
+        if (voiceChannel.type !== 13) return {};
+        const w = stageWarning(client, interaction.guildId);
+        return w ? { content: w } : {};
+      })();
+      await interaction.editReply({ embeds: [liveAddedEmbed({ label, url, source: 'http' }, interaction.user)], ...warnPayload });
     } catch (e) {
       await interaction.editReply(`❌ Не смог включить радио: ${String(e.message || e).slice(0, 300)}`);
     }
