@@ -208,11 +208,16 @@ class LavalinkEngine {
 
   // --- Управление (имена как в командах) ---
   // Все методы НЕ бросают наружу: false/null = "нечего делать", команды показывают чистые ответы.
-  async skip(guildId) {
+  // skip(amount): пропустить N треков (1 = текущий). throwError=false: скип последнего
+  // трека его ОСТАНАВЛИВАЕТ, а не кидает RangeError. Возвращает число пропущенных или false.
+  async skip(guildId, amount = 1) {
     const p = this.getPlayer(guildId);
     if (!p) return false;
-    try { await p.skip(); return true; }
-    catch { return false; } // пустая очередь: RangeError внутри клиента
+    const avail = (p.queue.current ? 1 : 0) + p.queue.tracks.length;
+    if (!avail) return false;
+    const n = Math.max(1, Math.min(Math.floor(Number(amount) || 1), avail));
+    try { await p.skip(n, false); return n; }
+    catch { return false; }
   }
   async stop(guildId) {
     const p = this.getPlayer(guildId);

@@ -98,7 +98,7 @@ module.exports = {
   play,
   playFan,
 
-  skip: (client, guildId) => eng(client).skip(guildId),
+  skip: (client, guildId, amount = 1) => eng(client).skip(guildId, amount),
   stop: async (client, guildId) => eng(client).stop(guildId),
   pause: (client, guildId, on) => eng(client).pause(guildId, on !== false),
   resume: (client, guildId) => eng(client).pause(guildId, false),
