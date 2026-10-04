@@ -38,8 +38,14 @@ function detectEngine(value) {
 function resolveSearchQuery(query) {
   const value = String(query || '').trim();
   if (!value) throw new Error('Пустой запрос');
-  if (/^ytsearch:|^scsearch:|^spsearch:|^dzsearch:|^amsearch:|^tdsearch:|^qbsearch:|^ymsearch:|^vksearch:/i.test(value)) {
-    return { engine: 'youtube', query: value }; // явный префикс — уважаем как есть
+  if (/^(ytsearch|ytmsearch|scsearch|spsearch|dzsearch|dzisrc|amsearch|tdsearch|qbsearch|qbisrc|ymsearch|vksearch):/i.test(value)) {
+    const pref = value.split(':')[0].toLowerCase();
+    const byPrefix = {
+      ytsearch: 'youtube', ytmsearch: 'youtube', scsearch: 'soundcloud', spsearch: 'spotify',
+      dzsearch: 'deezer', dzisrc: 'deezer', amsearch: 'applemusic', tdsearch: 'tidal',
+      qbsearch: 'qobuz', qbisrc: 'qobuz', ymsearch: 'yandex', vksearch: 'vk',
+    };
+    return { engine: byPrefix[pref] || 'youtube', query: value }; // префикс уважаем как есть
   }
   if (/^https?:\/\//i.test(value)) {
     const engine = detectEngine(value) || 'arbitrary';

@@ -38,6 +38,11 @@ function formatDuration(ms) {
 async function play(client, voiceChannel, query, { requester, textChannel, radioLabel } = {}) {
   const engine = eng(client);
   const q = resolveSearchQuery(query);
+  // Spotify выключен на ноде (нет Premium у приложения): отвечаем сразу и понятно,
+  // а не туманным "No results" после таймаутов.
+  if (q.engine === 'spotify') {
+    throw new Error('Spotify временно выключен: у Spotify-приложения нет Premium. Ищи текстом (YouTube/SoundCloud) или кинь прямую ссылку на трек.');
+  }
   const result = await engine.play(voiceChannel, q.query, {
     requester,
     metadata: { channel: textChannel, radioLabel: radioLabel || null },
