@@ -95,7 +95,7 @@ plugins:
       deezer: false                       # ВЫКЛ до токенов: Direct (без YouTube!). Впиши arl +
                                          # masterDecryptionKey ниже и ставь true — тогда и Spotify
                                          # заиграет зеркалом через Deezer без YouTube.
-      yandexmusic: false                 # ждёт accessToken ниже (free, гайд в блоке). Впиши + true.
+      yandexmusic: false                 # УБРАН 2026-10-04 по решению владельца (блок конфига удалён).
       vkmusic: false                     # не выбран; включи + userToken (+ RU-прокси, сервер не в RU)
       tidal: false                       # ВЫКЛ до токена (плейсхолдер может крашить старт).
                                          # Впиши token ниже и ставь true; звук — зеркалом.
@@ -131,8 +131,8 @@ plugins:
       # Бесплатно, руками, 5 минут:
       #  1) заведи/открой Deezer-аккаунт (free хватает для MP3_128),
       #  2) залогинься на deezer.com -> F12 -> Application -> Cookies -> скопируй `arl`,
-      #  3) master-ключ достань по гайдам (LavaSrc#deezer) сам — в чаты НЕ кидай.
-      # Впиши оба, ставь deezer: true. Даст прямой звук + оживит Spotify-зеркало без YouTube.
+      #  3) master-ключ уже вписан ЛОКАЛЬНО (в git — плейсхолдер, больше никуда не пости).
+      # Впиши arl, ставь deezer: true. Даст прямой звук + оживит Spotify-зеркало без YouTube.
       arl: "PASTE_DEEZER_ARL"
       masterDecryptionKey: "PASTE_DEEZER_MASTER_KEY"
       formats: [ "MP3_128" ]
@@ -143,13 +143,6 @@ plugins:
     qobuz:
       # Токен: https://github.com/topi314/LavaSrc#qobuz
       userOauthToken: "PASTE_QOBUZ_TOKEN"
-    yandexmusic:
-      # Бесплатно, руками: accessToken Яндекс Музыки (своего аккаунта, подписка не нужна) —
-      # гайд https://github.com/topi314/LavaSrc#yandex-music . Впиши, ставь yandexmusic: true.
-      accessToken: "PASTE_YANDEX_TOKEN"
-      playlistLoadLimit: 1
-      albumLoadLimit: 1
-      artistLoadLimit: 1
     ytdlp:
       # Куки бернера (залогиненная сессия пробивает login-required и бот-чек).
       # Файл ТОЛЬКО локально (gitignore), протухает — переэкспортить из браузера.
