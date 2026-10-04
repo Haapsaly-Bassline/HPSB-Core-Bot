@@ -61,27 +61,6 @@ function trackLink(track) {
   return /^https?:\/\//i.test(track.url || '') ? `**[${title}](${track.url})**` : `**${title}**`;
 }
 
-// --- Jockie-style: Now Playing ---
-function nowPlayingEmbed(track, queue, requester) {
-  const { fmtMs, progressBar, currentProgress } = require('./music');
-  const { currentMs, totalMs } = currentProgress(queue, track);
-  const e = new EmbedBuilder()
-    .setColor(0x1db954)
-    .setTitle('🔊 Now Playing ♪')
-    .setDescription(`Playing\n${trackLink(track)}\n${track.author || ''}`.slice(0, 4000))
-    .setTimestamp();
-  if (track.thumbnail) e.setThumbnail(track.thumbnail);
-  e.addFields({ name: 'Position', value: progressBar(currentMs, totalMs) });
-  e.addFields(
-    { name: 'Position in queue', value: '1', inline: true },
-    { name: 'Position', value: fmtMs(currentMs), inline: true },
-    { name: 'Length', value: totalMs > 0 ? fmtMs(totalMs) : String(track.duration || 'LIVE'), inline: true },
-  );
-  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
-  return e;
-}
-
 // --- Jockie-style: Added Track ---
 // track: { title, url, author, thumbnail, duration, source }
 // source: короткий код источника (spotify/soundcloud/deezer/…/http) — покажем бейдж.
@@ -199,7 +178,7 @@ function renderTpl(tpl, vars = {}, roleOverride) {
     .trim();
 }
 
-module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, nowPlayingEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
+module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
 
 // --- Мод-действие: единый красивый вывод (и в чат, и в лог) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge

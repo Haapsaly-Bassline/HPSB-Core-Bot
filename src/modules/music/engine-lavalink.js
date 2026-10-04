@@ -1,6 +1,5 @@
-// Lavalink-движок музыки (включается на host PC: MUSIC_ENGINE=lavalink).
-// Зеркалит поведение discord-player-пути: те же эмбеды Now Playing / Added Track.
-// Живое тестирование звука — только на host PC (там рабочий UDP).
+// Lavalink-движок музыки — единственный в боте (legacy удалён).
+// Отвечает за войс, очередь и резолв всех источников через ноду.
 
 const { LavalinkManager } = require('lavalink-client');
 const { logger } = require('../../utils/logger');
@@ -283,17 +282,6 @@ class LavalinkEngine {
       return true;
     } catch { return false; }
   }
-  queueInfo(guildId) {
-    const p = this.getPlayer(guildId);
-    if (!p) return null;
-    return {
-      current: p.queue.current ? infoOf(p.queue.current) : null,
-      upcoming: p.queue.tracks.map(infoOf).slice(0, 15),
-      size: p.queue.tracks.length,
-      repeatMode: LOOP_BACK[p.repeatMode] ?? 0,
-      position: p.position ?? 0,
-    };
-  }
 
   // Полный вью для /queue и живого NP (длительности в ms для бара)
   queueViewFull(guildId) {
@@ -342,15 +330,6 @@ function fmtDur(ms) {
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
-}
-
-function infoOf(t) {
-  const info = t?.info || t || {};
-  return {
-    title: info.title || 'Unknown', author: info.author || '', url: info.uri || info.url || '',
-    duration: info.isStream ? 'LIVE' : fmtDur(info.length),
-    source: normSource(info.sourceName || info.source || t?.source || ''),
-  };
 }
 
 // Плоский вью трека для ответов /play (клиент отдаёт вложенный info.*,

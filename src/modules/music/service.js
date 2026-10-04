@@ -26,15 +26,6 @@ function viewOf(item) {
   };
 }
 
-function formatDuration(ms) {
-  if (!ms || ms <= 0) return 'LIVE';
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
-}
-
 async function play(client, voiceChannel, query, { requester, textChannel, radioLabel } = {}) {
   const engine = eng(client);
   const q = resolveSearchQuery(query);
@@ -43,6 +34,16 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
   if (q.engine === 'spotify') {
     throw new Error('Spotify временно выключен: у Spotify-приложения нет Premium. Ищи текстом (YouTube/SoundCloud) или кинь прямую ссылку на трек.');
   }
+  // ETA: сколько дослушать до нашего трека (остаток текущего + очередь ДО добавления)
+  let etaMs = 0;
+  let nextTitle = null;
+  try {
+    const before = engine.queueViewFull(voiceChannel.guild.id);
+    if (before) {
+      etaMs = before.totalMs || 0;
+      nextTitle = before.size > 0 ? (before.upcoming[0]?.title || null) : null;
+    }
+  } catch {}
   const result = await engine.play(voiceChannel, q.query, {
     requester,
     metadata: { channel: textChannel, radioLabel: radioLabel || null },
@@ -60,8 +61,8 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
     } : null,
     // 0 = играет сейчас, N = номер в upcoming (1-based, как в /queue)
     position: !result?.position ? '▶ сейчас' : `#${result.position} в очереди`,
-    nextTitle: null,
-    waitMs: 0,
+    nextTitle,
+    waitMs: etaMs,
   };
 }
 
@@ -125,5 +126,4 @@ module.exports = {
   queueView: (client, guildId) => eng(client).queueViewFull(guildId),
   npSnapshot: (client, guildId) => eng(client).npSnapshot(guildId),
   voiceChannelId: (client, guildId) => eng(client).getPlayer(guildId)?.voiceChannelId || null,
-  formatDuration,
 };

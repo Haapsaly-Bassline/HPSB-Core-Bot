@@ -13,7 +13,7 @@ async function fetchFanPage(url) {
   return (await r.text()).replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 }
 
-function parseFan(html, url) {
+function parseFan(html) {
   const m = html.match(/"fan_data":\{"trackpipe_url":"[^"]*","username":"([^"]+)","name":"([^"]*)".*?"fan_id":(\d+)/);
   if (!m) throw new Error('Это не fan-профиль (нет fan_data: для артистов — ссылки вида artist.bandcamp.com)');
   return { username: m[1], name: m[2] || m[1], fanId: Number(m[3]) };
@@ -35,7 +35,7 @@ async function fetchCollection(fanUrl, { limit = 10 } = {}) {
   if (!m) throw new Error('Нужна ссылка вида https://bandcamp.com/username (fan-профиль, не артист)');
   const pageUrl = `https://bandcamp.com/${m[1]}`;
   const html = await fetchFanPage(pageUrl);
-  const fan = parseFan(html, pageUrl);
+  const fan = parseFan(html);
 
   // last_token для первой страницы сидит в collection_data
   const tok = html.match(/"collection_data":\{"redownload_urls":\{\},"last_token":"([^"]+)"/);

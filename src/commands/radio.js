@@ -44,7 +44,6 @@ module.exports = {
       await music.play(client, voiceChannel, url, {
         requester: interaction.user,
         textChannel: interaction.channel,
-        engine: 'arbitrary',
         radioLabel: label,
       });
       await interaction.editReply({ embeds: [liveAddedEmbed({ label, url, source: 'http' }, interaction.user)] });
