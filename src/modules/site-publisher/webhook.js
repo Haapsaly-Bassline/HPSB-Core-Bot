@@ -1,7 +1,7 @@
-// Приёмник для "своих сервисов" (и Make/Zapier-триггеров):
+// Receiver for "own services" (and Make/Zapier triggers):
 // POST /hook/news { secret, title, description, url, image, source, twitch, links }
-// twitch: ссылка на параллельный стрим (кнопкой, без отдельного поста).
-// links: [{ label, url }] — доп. кнопки.
+// twitch: parallel stream link (as button, without separate post).
+// links: [{ label, url }] -- extra buttons.
 const express = require('express');
 const axios = require('axios');
 const { XMLParser } = require('fast-xml-parser');
@@ -39,11 +39,11 @@ function startWebhook(client) {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
 
-  if (!secret) logger.warn('[webhook] WEBHOOK_SECRET пуст — постит сможет кто угодно. Задай секрет!');
+  if (!secret) logger.warn('[webhook] WEBHOOK_SECRET empty -- anyone can post. Set a secret!');
   app.get('/health', (_, res) => res.json({ ok: true }));
 
-  // ---------- YouTube PubSubHubbub: пуши вместо опроса (0 ops в Make) ----------
-  // Google сам стучит сюда при загрузке видео. Подписка обновляется раз в 4 дня.
+// ---------- YouTube PubSubHubbub: pushes instead of polling (0 ops in Make) ----------
+// Google hits this on video upload. Subscription renews every 4 days.
   app.use('/hook/youtube', express.text({ type: '*/*', limit: '256kb' }));
   app.get('/hook/youtube', (req, res) => {
     const mode = req.query['hub.mode'];
@@ -56,7 +56,7 @@ function startWebhook(client) {
   });
   const atomParser = new XMLParser({ ignoreAttributes: false });
   app.post('/hook/youtube', async (req, res) => {
-    res.status(200).send('ok'); // отвечаем сразу, разбираем дальше
+    res.status(200).send('ok'); // respond immediately, process later
     try {
       const xml = typeof req.body === 'string' ? req.body : '';
       if (!xml.includes('<entry')) return;
@@ -80,7 +80,7 @@ function startWebhook(client) {
   subscribeYouTube(client).catch(e => logger.warn('[pubsub] init failed', e.message));
 
   app.post('/hook/news', async (req, res) => {
-    // Токен любым способом: body.secret, x-hpsb-secret, x-webhook-secret,
+    // Token by any method: body.secret, x-hpsb-secret, x-webhook-secret,
     // x-api-key, Authorization: Bearer
     const hdr = req.headers || {};
     const auth = String(hdr.authorization || '');
@@ -100,7 +100,7 @@ function startWebhook(client) {
       const ping = mediaPing();
       const payload = { embeds: [styledEmbed({ title, description, url, image, source })] };
       if (ping) payload.content = ping;
-      // Кнопки: основная ссылка + Twitch «за компанию» + любые доп. links
+      // Buttons: main link + Twitch "on the side" + any extra links
       const { linkButtonRows } = require('../../utils/embeds');
       const btns = [];
       if (url) btns.push({ label: /twitch/i.test(source || '') ? 'Twitch' : 'Watch', url });
@@ -110,7 +110,7 @@ function startWebhook(client) {
           if (l?.url) btns.push({ label: String(l.label || 'Link').slice(0, 80), url: l.url });
         }
       }
-      // убираем дубли по url
+      // remove duplicates by url
       const seen = new Set();
       const uniq = btns.filter(b => {
         try { const u = new URL(b.url).href; if (seen.has(u)) return false; seen.add(u); return true; }
@@ -125,11 +125,11 @@ function startWebhook(client) {
     }
   });
 
-  // Слушаем на всех интерфейсах: Caddy может быть как локально, так и на соседнем хосте
+  // Listen on all interfaces: Caddy may be local or on adjacent host
   app.listen(port, () => logger.info(`[webhook] listening :${port} -> #${channelId}`));
 }
 
-// Подписка YT-каналов на PubSubHubbub (лизы до 5 дней — обновляем раз в 4 дня)
+// YT channels PubSubHubbub subscription (leases up to 5 days -- renew every 4 days)
 async function subscribeYouTube(client) {
   const base = (config.webhook.publicBase || '').replace(/\/$/, '');
   const channels = config.reposter.youtube.map(x => x.key).filter(Boolean);

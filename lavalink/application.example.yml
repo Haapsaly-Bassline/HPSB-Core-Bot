@@ -1,112 +1,112 @@
-# Lavalink для HPSB Core Bot — включается на host PC.
-# Бот исключительно на lavalink (MUSIC_ENGINE=lavalink в .env бота).
-# На host PC: Java 17+ -> java -jar Lavalink.jar -> MUSIC_ENGINE=lavalink
+# Lavalink for HPSB Core Bot — runs on host PC.
+# Bot runs exclusively on Lavalink (MUSIC_ENGINE=lavalink in bot .env).
+# On host PC: Java 17+ -> java -jar Lavalink.jar -> MUSIC_ENGINE=lavalink
 #
-# Взять свежий Lavalink.jar (v4): https://github.com/lavalink-devs/Lavalink/releases
-# Версии ниже проверены 2026-09-25, перед запуском сверь с релизами:
+# Get fresh Lavalink.jar (v4): https://github.com/lavalink-devs/Lavalink/releases
+# Versions below verified 2026-09-25, check against releases before running:
 #   YouTube plugin: https://github.com/lavalink-devs/youtube-source/releases
-#   LavaSrc:        https://github.com/topi314/LavaSrc/releases (Spotify/Apple/Deezer через API-ключи)
+#   LavaSrc:        https://github.com/topi314/LavaSrc/releases (Spotify/Apple/Deezer via API keys)
 
 server:
   port: 2333
   address: 0.0.0.0
 
 lavalink:
-  server:
-    # Тот же пароль впиши в .env -> LAVALINK_PASSWORD
-    password: "CHANGE-ME-AND-MIRROR-IN-BOT-ENV"
-    sources:
-      youtube: false                # ОБЯЗАТЕЛЬНО false: встроенный источник deprecated и перехватывает
-                                    # ytsearch: у плагина (400 от YouTube). Плагин — ниже, отдельно.
-      bandcamp: true
-      soundcloud: true
-      twitch: false
-      vimeo: false                      # ВЫКЛ 2026-10-04: не работает (источник мёртв)
-      nico: false
-      http: true
-      local: false
+server:
+      # Same password in bot .env -> LAVALINK_PASSWORD
+      password: "CHANGE-ME-AND-MIRROR-IN-BOT-ENV"
+      sources:
+        youtube: false                # MUST be false: built-in source is deprecated and intercepts
+                                      # ytsearch: from plugin (400 from YouTube). Plugin is below, separate.
+        bandcamp: true
+        soundcloud: true
+        twitch: false
+        vimeo: false                      # OFF 2026-10-04: not working (source dead)
+        nico: false
+        http: true
+        local: false
     filters:
       volume: true
     bufferDurationMs: 400
-    opusEncodingProfile: "OPUS"        # чистый opus в Discord
-    resamplingQuality: LOW             # меньше CPU
+    opusEncodingProfile: "OPUS"        # pure opus to Discord
+    resamplingQuality: LOW             # less CPU
     trackStuckThresholdMs: 10000
-    useChronicle: true                 # нужен Java 17+ (chronicle bytebuffer вне heap)
+    useChronicle: true                 # requires Java 17+ (chronicle bytebuffer off-heap)
     youtubePlaylistLoadLimit: 6
     playerUpdateInterval: 5
-    youtubeSearchEnabled: true               # ТЕСТ 2026-10-04: пробуем вернуть YouTube
+    youtubeSearchEnabled: true               # TEST 2026-10-04: trying to restore YouTube
     soundcloudSearchEnabled: true
     httpSearchEnabled: false
     localSearchEnabled: false
   plugins:
-    # YouTube через официальный плагин (стабильнее встроенного источника).
-    # ВЫКЛЮЧЕН: домашний IP зафлагован YouTube как бот. Возврат — только через OAuth
-    # (бернер-аккаунт!) — см. закомментированный блок ниже.
+    # YouTube via official plugin (more stable than built-in source).
+    # DISABLED: home IP flagged by YouTube as bot. Return only via OAuth
+    # (burner account!) — see commented block below.
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       repository: "https://maven.lavalink.dev/releases"
       snapshot: false
-    # Остальные музыкальные интеграции — через LavaSrc (Spotify / Apple / Deezer / Tidal / Qobuz …).
-    # ВАЖНО: источник включается (sources.*: true) ТОЛЬКО с настоящим токеном.
-    # Плейсхолдер PASTE_* в включённом источнике КРАШИТ СТАРТ (проверено на Apple Music).
+    # Other music integrations via LavaSrc (Spotify / Apple / Deezer / Tidal / Qobuz ...).
+    # IMPORTANT: source enabled (sources.*: true) ONLY with real token.
+    # PASTE_* placeholder in enabled source CRASHES START (verified on Apple Music).
     - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
       repository: "https://maven.lavalink.dev/releases"
       snapshot: false
-    # lava-lyrics-plugin УБРАН: артефакта 4.8.3 нет на maven.lavalink.dev (404 -> краш PluginManager),
-    # бот лирику не использует. Не возвращать без проверки URL на maven.
+    # lava-lyrics-plugin REMOVED: no 4.8.3 artifact on maven.lavalink.dev (404 -> crashes PluginManager),
+    # bot doesn't use lyrics. Don't add back without verifying URL on maven.
 
 plugins:
   youtube:
-    # СХЕМА 2026-10-04: поиск/метаданные — плагин; ПРЯМЫЕ ССЫЛКИ — ytdlp с куками бернера
-    # (allowDirect* выкл: плагин пропускает URL, их забирает ytdlp — иначе все ссылки
-    # резолвит плагин и упираются в login/bot-check на ПРОИГРЫВАНИИ).
+    # SCHEMA 2026-10-04: search/metadata via plugin; DIRECT LINKS via ytdlp with burner cookies
+    # (allowDirect* disabled: plugin passes URLs, ytdlp picks them up -- otherwise all links
+    # resolved by plugin hit login/bot-check on PLAYBACK).
     enabled: true
     allowSearch: true
     allowDirectVideoIds: false
     allowDirectPlaylistIds: false
-    # Как вернуть YouTube: enabled -> true, раскомментируй oauth ниже, перезапусти Lavalink,
-    # пройди device-flow в консоли БЕРНЕР-аккаунтом Google (НЕ основным — есть риск бана!),
-    # выданный refreshToken впиши в yml. Либо добавь клиенты WEB/ANDROID_VR в список ниже —
-    # иногда хватает, но при IP-бане обычно нет.
-    # OAuth 2026-10-04: работает (токен обновляется сам, device-flow больше не нужен).
-    # Токен НЕ коммитить! В гите PASTE Refresh token — после pull вписать свой локально и рестартнуть ноду.
+    # How to return YouTube: enabled -> true, uncomment oauth below, restart Lavalink,
+    # do device-flow in console with BURNER Google account (NOT main -- ban risk!),
+    # paste issued refreshToken in yml. Or add WEB/ANDROID_VR clients below --
+    # sometimes works, but with IP ban usually not.
+    # OAuth 2026-10-04: works (token refreshes itself, device-flow no longer needed).
+    # Token NOT committed! In git PASTE Refresh token -- after pull fill locally and restart node.
     oauth:
       enabled: true
       refreshToken: "PASTE_REFRESH_TOKEN"
     clients:
       - MUSIC
-      - TV                 # OAuth-клиент (без него OAuth включён впустую — варнинг плагина)
+      - TV                 # OAuth client (without it OAuth enabled is useless -- plugin warning)
       - ANDROID_VR
       - WEB
       - TVHTML5_SIMPLY
-  lavasrc:
-    # Зеркало (Spotify/Apple/Tidal) ищет аудио по провайдерам СВЕРХУ ВНИЗ.
-    # Deezer первым: он Direct и не зависит от забаненого YouTube.
+lavasrc:
+    # Mirror (Spotify/Apple/Tidal) searches providers TOP-DOWN.
+    # Deezer first: Direct and independent of banned YouTube.
     providers:
-      - "dzisrc:%ISRC%"                  # Deezer по ISRC — точные совпадения, без YouTube
-      - "dzsearch:%QUERY%"               # Deezer-поиск как фолбэк зеркала
-      - "ytsearch:\"%ISRC%\""            # YouTube по ISRC — оживёт вместе с youtube-плагином/OAuth
+      - "dzisrc:%ISRC%"                  # Deezer by ISRC -- exact matches, no YouTube
+      - "dzsearch:%QUERY%"               # Deezer search as mirror fallback
+      - "ytsearch:\"%ISRC%\""            # YouTube by ISRC -- lives with youtube-plugin/OAuth
       - "ytsearch:%QUERY%"
     sources:
-      spotify: false                     # ВЫКЛ 2026-10-04: у приложения нет Premium (владелец слушает через мод).
-                                         # Spotify API режет ВСЕ запросы без Premium у owner'а. Вернуть: продлить
-                                         # Premium + spotify:true. Ключи в блоке ниже целы.
-      applemusic: false                  # ВЫКЛ до токена: плейсхолдер КРАШИТ СТАРТ (AppleMusicTokenManager).
-                                         # Впиши mediaAPIToken ниже и ставь true.
-      deezer: false                       # ВЫКЛ до токенов: Direct (без YouTube!). Впиши arl +
-                                         # masterDecryptionKey ниже и ставь true — тогда и Spotify
-                                         # заиграет зеркалом через Deezer без YouTube.
-      yandexmusic: false                 # УБРАН 2026-10-04 по решению владельца (блок конфига удалён).
-      vkmusic: false                     # не выбран; включи + userToken (+ RU-прокси, сервер не в RU)
-      tidal: false                       # ВЫКЛ до токена (плейсхолдер может крашить старт).
-                                         # Впиши token ниже и ставь true; звук — зеркалом.
-      qobuz: false                       # ВЫКЛ до токена. Впиши userOauthToken ниже и ставь true (Direct).
-      ytdlp: true                         # ВКЛ 2026-10-04: забирает ПРЯМЫЕ YT-ссылки (плагин их пропускает,
-                                         # см. allowDirect* выше) и играет через yt-dlp с куками бернера.
-                                         # Текстовый поиск остаётся на плагине. Audiomack НЕ даёт (только YouTube).
-      flowerytts: false                  # TTS-озвучка текста, не музыка
-      jiosaavn: false                    # нужен свой secretKey
-      youtube: false                     # LavaSearch-поиск по YouTube (мёртв без youtube-плагина)
-    lyrics-sources:                      # лирики боту не нужны — всё выкл
+      spotify: false                     # OFF 2026-10-04: app has no Premium (owner listens via mod).
+                                         # Spotify API blocks ALL requests without Premium on owner. Return: renew
+                                         # Premium + spotify:true. Keys in block below intact.
+      applemusic: false                  # OFF until token: placeholder CRASHES START (AppleMusicTokenManager).
+                                         # Paste mediaAPIToken below and set true.
+      deezer: false                       # OFF until tokens: Direct (no YouTube!). Paste arl +
+                                         # masterDecryptionKey below and set true -- then Spotify
+                                         # also works as mirror via Deezer without YouTube.
+      yandexmusic: false                 # REMOVED 2026-10-04 per owner decision (config block deleted).
+      vkmusic: false                     # not selected; enable + userToken (+ RU proxy, server not in RU)
+      tidal: false                       # OFF until token (placeholder may crash start).
+                                         # Paste token below and set true; audio via mirror.
+      qobuz: false                       # OFF until token. Paste userOauthToken below and set true (Direct).
+      ytdlp: true                         # ON 2026-10-04: handles DIRECT YT links (plugin skips them,
+                                         # see allowDirect* above) and plays via yt-dlp with burner cookies.
+                                         # Text search stays on plugin. Audiomack NOT provided (YouTube only).
+      flowerytts: false                  # TTS text-to-speech, not music
+      jiosaavn: false                    # needs own secretKey
+      youtube: false                     # LavaSearch YouTube search (dead without youtube-plugin)
+    lyrics-sources:                      # lyrics not needed by bot -- all off
       spotify: false
       deezer: false
       youtube: false
@@ -115,8 +115,8 @@ plugins:
       lrcLib: false
     spotify:
       preferAnonymousToken: false
-      # Ключи НЕ коммитим (иначе утекут в GitHub): возьми из .env бота (SPOTIFY_*)
-      # и впиши ЛОКАЛЬНО после git pull. Без них spsearch/Spotify-ссылки не резолвятся.
+      # Keys NOT committed (would leak to GitHub): take from bot .env (SPOTIFY_*)
+      # and fill LOCAL after git pull. Without them spsearch/Spotify links won't resolve.
       clientId: "PASTE_SPOTIFY_CLIENT_ID"
       clientSecret: "PASTE_SPOTIFY_CLIENT_SECRET"
       countryCode: "EE"
@@ -124,28 +124,28 @@ plugins:
       albumLoadLimit: 6
     applemusic:
       countryCode: "EE"
-      # Бесплатно, но руками: токен БЕЗ Apple developer account —
-      # гайд https://github.com/topi314/LavaSrc#apple-music . Впиши токен, ставь applemusic: true.
+      # Free but manual: token WITHOUT Apple developer account --
+      # guide https://github.com/topi314/LavaSrc#apple-music . Paste token, set applemusic: true.
       mediaAPIToken: "PASTE_APPLE_MUSIC_TOKEN"
     deezer:
-      # Бесплатно, руками, 5 минут:
-      #  1) заведи/открой Deezer-аккаунт (free хватает для MP3_128),
-      #  2) залогинься на deezer.com -> F12 -> Application -> Cookies -> скопируй `arl`,
-      #  3) master-ключ уже вписан ЛОКАЛЬНО (в git — плейсхолдер, больше никуда не пости).
-      # Впиши arl, ставь deezer: true. Даст прямой звук + оживит Spotify-зеркало без YouTube.
+      # Free, manual, 5 minutes:
+      #  1) create/open Deezer account (free enough for MP3_128),
+      #  2) login on deezer.com -> F12 -> Application -> Cookies -> copy `arl`,
+      #  3) master key already filled LOCALLY (in git -- placeholder, don't post anywhere else).
+      # Paste arl, set deezer: true. Gives direct audio + revives Spotify mirror without YouTube.
       arl: "PASTE_DEEZER_ARL"
       masterDecryptionKey: "PASTE_DEEZER_MASTER_KEY"
       formats: [ "MP3_128" ]
     tidal:
-      # Токен: https://github.com/topi314/LavaSrc#tidal
+      # Token: https://github.com/topi314/LavaSrc#tidal
       countryCode: "EE"
       token: "PASTE_TIDAL_TOKEN"
     qobuz:
-      # Токен: https://github.com/topi314/LavaSrc#qobuz
+      # Token: https://github.com/topi314/LavaSrc#qobuz
       userOauthToken: "PASTE_QOBUZ_TOKEN"
     ytdlp:
-      # Куки бернера (залогиненная сессия пробивает login-required и бот-чек).
-      # Файл ТОЛЬКО локально (gitignore), протухает — переэкспортить из браузера.
+      # Burner cookies (logged-in session beats login-required and bot-check).
+      # File LOCAL ONLY (gitignore), expires -- re-export from browser.
       path: "C:/Users/Host-PC/AppData/Local/Microsoft/WinGet/Links/yt-dlp.exe"
       searchLimit: 10
       customLoadArgs: ["--cookies", "J:/DESKROP/HPSB-Core-Bot/lavalink/cookies.txt", "-q", "--no-warnings", "--flat-playlist", "--skip-download", "-J"]
@@ -155,5 +155,5 @@ logging:
   level:
     lavalink: INFO
     root: WARN
-    # OAuth device-flow печатает ссылку+код СЮДА (иначе молчит под root=WARN)
+    # OAuth device-flow prints link+code HERE (otherwise silent under root=WARN)
     dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO

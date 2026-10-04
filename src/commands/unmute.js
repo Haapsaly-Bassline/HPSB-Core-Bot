@@ -4,14 +4,14 @@ const { requireMod, resolveMember, modLog } = require('../utils/mod');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('unmute')
-    .setDescription('Снять мут')
+    .setDescription('Unmute')
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
-    .addUserOption(o => o.setName('user').setDescription('Кого').setRequired(true)),
+    .addUserOption(o => o.setName('user').setDescription('Who').setRequired(true)),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const user = interaction.options.getUser('user', true);
     const member = await resolveMember(interaction, user);
-    if (!member) { await interaction.reply({ content: '❌ Пользователь не на сервере.', flags: MessageFlags.Ephemeral }); return; }
+    if (!member) { await interaction.reply({ content: '❌ User is not on the server.', flags: MessageFlags.Ephemeral }); return; }
     try {
       await member.timeout(null);
       const { modActionEmbed } = require('../utils/embeds');
@@ -19,7 +19,7 @@ module.exports = {
       await interaction.reply({ embeds: [emb] });
       await modLog(client, { embeds: [emb] });
     } catch {
-      await interaction.reply({ content: '❌ Не смог снять мут.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '❌ Could not unmute.', flags: MessageFlags.Ephemeral });
     }
   },
 };

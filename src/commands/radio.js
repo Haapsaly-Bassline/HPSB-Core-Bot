@@ -11,25 +11,25 @@ const DIRECT_RE = /\.(mp3|ogg|oga|wav|m4a|flac|aac|opus|m3u8|pls)(\?|$)|azura\.h
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('radio')
-    .setDescription('Включить радио HPSB')
-    .addStringOption(o => o.setName('station').setDescription('Станция').setRequired(false)
+    .setDescription('Play HPSB radio')
+    .addStringOption(o => o.setName('station').setDescription('Station').setRequired(false)
       .addChoices({ name: 'Haapsaly Bassline', value: 'hpsb' }, { name: 'Hardcore Predictor FM', value: 'predictor' }))
-    .addStringOption(o => o.setName('url').setDescription('Свой поток (mp3/aac, перебивает станцию)').setRequired(false))
-    .addChannelOption(o => o.setName('channel').setDescription('Войс-канал (по умолчанию твой)').setRequired(false)),
+    .addStringOption(o => o.setName('url').setDescription('Custom stream (mp3/aac, overrides the station)').setRequired(false))
+    .addChannelOption(o => o.setName('channel').setDescription('Voice channel (defaults to yours)').setRequired(false)),
   async execute(interaction, client) {
     await interaction.deferReply();
     const voiceChannel = interaction.options.getChannel('channel') || interaction.member?.voice?.channel;
     if (!voiceChannel || ![2, 13].includes(voiceChannel.type)) {
-      await interaction.editReply('❌ Зайди в войс или на сцену (или укажи канал параметром).');
+      await interaction.editReply('❌ Join a voice channel or stage (or specify one via the channel option).');
       return;
     }
 
-    // Префлайт: бот сам проверяет свои права в ЭТОМ войсе
+    // Preflight: bot checks its own permissions in THIS voice
     try {
       const { checkVoice } = require('../utils/selfcheck');
       const pre = await checkVoice(client, voiceChannel);
       if (!pre.ok) {
-        await interaction.editReply(`❌ Не могу зайти в войс:\n❌ ${pre.problems.join('\n❌ ')}`);
+        await interaction.editReply(`❌ Can't join that voice channel:\n❌ ${pre.problems.join('\n❌ ')}`);
         return;
       }
     } catch {}
@@ -54,7 +54,7 @@ module.exports = {
       })();
       await interaction.editReply({ embeds: [liveAddedEmbed({ label, url, source: 'http' }, interaction.user)], ...warnPayload });
     } catch (e) {
-      await interaction.editReply(`❌ Не смог включить радио: ${String(e.message || e).slice(0, 300)}`);
+      await interaction.editReply(`❌ Couldn't play the radio: ${String(e.message || e).slice(0, 300)}`);
     }
   },
 };

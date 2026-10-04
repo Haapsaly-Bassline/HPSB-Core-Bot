@@ -7,19 +7,19 @@ module.exports = {
   name: Events.GuildMemberAdd,
   async execute(member) {
     try {
-      // Anti-raid: всплеск заходов — новичка в мут + пометка в логе
+      // Anti-raid: join spike -> newcomer muted + log note
       let raided = false;
       if (!member.user.bot && joinBeat(member, member.client) === 'raid') {
         raided = true;
-        await member.timeout(Math.max(config.antiraid.hours, 1) * 3600 * 1000, 'Anti-raid: всплеск заходов').catch(() => {});
+        await member.timeout(Math.max(config.antiraid.hours, 1) * 3600 * 1000, 'Anti-raid: join spike').catch(() => {});
       }
-      const e = new EmbedBuilder().setColor(raided ? 0xff2020 : 0x22c55e).setTitle(raided ? '🚨 Вход во время рейда' : '📥 Новый участник').setTimestamp()
+      const e = new EmbedBuilder().setColor(raided ? 0xff2020 : 0x22c55e).setTitle(raided ? '🚨 Join during raid' : '📥 New member').setTimestamp()
         .setThumbnail(member.user.displayAvatarURL())
         .addFields(
-          { name: 'Кто', value: `${member.user} (${member.id})` },
-          { name: 'Аккаунт создан', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>` },
+          { name: 'Who', value: `${member.user} (${member.id})` },
+          { name: 'Account created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>` },
         );
-      if (raided) e.addFields({ name: 'Действие', value: `Мут на ${config.antiraid.hours}ч (anti-raid)` });
+      if (raided) e.addFields({ name: 'Action', value: `Mute ${config.antiraid.hours}h (anti-raid)` });
       await modLog(member.client, { embeds: [e] });
     } catch {}
   },

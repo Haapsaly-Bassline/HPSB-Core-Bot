@@ -3,8 +3,8 @@ const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('disc
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('userinfo')
-    .setDescription('Инфо о пользователе')
-    .addUserOption(o => o.setName('user').setDescription('Кого (по умолч. ты)').setRequired(false)),
+    .setDescription('User info')
+    .addUserOption(o => o.setName('user').setDescription('Who (you by default)').setRequired(false)),
   async execute(interaction) {
     const user = interaction.options.getUser('user') || interaction.user;
     const member = await interaction.guild.members.fetch(user.id).catch(() => null);
@@ -15,21 +15,21 @@ module.exports = {
       .setThumbnail(user.displayAvatarURL({ size: 256 }))
       .addFields(
         { name: 'ID', value: user.id, inline: true },
-        { name: 'Аккаунт создан', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-        { name: 'Бот', value: user.bot ? 'Да' : 'Нет', inline: true },
+        { name: 'Account created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
+        { name: 'Bot', value: user.bot ? 'Yes' : 'No', inline: true },
       )
       .setTimestamp();
     if (member) {
       e.addFields(
-        { name: 'На сервере с', value: member.joinedTimestamp ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : '—', inline: true },
-        { name: 'Таймаут', value: member.communicationDisabledUntilTimestamp && member.communicationDisabledUntilTimestamp > Date.now()
-          ? `до <t:${Math.floor(member.communicationDisabledUntilTimestamp / 1000)}:R>` : 'нет', inline: true },
-        { name: `Роли (${member.roles.cache.size - 1})`, value: roles.slice(0, 1000) || '—' },
+        { name: 'On server since', value: member.joinedTimestamp ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : '—', inline: true },
+        { name: 'Timeout', value: member.communicationDisabledUntilTimestamp && member.communicationDisabledUntilTimestamp > Date.now()
+          ? `until <t:${Math.floor(member.communicationDisabledUntilTimestamp / 1000)}:R>` : 'none', inline: true },
+        { name: `Roles (${member.roles.cache.size - 1})`, value: roles.slice(0, 1000) || '—' },
       );
     }
     const warns = (require('../utils/store').load().warns[user.id] || []).length;
     if (interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
-      e.setFooter({ text: `Варнов: ${warns} • Haapsaly Bassline` });
+      e.setFooter({ text: `Warns: ${warns} • Haapsaly Bassline` });
     } else {
       e.setFooter({ text: 'Haapsaly Bassline' });
     }

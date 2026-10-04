@@ -7,10 +7,10 @@ const { config } = require('../config');
 function uptimeStr(ms) {
   const s = Math.floor(ms / 1000);
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-  return `${d}д ${h}ч ${m}м`;
+  return `${d}d ${h}h ${m}m`;
 }
 
-// Дата самого свежего файла кода — маркер без ручных бампов: любое изменение видно
+// Date of freshest code file -- marker without manual bumps: any change visible
 function codeDate() {
   let max = 0;
   const touch = (p) => { try { const t = fs.statSync(p).mtimeMs; if (t > max) max = t; } catch {} };
@@ -30,9 +30,9 @@ function codeDate() {
 }
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('version').setDescription('Версия бота и окружение'),
+  data: new SlashCommandBuilder().setName('version').setDescription('Bot version and environment'),
   async execute(interaction, client) {
-    let now = 'пусто';
+    let now = 'empty';
     try {
       const v = require('../modules/music/service').queueView(client, interaction.guildId);
       if (v?.current) now = v.current.title;
@@ -40,12 +40,12 @@ module.exports = {
     const e = new EmbedBuilder()
       .setColor(0x7c3aed).setTitle(`🤖 HPSB Core Bot v${pkg.version}`).setTimestamp()
       .addFields(
-        { name: 'Сборка', value: `v${pkg.version}`, inline: true },
-        { name: 'Код от', value: codeDate(), inline: true },
+        { name: 'Build', value: `v${pkg.version}`, inline: true },
+        { name: 'Code from', value: codeDate(), inline: true },
         { name: 'Node', value: process.version, inline: true },
-        { name: 'Аптайм', value: uptimeStr(process.uptime() * 1000), inline: true },
-        { name: 'Муз-движок', value: `lavalink${client.lavalink ? ' (подключён)' : ' (флаг on, нода недоступна)'}`, inline: false },
-        { name: 'Очередь сейчас', value: now, inline: false },
+        { name: 'Uptime', value: uptimeStr(process.uptime() * 1000), inline: true },
+        { name: 'Music engine', value: `lavalink${client.lavalink ? ' (connected)' : ' (flag on, node unavailable)'}`, inline: false },
+        { name: 'Queue now', value: now, inline: false },
       )
       .setFooter({ text: 'Haapsaly Bassline' });
     await interaction.reply({ embeds: [e], flags: MessageFlags.Ephemeral });

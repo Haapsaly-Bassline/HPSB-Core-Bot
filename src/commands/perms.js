@@ -24,66 +24,66 @@ const WANT_VOICE = [
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('perms')
-    .setDescription('Проверка разрешений бота (сервер + войс + мьюты)')
-    .addChannelOption(o => o.setName('channel').setDescription('Войс для проверки (по умолч. твой)').setRequired(false)),
+    .setDescription('Check the bot permissions (server + voice + mutes)')
+    .addChannelOption(o => o.setName('channel').setDescription('Voice channel to check (your current one by default)').setRequired(false)),
   async execute(interaction, client) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const me = await interaction.guild.members.fetch(client.user.id).catch(() => null);
-    if (!me) { await interaction.editReply('❌ Не вижу себя на сервере.'); return; }
+    if (!me) { await interaction.editReply('❌ I cannot see myself on the server.'); return; }
 
     const gLines = WANT_GUILD.map(([n, f]) => `${me.permissions.has(f) ? '✅' : '❌'} ${n}`);
     const isAdmin = me.permissions.has(PermissionFlagsBits.Administrator);
 
     const voiceChannel = interaction.options.getChannel('channel') || interaction.member?.voice?.channel;
-    let vLines = ['_войс не выбран_'];
+    let vLines = ['_no voice selected_'];
     if (voiceChannel && voiceChannel.isVoiceBased?.()) {
       const eff = voiceChannel.permissionsFor(me);
       vLines = WANT_VOICE.map(([n, f]) => `${eff?.has(f) ? '✅' : '❌'} ${n}`);
-      vLines.push(`Лимит: ${voiceChannel.userLimit || 'нет'} • Битрейт: ${(voiceChannel.bitrate || 0) / 1000}kbps`);
+      vLines.push(`Limit: ${voiceChannel.userLimit || 'none'} • Bitrate: ${(voiceChannel.bitrate || 0) / 1000}kbps`);
     }
 
     const vs = me.voice;
     const vState = [
-      `${vs.serverMute ? '🔴' : '🟢'} Server Mute: ${vs.serverMute ? 'ВКЛЮЧЁН' : 'выкл'}`,
-      `${vs.serverDeaf ? '🔴' : '🟢'} Server Deaf: ${vs.serverDeaf ? 'ВКЛЮЧЁН' : 'выкл'}`,
-      `Канал бота: ${vs.channel ? `<#${vs.channel.id}>` : 'не в войсе'}`,
+      `${vs.serverMute ? '🔴' : '🟢'} Server Mute: ${vs.serverMute ? 'ON' : 'off'}`,
+      `${vs.serverDeaf ? '🔴' : '🟢'} Server Deaf: ${vs.serverDeaf ? 'ON' : 'off'}`,
+      `Bot channel: ${vs.channel ? `<#${vs.channel.id}>` : 'not in voice'}`,
     ];
 
-    // Какие войсы бот вообще видит (View/Connect/Speak)
+    // Which voice channels bot can see at all (View/Connect/Speak)
     const voiceList = interaction.guild.channels.cache
       .filter(c => c.isVoiceBased?.())
       .map(c => {
         const e = c.permissionsFor(me);
         const mark = !e?.has(PermissionFlagsBits.ViewChannel) ? '❌'
           : (!e.has(PermissionFlagsBits.Connect) || (!e.has(PermissionFlagsBits.Speak) && c.type !== 13)) ? '🔶' : '✅';
-        const kind = c.type === 13 ? '🎭 сцена' : '🔊';
+        const kind = c.type === 13 ? '🎭 stage' : '🔊';
         return `${mark} ${kind} ${c.name}`;
       });
 
     const problems = [];
     if (!isAdmin) {
-      if (!me.permissions.has(PermissionFlagsBits.Connect)) problems.push('Нет Connect на сервере');
-      if (!me.permissions.has(PermissionFlagsBits.Speak)) problems.push('Нет Speak на сервере');
+      if (!me.permissions.has(PermissionFlagsBits.Connect)) problems.push('No Connect on the server');
+      if (!me.permissions.has(PermissionFlagsBits.Speak)) problems.push('No Speak on the server');
     }
     if (voiceChannel?.isVoiceBased?.()) {
       const eff = voiceChannel.permissionsFor(me);
       if (!isAdmin && eff && (!eff.has(PermissionFlagsBits.Connect) || !eff.has(PermissionFlagsBits.Speak))) {
-        problems.push('В ЭТОМ войсе нет Connect/Speak (перезапись канала бьёт роль)');
+        problems.push('No Connect/Speak in THIS voice channel (channel overwrite overrides the role)');
       }
     }
-    if (vs.serverMute) problems.push('Бот ЗАМЬЮЧЕН на сервере — звука не будет!');
-    if (vs.serverDeaf) problems.push('Бот оглушён на сервере (deaf)');
+    if (vs.serverMute) problems.push('Bot is MUTED on the server — no audio!');
+    if (vs.serverDeaf) problems.push('Bot is deafened on the server (deaf)');
 
     const e = new EmbedBuilder()
       .setColor(problems.length ? 0xef4444 : 0x22c55e)
-      .setTitle(`🔐 Права: ${client.user.tag}`)
-      .setDescription(isAdmin ? 'Administrator ✅ — права канала не важны.' : 'Без Administrator — смотрим детально:')
+      .setTitle(`🔐 Permissions: ${client.user.tag}`)
+      .setDescription(isAdmin ? 'Administrator ✅ — channel permissions do not matter.' : 'No Administrator — checking in detail:')
       .addFields(
-        { name: 'Сервер', value: gLines.join('\n').slice(0, 1000) },
-        { name: `Войс: ${voiceChannel?.name || '—'}`, value: vLines.join('\n').slice(0, 1000) },
-        { name: 'Состояние', value: vState.join('\n') },
-        { name: 'Все войсы (❌=не вижу, 🔶=вижу но нет входа/речи)', value: (voiceList.join('\n') || '—').slice(0, 1000) },
-        { name: 'Вердикт', value: problems.length ? '❌ ' + problems.join('\n❌ ') : '✅ Всё чисто — дело не в правах.' },
+        { name: 'Server', value: gLines.join('\n').slice(0, 1000) },
+        { name: `Voice: ${voiceChannel?.name || '—'}`, value: vLines.join('\n').slice(0, 1000) },
+        { name: 'State', value: vState.join('\n') },
+        { name: 'All voice channels (❌=no access, 🔶=visible but no connect/speak)', value: (voiceList.join('\n') || '—').slice(0, 1000) },
+        { name: 'Verdict', value: problems.length ? '❌ ' + problems.join('\n❌ ') : '✅ All clear — not a permission issue.' },
       )
       .setTimestamp()
       .setFooter({ text: 'Haapsaly Bassline • Perms' });

@@ -8,9 +8,9 @@ module.exports = {
   async execute(client) {
     logger.info(`[ready] Logged in as ${client.user.tag}`);
 
-    // Lavalink — только ПОСЛЕ ready: client.user существует, так требует lavalink-client.
-    // Бот исключительно на lavalink: legacy-фолбэка больше нет. Не поднялся — музыка
-    // недоступна, команды отвечают "Music engine не инициализирован".
+// Lavalink -- ONLY AFTER ready: client.user exists, required by lavalink-client.
+// Bot exclusively on lavalink: no legacy fallback. If failed -- music
+// unavailable, commands reply "Music engine not initialized".
     if (config.music.engine === 'lavalink') {
       try {
         const { LavalinkEngine } = require('../modules/music/engine-lavalink');
@@ -20,10 +20,10 @@ module.exports = {
         logger.info('[lavalink] ready (client.music = lavalink)');
       } catch (e) {
         logger.error('[lavalink] init failed:', e?.message || e?.stack || e);
-        logger.error('[lavalink] музыка НЕДОСТУПНА: проверь LAVALINK_* в .env и что запущен java -jar Lavalink.jar');
+        logger.error('[lavalink] music UNAVAILABLE: check LAVALINK_* in .env and that java -jar Lavalink.jar is running');
       }
     } else {
-      logger.error(`[music] MUSIC_ENGINE=${config.music.engine} больше не поддерживается — legacy удалён, поставь lavalink`);
+      logger.error(`[music] MUSIC_ENGINE=${config.music.engine} no longer supported -- legacy removed, set lavalink`);
     }
 
     // Start pollers lazily so index stays lean
@@ -52,7 +52,7 @@ module.exports = {
       startStats(client);
     } catch (e) { logger.warn('[stats] disabled:', e.message); }
 
-    // Самопроверка прав при старте — без плейсхолдеров, живьём из API
+    // Self-check permissions at startup -- no placeholders, live from API
     try {
       const { auditGuild } = require('../utils/selfcheck');
       const { missing } = await auditGuild(client);
@@ -60,7 +60,7 @@ module.exports = {
         const id = config.logChannelId || config.honeypot.logChannelId;
         const ch = id ? await client.channels.fetch(id).catch(() => null) : null;
         if (ch?.isTextBased()) {
-          await ch.send(`⚠️ **Self-check:** боту не хватает прав на сервере:\n❌ ${missing.join('\n❌ ')}`).catch(() => {});
+          await ch.send(`⚠️ **Self-check:** bot missing perms on server:\n❌ ${missing.join('\n❌ ')}`).catch(() => {});
         }
       }
     } catch (e) { logger.warn('[selfcheck] disabled:', e.message); }

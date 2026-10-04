@@ -1,9 +1,8 @@
-// Роутинг запросов на Lavalink-движок: любой ввод -> { engine, query }.
-// URL нода резолвит сама (LavaSrc/встроенные источники), текстовый поиск —
-// префиксом источника. Дефолт — YouTube (снова работает 2026-10-04:
-// клиенты ANDROID_VR/WEB пробивают IP-бан). Если опять ляжет — верни scsearch.
-// Legacy hpsb engine УДАЛЁН (бот исключительно на lavalink): прямого скачивания
-// байтов тут больше нет.
+// Routing queries to Lavalink engine: any input -> { engine, query }.
+// URL resolved by node itself (LavaSrc/built-in sources), text search --
+// by source prefix. Default -- YouTube (works again 2026-10-04:
+// ANDROID_VR/WEB clients bypass IP ban). If it breaks again -- fall back to scsearch.
+// Legacy hpsb engine REMOVED (bot exclusively on lavalink): no direct byte downloads here.
 
 const SEARCH_PREFIX = {
   youtube: 'ytsearch:',
@@ -30,14 +29,14 @@ function detectEngine(value) {
   if (/audiomack\.com/i.test(v)) return 'audiomack';
   if (/youtube\.com|youtu\.be/i.test(v)) return 'youtube';
   if (/bandcamp\.com/i.test(v)) return 'bandcamp';
-  // Прямой аудиопоток/файл (радио, mp3) — нода берёт как http-источник.
+  // Direct audio stream/file (radio, mp3) -- node treats as http source.
   if (/\.(mp3|ogg|oga|wav|m4a|flac|aac|opus|m3u8|pls)(\?|$)/i.test(v)) return 'arbitrary';
   return null;
 }
 
 function resolveSearchQuery(query) {
   const value = String(query || '').trim();
-  if (!value) throw new Error('Пустой запрос');
+  if (!value) throw new Error('Empty query');
   if (/^(ytsearch|ytmsearch|scsearch|spsearch|dzsearch|dzisrc|amsearch|tdsearch|qbsearch|qbisrc|ymsearch|vksearch):/i.test(value)) {
     const pref = value.split(':')[0].toLowerCase();
     const byPrefix = {
@@ -45,11 +44,11 @@ function resolveSearchQuery(query) {
       dzsearch: 'deezer', dzisrc: 'deezer', amsearch: 'applemusic', tdsearch: 'tidal',
       qbsearch: 'qobuz', qbisrc: 'qobuz', ymsearch: 'yandex', vksearch: 'vk',
     };
-    return { engine: byPrefix[pref] || 'youtube', query: value }; // префикс уважаем как есть
+    return { engine: byPrefix[pref] || 'youtube', query: value }; // respect prefix as-is
   }
   if (/^https?:\/\//i.test(value)) {
     const engine = detectEngine(value) || 'arbitrary';
-    return { engine, query: value }; // URL резолвит сама нода
+    return { engine, query: value }; // URL resolved by node
   }
   return { engine: 'youtube', query: `${SEARCH_PREFIX.youtube}${value}` };
 }

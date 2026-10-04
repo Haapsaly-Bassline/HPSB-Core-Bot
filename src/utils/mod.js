@@ -1,9 +1,9 @@
 const { PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { config } = require('../config');
 
-// true — можно модерировать; иначе сам отвечает и возвращает false.
-// Принимаем ЛЮБОЕ мод-право + роль модерации из MOD_ROLE_ID
-// (роль Mods на сервере без прав — без этого моды не проходят).
+// true = can moderate; else replies and returns false.
+// Accepts ANY mod permission + moderation role from MOD_ROLE_ID
+// (Mods role on server without perms -- without this mods won't pass).
 const MOD_PERMS = [
   PermissionFlagsBits.Administrator,
   PermissionFlagsBits.ManageGuild,
@@ -26,7 +26,7 @@ async function requireMod(interaction) {
     || hasModRole(member)
     || (perms ? MOD_PERMS.some(f => perms.has(f)) : false);
   if (!ok) {
-    await interaction.reply({ content: '❌ Только для модерации.', flags: MessageFlags.Ephemeral }).catch(() => {});
+    await interaction.reply({ content: '❌ Moderation only.', flags: MessageFlags.Ephemeral }).catch(() => {});
   }
   return ok;
 }
@@ -35,12 +35,12 @@ async function resolveMember(interaction, user) {
   return interaction.guild.members.fetch(user.id).catch(() => null);
 }
 
-// иерархия: нельзя трогать равных/выше и ботов выше? минимум — сам себя, владельца, админов и модов
+// hierarchy: can't touch same/higher and bots above? minimum -- self, owner, admins and mods
 function protectedTarget(target, actorId) {
-  if (!target) return 'Пользователь не на сервере.';
-  if (target.id === actorId) return 'Нельзя применять к себе.';
-  if (config.adminIds.includes(target.id)) return 'Нельзя: владелец бота.';
-  if (target.permissions.has(PermissionFlagsBits.Administrator)) return 'Нельзя: администратор.';
+  if (!target) return 'User not in server.';
+  if (target.id === actorId) return "Can't target yourself.";
+  if (config.adminIds.includes(target.id)) return "Forbidden: bot owner.";
+  if (target.permissions.has(PermissionFlagsBits.Administrator)) return "Forbidden: administrator.";
   return null;
 }
 

@@ -43,14 +43,14 @@ function channelJson(ch) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('dump')
-    .setDescription('Слепок сервера в JSON (для бота-пересоздателя)')
+    .setDescription('Server snapshot as JSON (for the re-creator bot)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addStringOption(o => o.setName('what').setDescription('Что выгрузить')
+    .addStringOption(o => o.setName('what').setDescription('What to export')
       .addChoices(
-        { name: 'Всё', value: 'full' },
-        { name: 'Только роли', value: 'roles' },
-        { name: 'Только каналы', value: 'channels' },
-        { name: 'Только настройки', value: 'settings' },
+        { name: 'Everything', value: 'full' },
+        { name: 'Roles only', value: 'roles' },
+        { name: 'Channels only', value: 'channels' },
+        { name: 'Settings only', value: 'settings' },
       )),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
@@ -62,7 +62,7 @@ module.exports = {
     const out = {
       exportedAt: new Date().toISOString(),
       guildId: g.id,
-      note: 'ID старые — боту-пересоздателю маппить по name. Права — bitfield строкой.',
+      note: 'Old IDs — the re-creator bot maps by name. Permissions as bitfield string.',
     };
 
     if (what === 'full' || what === 'settings') {
@@ -83,7 +83,7 @@ module.exports = {
       out.rulesChannelId = g.rulesChannelId || null;
       out.publicUpdatesChannelId = g.publicUpdatesChannelId || null;
       out.safetyAlertsChannelId = g.safetyAlertsChannelId || null;
-      // Экран приветствия (Server Guide)
+      // Welcome screen (Server Guide)
       try {
         const ws = await g.fetchWelcomeScreen().catch(() => null);
         out.welcomeScreen = ws ? {
@@ -94,7 +94,7 @@ module.exports = {
           })),
         } : null;
       } catch { out.welcomeScreen = null; }
-      // Онбординг: вопросы, варианты и привязанные роли
+      // Onboarding: questions, options and linked roles
       try {
         const ob = await g.fetchOnboarding().catch(() => null);
         out.onboarding = ob ? {
@@ -140,12 +140,12 @@ module.exports = {
 
     const buf = Buffer.from(JSON.stringify(out, null, 2), 'utf8');
     const counts = [
-      out.roles ? `${out.roles.length} ролей` : null,
-      out.channels ? `${out.channels.length} каналов + ${out.categories?.length || 0} разделов` : null,
-      out.guild ? `эмодзи: ${out.emojis.length}, стикеры: ${out.stickers.length}` : null,
+      out.roles ? `${out.roles.length} roles` : null,
+      out.channels ? `${out.channels.length} channels + ${out.categories?.length || 0} categories` : null,
+      out.guild ? `emojis: ${out.emojis.length}, stickers: ${out.stickers.length}` : null,
     ].filter(Boolean).join(', ');
-    const e = new EmbedBuilder().setColor(0x7c3aed).setTitle('📦 Дамп сервера').setTimestamp()
-      .setDescription(`\`${what}\`: ${counts || '—'}\n${(buf.length / 1024).toFixed(1)} КБ\n\nДля пересоздания: роли — по \`position\` сверху вниз (кроме managed-ботов), каналы — по разделам, оверврайты — по старым ID→именам.`)
+    const e = new EmbedBuilder().setColor(0x7c3aed).setTitle('📦 Server dump').setTimestamp()
+      .setDescription(`\`${what}\`: ${counts || '—'}\n${(buf.length / 1024).toFixed(1)} KB\n\nTo recreate: roles by \`position\` top-down (except managed bots), channels by category, overwrites by old ID→name.`)
       .setFooter({ text: 'Haapsaly Bassline' });
     await interaction.editReply({
       embeds: [e],

@@ -13,28 +13,28 @@ function parseDur(raw) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('mute')
-    .setDescription('Мут (таймаут): 10m, 2h, 1d. Без времени — 1ч')
+    .setDescription('Mute (timeout): 10m, 2h, 1d. No duration — 1h')
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
-    .addUserOption(o => o.setName('user').setDescription('Кого').setRequired(true))
-    .addStringOption(o => o.setName('duration').setDescription('Время: 10m / 2h / 1d').setRequired(false))
-    .addStringOption(o => o.setName('reason').setDescription('Причина').setRequired(false)),
+    .addUserOption(o => o.setName('user').setDescription('Who').setRequired(true))
+    .addStringOption(o => o.setName('duration').setDescription('Duration: 10m / 2h / 1d').setRequired(false))
+    .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(false)),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const user = interaction.options.getUser('user', true);
-    const reason = interaction.options.getString('reason') || 'Без причины';
+    const reason = interaction.options.getString('reason') || 'No reason';
     const ms = parseDur(interaction.options.getString('duration'));
-    if (!ms) { await interaction.reply({ content: '❌ Формат времени: `10m`, `2h`, `1d`.', flags: MessageFlags.Ephemeral }); return; }
+    if (!ms) { await interaction.reply({ content: '❌ Time format: `10m`, `2h`, `1d`.', flags: MessageFlags.Ephemeral }); return; }
     const member = await resolveMember(interaction, user);
-    const blocked = member ? protectedTarget(member, interaction.user.id) : 'Пользователь не на сервере.';
+    const blocked = member ? protectedTarget(member, interaction.user.id) : 'User is not on the server.';
     if (blocked) { await interaction.reply({ content: `❌ ${blocked}`, flags: MessageFlags.Ephemeral }); return; }
     try {
       await member.timeout(ms, `Mute by ${interaction.user.tag}: ${reason}`);
       const { modActionEmbed } = require('../utils/embeds');
-      const emb = modActionEmbed('mute', { target: `${user} (${user.id})`, mod: `${interaction.user}`, reason, extra: `Длительность: ${interaction.options.getString('duration') || '1h'}` });
+      const emb = modActionEmbed('mute', { target: `${user} (${user.id})`, mod: `${interaction.user}`, reason, extra: `Duration: ${interaction.options.getString('duration') || '1h'}` });
       await interaction.reply({ embeds: [emb] });
       await modLog(client, { embeds: [emb] });
     } catch {
-      await interaction.reply({ content: '❌ Не смог замутить (роль бота ниже?).', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '❌ Could not mute (bot role too low?).', flags: MessageFlags.Ephemeral });
     }
   },
 };

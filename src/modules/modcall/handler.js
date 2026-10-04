@@ -1,5 +1,5 @@
-// ModCall: кнопка -> модалка -> тикет в staff-канале + двусторонний релей через ЛС бота.
-// Своя реализация под HPSB (не копия Carl).
+// ModCall: button -> modal -> ticket in staff channel + two-way relay via bot DM.
+// Own implementation for HPSB (not a Carl copy).
 const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle,
@@ -13,7 +13,7 @@ const BTN_TAKE = 'modcall:take';
 const BTN_CLOSE = 'modcall:close';
 const MODAL_ID = 'modcall:modal';
 
-// sessions в памяти + персист маппинга staffMessageId -> { userId, threadId, open }
+// sessions in memory + persist mapping staffMessageId -> { userId, threadId, open }
 let sessions = new Map(); // userId -> { staffMessageId, threadId }
 
 function loadSessions() {
@@ -34,26 +34,26 @@ async function staffChannel(client) {
 }
 
 async function handleInteraction(interaction, client) {
-  // Открыть модалку
+  // Open modal
   if (interaction.isButton() && interaction.customId === BTN_OPEN) {
     if (sessions.has(interaction.user.id)) {
-      await interaction.reply({ content: '📩 У тебя уже есть открытый тикет. Дождись ответа в ЛС.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '📩 You already have an open ticket. Wait for a reply in DM.', flags: MessageFlags.Ephemeral });
       return true;
     }
-    const modal = new ModalBuilder().setCustomId(MODAL_ID).setTitle('Связь с модерацией');
+    const modal = new ModalBuilder().setCustomId(MODAL_ID).setTitle('Contact Moderation');
     modal.addComponents(
       new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('subject').setLabel('Тема').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100),
+        new TextInputBuilder().setCustomId('subject').setLabel('Subject').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100),
       ),
       new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('body').setLabel('Опиши проблему').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1500),
+        new TextInputBuilder().setCustomId('body').setLabel('Describe the issue').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1500),
       ),
     );
     await interaction.showModal(modal);
     return true;
   }
 
-  // Сабмит модалки -> пост в staff
+  // Modal submit -> post to staff
   if (interaction.isModalSubmit() && interaction.customId === MODAL_ID) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
@@ -61,23 +61,23 @@ async function handleInteraction(interaction, client) {
       const body = interaction.fields.getTextInputValue('body');
     const staff = await staffChannel(client);
     if (!staff?.isTextBased()) {
-      await interaction.editReply('❌ Staff-канал не настроен (MODCALL_STAFF_CHANNEL_ID).');
+      await interaction.editReply('❌ Staff channel not configured (MODCALL_STAFF_CHANNEL_ID).');
       return true;
     }
     const embed = new EmbedBuilder()
       .setColor(0xf59e0b)
       .setTitle(`📞 ModCall: ${subject}`)
       .setDescription(body.slice(0, 2000))
-      .addFields({ name: 'Автор', value: `${interaction.user} (${interaction.user.id})` })
+      .addFields({ name: 'Author', value: `${interaction.user} (${interaction.user.id})` })
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${BTN_TAKE}:${interaction.user.id}`).setLabel('Взять / создать тред').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`${BTN_CLOSE}:${interaction.user.id}`).setLabel('Закрыть').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`${BTN_TAKE}:${interaction.user.id}`).setLabel('Take / create thread').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`${BTN_CLOSE}:${interaction.user.id}`).setLabel('Close').setStyle(ButtonStyle.Danger),
     );
 
     const msg = await staff.send({
-      content: config.modRoleId ? `<@&${config.modRoleId}> новый запрос` : 'Новый запрос',
+      content: config.modRoleId ? `<@&${config.modRoleId}> new request` : 'New request',
       embeds: [embed],
       components: [row],
     });
@@ -85,16 +85,16 @@ async function handleInteraction(interaction, client) {
     sessions.set(interaction.user.id, { staffMessageId: msg.id, threadId: null });
     persistSessions();
 
-    try { await interaction.user.send(`✅ Твой запрос **${subject}** передан модерации. Отвечай прямо сюда в ЛС — я перешлю модам.`); } catch {}
-    await interaction.editReply('✅ Отправлено! Модерация ответит тебе в ЛС.');
+    try { await interaction.user.send(`✅ Your request **${subject}** forwarded to moderation. Reply right here in DM -- I'll relay to mods.`); } catch {}
+    await interaction.editReply('✅ Sent! Moderation will reply to you in DM.');
     } catch (e) {
       logger.warn('[modcall] submit failed', e.message);
-      await interaction.editReply('❌ Не смог создать тикет (нет доступа к staff-каналу?).').catch(() => {});
+      await interaction.editReply('❌ Could not create ticket (no access to staff channel?).').catch(() => {});
     }
     return true;
   }
 
-  // Кнопки staff: взять / закрыть. customId вида "modcall:take:<userId>" — берём ПОСЛЕДНИЙ кусок.
+  // Staff buttons: take / close. customId like "modcall:take:<userId>" -- we take LAST part.
   if (interaction.isButton() && (interaction.customId.startsWith(BTN_TAKE) || interaction.customId.startsWith(BTN_CLOSE))) {
     const userId = interaction.customId.split(':').pop();
     const { hasModRole } = require('../../utils/mod');
@@ -102,36 +102,36 @@ async function handleInteraction(interaction, client) {
     const isMod = isAdmin || hasModRole(interaction.member)
       || interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages);
     if (!isMod) {
-      await interaction.reply({ content: '❌ Только для модерации.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '❌ Moderation only.', flags: MessageFlags.Ephemeral });
       return true;
     }
     const sess = sessions.get(userId);
-    if (!sess) { await interaction.reply({ content: 'Тикет уже закрыт.', flags: MessageFlags.Ephemeral }); return true; }
+    if (!sess) { await interaction.reply({ content: 'Ticket already closed.', flags: MessageFlags.Ephemeral }); return true; }
 
     if (interaction.customId.startsWith(BTN_CLOSE)) {
       const sessSnap = sess.threadId;
       sessions.delete(userId);
       persistSessions();
-      // закрываем ветку по-нормальному: архив + замок
+      // close thread properly: archive + lock
       if (sessSnap) {
         try {
           const thread = await client.channels.fetch(sessSnap).catch(() => null);
           if (thread?.isThread?.()) {
-            await thread.send('🔒 Тикет закрыт модерацией.').catch(() => {});
+            await thread.send('🔒 Ticket closed by moderation.').catch(() => {});
             await thread.setLocked(true).catch(() => {});
             await thread.setArchived(true).catch(() => {});
           }
         } catch {}
       }
-      await interaction.reply(`🔒 Тикет ${userId} закрыт.`);
+      await interaction.reply(`🔒 Ticket ${userId} closed.`);
       try {
         const u = await client.users.fetch(userId);
-        await u.send('🔒 Твой запрос закрыт модерацией. Если нужно ещё — нажми кнопку снова.');
+        await u.send('🔒 Your request closed by moderation. If you need more -- press the button again.');
       } catch {}
       return true;
     }
 
-    // take -> тред под staff-сообщением (переиспользуем существующий)
+    // take -> thread under staff message (reuse existing)
     let thread = sess.threadId ? await client.channels.fetch(sess.threadId).catch(() => null) : null;
     if (!thread?.isThread?.()) {
       thread = await interaction.message.startThread({ name: `modcall-${userId.slice(-4)}`, autoArchiveDuration: 1440 }).catch(() => null);
@@ -142,10 +142,10 @@ async function handleInteraction(interaction, client) {
       sess.threadId = thread.id;
       sessions.set(userId, sess);
       persistSessions();
-      await thread.send(`🧵 Тред по тикету <@${userId}>. Пиши сюда — бот перешлёт юзеру в ЛС.`);
-      await interaction.reply({ content: `✅ Тред создан: ${thread}`, flags: MessageFlags.Ephemeral });
+      await thread.send(`🧵 Thread for ticket <@${userId}>. Write here -- bot will relay to user in DM.`);
+      await interaction.reply({ content: `✅ Thread created: ${thread}`, flags: MessageFlags.Ephemeral });
     } else {
-      await interaction.reply({ content: '❌ Не смог создать тред.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '❌ Could not create thread.', flags: MessageFlags.Ephemeral });
     }
     return true;
   }
@@ -153,7 +153,7 @@ async function handleInteraction(interaction, client) {
   return false;
 }
 
-// Мод пишет в тред -> юзеру в ЛС (текст + вложения)
+// Mod writes in thread -> user in DM (text + attachments)
 async function relayStaffMessage(message, client) {
   if (!message.guild || message.author.bot) return false;
   for (const [userId, sess] of sessions) {
@@ -161,8 +161,8 @@ async function relayStaffMessage(message, client) {
       try {
         const u = await client.users.fetch(userId);
         const files = [...(message.attachments?.values() || [])].map(a => a.url).slice(0, 5);
-        const text = `👮 **Модерация HPSB:** ${(message.content || '').slice(0, 1500)}${files.length ? '\n' + files.join('\n') : ''}`;
-        if (!message.content && !files.length) return true; // стикер/пустое — нечего слать
+        const text = `👮 **HPSB Moderation:** ${(message.content || '').slice(0, 1500)}${files.length ? '\n' + files.join('\n') : ''}`;
+        if (!message.content && !files.length) return true; // sticker/empty -- nothing to send
         await u.send(text.slice(0, 1900));
         return true;
       } catch (e) { logger.warn('[modcall] dm failed', e.message); return true; }
@@ -171,10 +171,10 @@ async function relayStaffMessage(message, client) {
   return false;
 }
 
-// Юзер пишет боту в ЛС -> в тред staff (текст + вложения)
+// User writes to bot in DM -> staff thread (text + attachments)
 async function relayUserDm(message, client) {
   const sess = sessions.get(message.author.id);
-  if (!sess) return; // нет открытого тикета — игнор
+  if (!sess) return; // no open ticket -- ignore
   const staff = await staffChannel(client);
   if (!staff) return;
   const files = [...(message.attachments?.values() || [])].map(a => a.url).slice(0, 5);

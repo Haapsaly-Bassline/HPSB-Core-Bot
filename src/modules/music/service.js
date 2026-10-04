@@ -1,17 +1,17 @@
-// MusicService — единая точка входа музыки. ТОЛЬКО Lavalink (legacy hpsb engine удалён).
-// Формы ответов стабильны — команды и NP строят оверлеи поверх них.
+// MusicService -- single entry point for music. Lavalink ONLY (legacy hpsb engine removed).
+// Response shapes are stable -- commands and NP build overlays on top.
 const { resolveSearchQuery } = require('./resolvers');
 const { fmtMs } = require('../../utils/music');
 
 function eng(client) {
   const e = client.music;
-  if (!e || typeof e.play !== 'function') throw new Error('Music engine не инициализирован (Lavalink не подключён)');
+  if (!e || typeof e.play !== 'function') throw new Error('Music engine is not initialized (Lavalink is not connected)');
   return e;
 }
 
 function viewOf(item) {
   if (!item) return null;
-  const info = item.info || item; // lavalink-client кладёт поля в info.* (duration, не length!)
+  const info = item.info || item; // lavalink-client puts fields in info.* (duration, not length!)
   const ms = info.length > 0 ? info.length : (info.duration > 0 ? info.duration : (info.durationMs || item.durationMs || 0));
   const live = info.isStream || item.isLive || ms <= 0;
   return {
@@ -29,12 +29,12 @@ function viewOf(item) {
 async function play(client, voiceChannel, query, { requester, textChannel, radioLabel } = {}) {
   const engine = eng(client);
   const q = resolveSearchQuery(query);
-  // Spotify выключен на ноде (нет Premium у приложения): отвечаем сразу и понятно,
-  // а не туманным "No results" после таймаутов.
+// Spotify disabled on node (no Premium on app): reply immediately with clear message,
+// not vague "No results" after timeouts.
   if (q.engine === 'spotify') {
-    throw new Error('Spotify временно выключен: у Spotify-приложения нет Premium. Ищи текстом (YouTube/SoundCloud) или кинь прямую ссылку на трек.');
+    throw new Error('Spotify is temporarily disabled: the Spotify app has no Premium. Search by text (YouTube/SoundCloud) or paste a direct track link.');
   }
-  // ETA: сколько дослушать до нашего трека (остаток текущего + очередь ДО добавления)
+  // ETA: how long until our track plays (remaining current + queue BEFORE addition)
   let etaMs = 0;
   let nextTitle = null;
   try {
@@ -59,15 +59,15 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
       url: '',
       count: Number(result.playlist.count || 0),
     } : null,
-    // 0 = играет сейчас, N = номер в upcoming (1-based, как в /queue)
-    position: !result?.position ? '▶ сейчас' : `#${result.position} в очереди`,
+    // 0 = playing now, N = position in upcoming (1-based, like /queue)
+    position: !result?.position ? '▶ playing now' : `#${result.position} in queue`,
     nextTitle,
     waitMs: etaMs,
   };
 }
 
-// Fan-коллекция Bandcamp: пачка альбомов/треков из купленного -> в очередь.
-// Возвращает { fan, added: [{band, title, kind, count}], failed, totalTracks }.
+// Bandcamp fan collection: batch of albums/tracks from purchases -> queue.
+// Returns { fan, added: [{band, title, kind, count}], failed, totalTracks }.
 async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, limit = 10, onProgress } = {}) {
   const engine = eng(client);
   const { fetchCollection } = require('./bandcamp-fan');
@@ -89,12 +89,12 @@ async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, l
       failed += 1;
     }
   }
-  // Стартуем, если тихо
+  // Start if idle
   try {
     const p = engine.getPlayer(voiceChannel.guild.id);
     if (p && !p.playing && !p.paused) await p.play().catch(() => {});
   } catch {}
-  if (!added.length) throw new Error('Ничего не добавилось (все релизы недоступны)');
+  if (!added.length) throw new Error('Nothing was added (all releases are unavailable)');
   return { fan, added, failed, totalTracks: added.reduce((a, x) => a + x.count, 0) };
 }
 
@@ -126,13 +126,13 @@ module.exports = {
   queueView: (client, guildId) => eng(client).queueViewFull(guildId),
   npSnapshot: (client, guildId) => eng(client).npSnapshot(guildId),
   voiceChannelId: (client, guildId) => eng(client).getPlayer(guildId)?.voiceChannelId || null,
-  // Зайти/перейти в войс (без музыки): создание и переезд — в ensurePlayer движка
+  // Join/switch voice (without music): creation and move handled in engine's ensurePlayer
   join: async (client, voiceChannel, textChannelId) => {
     const engine = eng(client);
     await engine.ensurePlayer(voiceChannel, textChannelId || null);
     return true;
   },
-  // Статус спикера на трибуне (null = не сцена / не запрашивали)
+  // Stage speaker status (null = not stage / not requested)
   speakerStatus: (client, guildId) => {
     const e = eng(client);
     return typeof e.getSpeakerStatus === 'function' ? e.getSpeakerStatus(guildId) : null;

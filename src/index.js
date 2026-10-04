@@ -1,8 +1,8 @@
 const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
 const { config, validate } = require('./config');
 
-// IPv6-выход у многих провайдеров висит (таймаут вместо отказа), а Node берёт
-// первую запись DNS. Форсим IPv4 первым: браузеры так и делают (Happy Eyeballs).
+// Many ISPs have broken IPv6 (timeout instead of refusal), and Node picks
+// the first DNS record. Force IPv4 first: browsers do the same (Happy Eyeballs).
 try { require('node:dns').setDefaultResultOrder('ipv4first'); } catch {}
 const { logger } = require('./utils/logger');
 const fs = require('node:fs');
@@ -32,9 +32,9 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Бот работает ИСКЛЮЧИТЕЛЬНО на Lavalink (legacy hpsb engine удалён).
-// client.music поднимается в ready.js (нужен client.user.id); до ready музыки нет —
-// команды честно ответят "Music engine не инициализирован".
+// Bot runs EXCLUSIVELY on Lavalink (legacy hpsb engine removed).
+// client.music initialized in ready.js (needs client.user.id); until ready no music --
+// commands honestly reply "Music engine not initialized".
 client.music = null;
 client.lavalink = null;
 logger.info('[music] lavalink-only mode (init deferred until ready)');
@@ -43,15 +43,15 @@ try {
   require('@discordjs/opus');
   logger.info('[voice] opus ok');
 } catch {
-  logger.error('[voice] NO OPUS — звука не будет! npm install-scripts approve @discordjs/opus + npm rebuild');
+  logger.error('[voice] NO OPUS -- no audio! npm install-scripts approve @discordjs/opus + npm rebuild');
 }
 try {
   const bin = require('ffmpeg-static');
   const ok = bin && require('node:fs').existsSync(bin);
   if (ok) logger.info('[voice] ffmpeg ok');
-  else logger.error('[voice] NO FFMPEG binary — звука не будет! npm rebuild ffmpeg-static');
+  else logger.error('[voice] NO FFMPEG binary -- no audio! npm rebuild ffmpeg-static');
 } catch {
-  logger.error('[voice] NO FFMPEG — звука не будет! npm install ffmpeg-static');
+  logger.error('[voice] NO FFMPEG -- no audio! npm install ffmpeg-static');
 }
 
 logger.info('[music] engine bootstrap complete');

@@ -1,5 +1,5 @@
-// Lavalink-движок музыки — единственный в боте (legacy удалён).
-// Отвечает за войс, очередь и резолв всех источников через ноду.
+// Lavalink music engine -- the only one in bot (legacy removed).
+// Handles voice, queue, and resolution of all sources via node.
 
 const { LavalinkManager } = require('lavalink-client');
 const { logger } = require('../../utils/logger');
@@ -7,8 +7,8 @@ const { logger } = require('../../utils/logger');
 const LOOP_MAP = { 0: 'off', 1: 'track', 2: 'queue' };
 const LOOP_BACK = { off: 0, track: 1, queue: 2 };
 
-// источник поиска Lavalink по нашему движку.
-// URL и готовые префиксы (dzsearch:, spsearch: …) уходят ноде как есть.
+// search source for Lavalink per our engine.
+// URLs and ready prefixes (dzsearch:, spsearch: ...) go to node as-is.
 const KNOWN_PREFIXES = /^(ytsearch|ytmsearch|scsearch|spsearch|dzsearch|dzisrc|amsearch|tdsearch|qbsearch|qbisrc|ymsearch|vksearch):/i;
 function searchSource(engine, query) {
   const q = String(query || '');
@@ -22,8 +22,8 @@ function searchSource(engine, query) {
     case 'qobuz': return `qbsearch:${q}`;
     case 'yandex': return `ymsearch:${q}`;
     case 'vk': return `vksearch:${q}`;
-    case 'audiomack': return q; // URL уже прошёл выше; текста без префикса у audiomack нет
-    default: return `ytsearch:${q}`; // дефолт — YouTube (работает с 2026-10-04)
+    case 'audiomack': return q; // URL already passed above; no prefix text for audiomack
+    default: return `ytsearch:${q}`; // default -- YouTube (works as of 2026-10-04)
   }
 }
 
@@ -32,7 +32,7 @@ class LavalinkEngine {
     this.client = client;
     this.cfg = musicCfg;
     this.manager = null;
-    this.speakerStatus = new Map(); // guildId -> { ok, reason, message, at } (трибуна)
+    this.speakerStatus = new Map(); // guildId -> { ok, reason, message, at } (stage)
   }
 
   getSpeakerStatus(guildId) {
@@ -41,7 +41,7 @@ class LavalinkEngine {
 
   async init() {
     if (!this.client.user) {
-      throw new Error('[lavalink] client.user ещё null — init() можно вызывать только ПОСЛЕ ready (client ready event)');
+      throw new Error('[lavalink] client.user is still null -- init() can only be called AFTER ready (client ready event)');
     }
     const lav = this.cfg.lavalink || {};
     const host = String(lav.host || '').trim();
@@ -49,25 +49,25 @@ class LavalinkEngine {
     const password = String(lav.password ?? '');
     const secure = !!lav.secure;
     if (!host) {
-      throw new Error('[lavalink] LAVALINK_HOST пуст — впиши в .env (обычно 127.0.0.1)');
+      throw new Error('[lavalink] LAVALINK_HOST empty -- set in .env (usually 127.0.0.1)');
     }
     if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-      throw new Error(`[lavalink] LAVALINK_PORT кривой (${lav.port}) — впиши в .env (обычно 2333)`);
+      throw new Error(`[lavalink] LAVALINK_PORT invalid (${lav.port}) -- set in .env (usually 2333)`);
     }
     if (!password.length) {
-      // lavalink-client в этом случае кидает криптичное
-      // "ManagerOption.nodes must be an Array...", поэтому валидируем сами с понятным текстом.
-      throw new Error('[lavalink] LAVALINK_PASSWORD пуст — впиши в .env тот же пароль, что в lavalink/application.yml -> lavalink.server.password');
+      // lavalink-client throws cryptic
+      // "ManagerOption.nodes must be an Array..." in this case, so we validate ourselves with clear text.
+      throw new Error('[lavalink] LAVALINK_PASSWORD empty -- set in .env the same password as in lavalink/application.yml -> lavalink.server.password');
     }
     this.manager = new LavalinkManager({
-      // requestTimeout 30s: ytdlp-резолв прямых YT-ссылок занимает ~13с (спавн процесса),
-      // дефолтный таймаут рвал такие запросы "operation aborted due to timeout".
+      // requestTimeout 30s: ytdlp resolve of direct YT links takes ~13s (process spawn),
+      // default timeout aborted such requests "operation aborted due to timeout".
       nodes: [{ host, port, authorization: password, secure, id: 'hpsb-main', requestTimeout: 30000, requestSignalTimeoutMS: 30000 }],
       sendToShard: (guildId, payload) => {
         const guild = this.client.guilds.cache.get(guildId);
         if (guild?.shard) guild.shard.send(payload);
       },
-      // client.id подставим в init() ниже — в конструкторе user может быть ещё null
+      // client.id will be set in init() below -- in constructor user may still be null
       client: { id: this.client.user.id, username: this.client.user.username || this.client.user.tag },
       autoSkip: true,
       autoSkipOnResolveError: true,
@@ -75,7 +75,7 @@ class LavalinkEngine {
 
     this.client.on('raw', (d) => { this.manager.sendRawData(d).catch(() => {}); });
 
-    // Без этих хендлеров падение ноды роняет ВЕСЬ процесс (unhandled 'error')
+    // Without these handlers node crash brings down ENTIRE process (unhandled 'error')
     this.manager.nodeManager.on('error', (node, err) => {
       logger.warn('[lavalink] node error', node?.options?.id || node?.id || '', err?.message || 'connection failed, retrying');
     });
@@ -91,8 +91,8 @@ class LavalinkEngine {
       logger.warn('[lavalink] trackStuck', track?.info?.title || '');
     });
     this.manager.on('queueEnd', (player) => {
-      // Очередь кончилась — гасим живой NP, иначе висит вечный "Now Playing"
-      try { require('./np').finalize(this.client, player.guildId, 'Очередь завершена'); } catch {}
+      // Queue ended -- kill live NP, otherwise eternal "Now Playing" hangs
+      try { require('./np').finalize(this.client, player.guildId, 'Queue finished'); } catch {}
     });
 
     await this.manager.init({ id: this.client.user.id, username: this.client.user.username || this.client.user.tag });
@@ -119,21 +119,21 @@ class LavalinkEngine {
       isNew = true;
       await player.connect().catch(() => {});
     } else if (player.voiceChannelId !== voiceChannel.id) {
-      // Бота позвали в другой войс — ПЕРЕЕЗЖАЕМ (connect() без смены id остаётся в старом!)
+      // Bot invited to different voice -- MOVE (connect() without id change stays in old!)
       try {
         await player.changeVoiceState({ voiceChannelId: voiceChannel.id });
       } catch {
         await player.connect().catch(() => {});
       }
-      isNew = true; // новый канал — спикера просить заново
+      isNew = true; // new channel -- request speaker again
     } else {
       await player.connect().catch(() => {});
     }
-    // Трибуна: сразу просим слово, иначе бот немой слушатель (suppress)
+    // Stage: request speaker immediately, otherwise bot is muted listener (suppress)
     if (voiceChannel?.type === 13) {
       try {
         const { becomeSpeaker } = require('./stage');
-        // Discord применяет voice state не мгновенно — при свежем заходе даём осесть
+        // Discord applies voice state not instantly -- on fresh join give it time to settle
         if (isNew) await new Promise((r) => setTimeout(r, 1500));
         const res = await becomeSpeaker(this.client, voiceChannel.guild.id, voiceChannel.id, { force: isNew });
         this.speakerStatus.set(voiceChannel.guild.id, { ...res, at: Date.now() });
@@ -144,7 +144,7 @@ class LavalinkEngine {
     return player;
   }
 
-  // setData в клиенте — ТОЛЬКО key/value (объект одним аргументом молча теряется!).
+  // setData in client -- ONLY key/value (single object argument silently lost!).
   setPlayerMeta(player, { requester, radioLabel } = {}, keepRadioLabel = false) {
     try {
       const prev = (typeof player.getAllData === 'function' ? player.getAllData() : {}) || {};
@@ -161,14 +161,14 @@ class LavalinkEngine {
     return {};
   }
 
-  // query: URL или текст; engine: 'youtube'|'soundcloud'|'spotify'|'arbitrary'|'deezer'|…
-  // arbitrary (прямые mp3/радио) отдаём ноде как есть.
+// query: URL or text; engine: 'youtube'|'soundcloud'|'spotify'|'arbitrary'|'deezer'|...
+// arbitrary (direct mp3/radio) passed to node as-is.
   async play(voiceChannel, query, { requester, metadata = {}, engine = 'youtube' } = {}) {
     const player = await this.ensurePlayer(voiceChannel, metadata.channel?.id);
     const q = engine === 'arbitrary' ? query : searchSource(engine, query);
-    // ВАЖНО: source указываем ЯВНО. Без него lavalink-client подставляет
-    // defaultSearchPlatform='ytsearch', и при выключенном YouTube ВАЛИТСЯ ЛЮБАЯ
-    // ссылка ("has not 'youtube' enabled"), хотя нода её резолвит. Проверено 2026-10-03.
+    // IMPORTANT: source specified EXPLICITLY. Without it lavalink-client substitutes
+    // defaultSearchPlatform='ytsearch', and with YouTube disabled ANY
+    // link FAILS ("has not 'youtube' enabled"), even though node resolves it. Verified 2026-10-03.
     const src = searchParamSource(engine, q);
     const res = await player.search({ query: q, source: src }, requester).catch((e) => {
       logger.warn('[lavalink] search failed', String(e?.message || e).slice(0, 160));
@@ -178,7 +178,7 @@ class LavalinkEngine {
       throw new Error(`No results for "${String(query).slice(0, 120)}"`);
     }
     this.setPlayerMeta(player, { requester, radioLabel: metadata.radioLabel || null });
-    // позиция в upcoming ДО добавления (0 = играет сейчас)
+    // position in upcoming BEFORE addition (0 = playing now)
     const upcomingBefore = player.queue.tracks.length;
     const wasIdle = !player.playing && !player.paused;
     const position = wasIdle && upcomingBefore === 0 ? 0 : upcomingBefore + 1;
@@ -194,8 +194,8 @@ class LavalinkEngine {
     return { track: viewOf(track, requester), queue: player.queue, playlist: null, position };
   }
 
-  // Поставить ОДИН URL в очередь без автостарта наружу (для пачек: fan-коллекции и т.п.).
-  // Возвращает { loadType, count, title }. Ошибки резолва бросает наружу.
+// Add SINGLE URL to queue without auto-start externally (for batches: fan collections etc.).
+// Returns { loadType, count, title }. Resolve errors thrown outward.
   async enqueueUrl(voiceChannel, url, { requester, metadata = {} } = {}) {
     const player = await this.ensurePlayer(voiceChannel, metadata.channel?.id);
     const src = urlSource(String(url));
@@ -206,7 +206,7 @@ class LavalinkEngine {
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
       throw new Error(`No results for "${String(url).slice(0, 120)}"`);
     }
-    // setData — только key/value; radioLabel чужого эфира не затираем (keepRadioLabel)
+    // setData -- only key/value; radioLabel of foreign stream not overwritten (keepRadioLabel)
     this.setPlayerMeta(player, { requester }, true);
     await player.queue.add(res.tracks);
     const title = res.loadType === 'playlist'
@@ -225,10 +225,10 @@ class LavalinkEngine {
     } catch (e) { logger.warn('[lavalink] nowplaying failed', e.message); }
   }
 
-  // --- Управление (имена как в командах) ---
-  // Все методы НЕ бросают наружу: false/null = "нечего делать", команды показывают чистые ответы.
-  // skip(amount): пропустить N треков (1 = текущий). throwError=false: скип последнего
-  // трека его ОСТАНАВЛИВАЕТ, а не кидает RangeError. Возвращает число пропущенных или false.
+// --- Control (names match commands) ---
+// All methods do NOT throw outward: false/null = "nothing to do", commands show clean responses.
+// skip(amount): skip N tracks (1 = current). throwError=false: skip of last
+// track STOPS it, doesn't throw RangeError. Returns number skipped or false.
   async skip(guildId, amount = 1) {
     const p = this.getPlayer(guildId);
     if (!p) return false;
@@ -248,7 +248,7 @@ class LavalinkEngine {
     const p = this.getPlayer(guildId);
     if (!p) return false;
     const want = state !== false;
-    if (!!p.paused === want) return true; // уже в нужном состоянии (клиент кидает throw при повторе!)
+    if (!!p.paused === want) return true; // already in desired state (client throws on repeat!)
     try { want ? await p.pause() : await p.resume(); return true; }
     catch { return false; }
   }
@@ -256,7 +256,7 @@ class LavalinkEngine {
     const p = this.getPlayer(guildId);
     if (!p) return false;
     const cur = p.queue?.current;
-    // эфиры/несикабельное клиент роняет с RangeError — отвечаем false, а не исключением
+    // streams/unseekable client throws RangeError -- we return false instead of exception
     if (!cur || cur.info?.isStream || cur.info?.isSeekable === false) return false;
     try { await p.seek(ms); return true; }
     catch { return false; }
@@ -282,7 +282,7 @@ class LavalinkEngine {
   async clear(guildId) {
     const p = this.getPlayer(guildId);
     if (!p || !p.queue.tracks.length) return false;
-    try { await p.queue.splice(0, p.queue.tracks.length); return true; } // официальный splice (синк стора!)
+    try { await p.queue.splice(0, p.queue.tracks.length); return true; } // official splice (store sync!)
     catch { return false; }
   }
   async remove(guildId, index) {
@@ -303,7 +303,7 @@ class LavalinkEngine {
     } catch { return false; }
   }
 
-  // Полный вью для /queue и живого NP (длительности в ms для бара)
+  // Full view for /queue and live NP (durations in ms for bar)
   queueViewFull(guildId) {
     const p = this.getPlayer(guildId);
     if (!p || !p.queue?.current) return null;
@@ -346,8 +346,8 @@ class LavalinkEngine {
 }
 
 function trackLenMs(info) {
-  // Сервер шлёт length, lavalink-client пересобирает в duration, плоские вью — durationMs.
-  // Проверено 2026-10-04: у клиентских треков есть ТОЛЬКО duration (length=undefined!).
+// Server sends length, lavalink-client rebuilds into duration, flat views -- durationMs.
+// Verified 2026-10-04: client tracks have ONLY duration (length=undefined!).
   for (const k of ['length', 'duration', 'durationMs']) {
     const v = Number(info?.[k]);
     if (Number.isFinite(v) && v > 0) return v;
@@ -362,8 +362,8 @@ function fmtDur(ms) {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-// Плоский вью трека для ответов /play (клиент отдаёт вложенный info.*,
-// service.viewOf его бы показал как Unknown — проверено 2026-10-04).
+// Flat track view for /play responses (client returns nested info.*,
+// service.viewOf would show as Unknown -- verified 2026-10-04).
 function viewOf(t, requester) {
   const v = infoMs(t);
   v.requesterTag = requester?.tag || null;
@@ -382,8 +382,8 @@ function infoMs(t) {
   };
 }
 
-// source для player.search: выводим из самого запроса (префикс/домен),
-// а не из defaultSearchPlatform клиента (там ytsearch — мёртв без YouTube).
+// source for player.search: derive from query itself (prefix/domain),
+// not from client's defaultSearchPlatform (there ytsearch -- dead without YouTube).
 function searchParamSource(engine, q) {
   const query = String(q || '');
   const pref = query.match(/^(ytsearch|ytmsearch|scsearch|spsearch|dzsearch|dzisrc|amsearch|tdsearch|qbsearch|qbisrc|ymsearch|vksearch):/i);
@@ -398,11 +398,11 @@ function searchParamSource(engine, q) {
     case 'qobuz': return 'qbsearch';
     case 'yandex': return 'ymsearch';
     case 'vk': return 'vksearch';
-    default: return 'ytsearch'; // дефолт — YouTube (работает с 2026-10-04)
+    default: return 'ytsearch'; // default -- YouTube (works as of 2026-10-04)
   }
 }
 
-// Каноничные имена источников Lavalink для URL (совпадают с sourceManagers ноды).
+// Canonical Lavalink source names for URL (match node's sourceManagers).
 function urlSource(url) {
   const v = String(url || '').toLowerCase();
   if (/soundcloud\.com|on\.soundcloud/.test(v)) return 'soundcloud';
@@ -415,10 +415,10 @@ function urlSource(url) {
   if (/vk\.com|vk\.ru/.test(v)) return 'vkmusic';
   if (/bandcamp\.com/.test(v)) return 'bandcamp';
   if (/youtube\.com|youtu\.be/.test(v)) return 'youtube';
-  return 'http'; // прямые mp3/радио и всё неизвестное
+  return 'http'; // direct mp3/radio and everything unknown
 }
 
-// Lavalink sourceName -> короткий код источника для бейджей оверлея
+// Lavalink sourceName -> short source code for overlay badges
 function normSource(s) {
   const v = String(s || '').toLowerCase();
   if (!v) return '';

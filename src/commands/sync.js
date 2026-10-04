@@ -2,15 +2,15 @@ const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, MessageFlags } =
 const { requireMod } = require('../utils/mod');
 
 function line(name, r) {
-  return `**${name}:** найдено ${r.found}, опубликовано ${r.posted}`;
+  return `**${name}:** found ${r.found}, posted ${r.posted}`;
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('sync')
-    .setDescription('Принудительно синхронизировать ленты (релизы/события/посты/репостеры)')
+    .setDescription('Force-sync feeds (releases/events/posts/reposters)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addIntegerOption(o => o.setName('backfill').setDescription('Докинуть последние N (0–5) даже если уже видены').setMinValue(0).setMaxValue(5)),
+    .addIntegerOption(o => o.setName('backfill').setDescription('Backfill the last N (0–5) even if already seen').setMinValue(0).setMaxValue(5)),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const backfill = interaction.options.getInteger('backfill') || 0;
@@ -21,23 +21,23 @@ module.exports = {
       const h = await runHpsbOnce(client, { backfill });
       const r = await runReposterOnce(client);
       if (!h || !r) {
-        await interaction.editReply('⏳ Предыдущая синхронизация ещё идёт — попробуй через минуту.');
+        await interaction.editReply('⏳ Previous sync is still running — try again in a minute.');
         return;
       }
       const e = new EmbedBuilder()
-        .setColor(0x7c3aed).setTitle('🔄 Синхронизация').setTimestamp()
+        .setColor(0x7c3aed).setTitle('🔄 Sync').setTimestamp()
         .setDescription([
-          line('💿 Релизы', h.releases),
-          line('📅 События', h.events),
-          line('📰 Посты', h.posts),
-          line('⏰ Напоминания', h.reminders),
+          line('💿 Releases', h.releases),
+          line('📅 Events', h.events),
+          line('📰 Posts', h.posts),
+          line('⏰ Reminders', h.reminders),
           line('▶️ YouTube', r.youtube),
           line('🎵 TikTok', r.tiktok),
         ].join('\n'))
         .setFooter({ text: `${backfill ? `backfill=${backfill} • ` : ''}Haapsaly Bassline` });
       await interaction.editReply({ embeds: [e] });
     } catch (err) {
-      await interaction.editReply(`❌ Ошибка синхронизации: ${String(err.message || err).slice(0, 300)}`).catch(() => {});
+      await interaction.editReply(`❌ Sync error: ${String(err.message || err).slice(0, 300)}`).catch(() => {});
     }
   },
 };

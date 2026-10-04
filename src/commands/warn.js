@@ -5,14 +5,14 @@ const store = require('../utils/store');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('warn')
-    .setDescription('Выдать предупреждение')
+    .setDescription('Issue a warning')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
-    .addUserOption(o => o.setName('user').setDescription('Кому').setRequired(true))
-    .addStringOption(o => o.setName('reason').setDescription('Причина').setRequired(false)),
+    .addUserOption(o => o.setName('user').setDescription('Who').setRequired(true))
+    .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(false)),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const user = interaction.options.getUser('user', true);
-    const reason = interaction.options.getString('reason') || 'Без причины';
+    const reason = interaction.options.getString('reason') || 'No reason';
     const member = await resolveMember(interaction, user);
     const blocked = member ? protectedTarget(member, interaction.user.id) : null;
     if (blocked) { await interaction.reply({ content: `❌ ${blocked}`, flags: MessageFlags.Ephemeral }); return; }
@@ -24,9 +24,9 @@ module.exports = {
     store.save(data);
     const n = data.warns[user.id].length;
 
-    try { await user.send(`⚠️ Тебе выдан варн на **${interaction.guild.name}**: ${reason} (всего: ${n})`); } catch {}
+    try { await user.send(`⚠️ You have been warned on **${interaction.guild.name}**: ${reason} (total: ${n})`); } catch {}
     const { modActionEmbed } = require('../utils/embeds');
-    const emb = modActionEmbed('warn', { target: `${user} (${user.id})`, mod: `${interaction.user}`, reason, extra: `Варн #${n}, всего: ${n}` });
+    const emb = modActionEmbed('warn', { target: `${user} (${user.id})`, mod: `${interaction.user}`, reason, extra: `Warn #${n}, total: ${n}` });
     await interaction.reply({ embeds: [emb] });
     await modLog(client, { embeds: [emb] });
   },

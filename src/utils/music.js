@@ -1,4 +1,4 @@
-// Формат времени и прогресс-бар для музыкальных оверлеев.
+// Time formatting and progress bar for music overlays.
 
 function parseDuration(str) {
   // '3:38' | '1:02:09' | 'LIVE' -> ms

@@ -5,7 +5,7 @@ const { config } = require('../config');
 
 const LOG_DIR = path.join(__dirname, '..', '..', 'data');
 
-// Секреты из .env никогда не должны утечь в Discord — маскируем их значения
+// Secrets from .env must never leak to Discord -- mask their values
 function secrets() {
   const vals = new Set([
     config.token,
@@ -29,7 +29,7 @@ function redact(text) {
 function tail(file, n) {
   if (!fs.existsSync(file)) return null;
   const lines = fs.readFileSync(file, 'utf8').split('\n');
-  // убираем пустые хвосты
+  // remove empty trailing lines
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   return lines.slice(-n).join('\n');
 }
@@ -37,16 +37,16 @@ function tail(file, n) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('logs')
-    .setDescription('Показать хвост логов бота (только модерация)')
+    .setDescription('Show the bot log tail (moderation only)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addIntegerOption(o => o.setName('lines').setDescription('Сколько строк (5–50, по умолч. 20)').setMinValue(5).setMaxValue(50))
-    .addStringOption(o => o.setName('source').setDescription('Какой лог')
+    .addIntegerOption(o => o.setName('lines').setDescription('How many lines (5–50, 20 by default)').setMinValue(5).setMaxValue(50))
+    .addStringOption(o => o.setName('source').setDescription('Which log')
       .addChoices({ name: 'bot (stdout)', value: 'bot' }, { name: 'errors (stderr)', value: 'err' })),
   async execute(interaction) {
     const isAdmin = config.adminIds.includes(interaction.user.id);
     const isMod = interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
     if (!isAdmin && !isMod) {
-      await interaction.reply({ content: '❌ Только для модерации.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '❌ Moderation only.', flags: MessageFlags.Ephemeral });
       return;
     }
     const n = interaction.options.getInteger('lines') || 20;
@@ -54,16 +54,16 @@ module.exports = {
     const file = path.join(LOG_DIR, src === 'err' ? 'bot.err.log' : 'bot.log');
     const text = tail(file, n);
     if (text == null) {
-      await interaction.reply({ content: '❌ Лог-файл не найден (бот запущен не в фоне?).', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '❌ Log file not found (bot not running in background?).', flags: MessageFlags.Ephemeral });
       return;
     }
-    const clean = redact(text) || '_лог пуст_';
+    const clean = redact(text) || '_log is empty_';
     if (clean.length < 1800) {
       await interaction.reply({ content: `\`\`\`\n${clean}\n\`\`\``, flags: MessageFlags.Ephemeral });
     } else {
       const buf = Buffer.from(clean, 'utf8');
       await interaction.reply({
-        content: `Лог длинный — отправляю файлом (последние ${n} строк, секреты замаскированы):`,
+        content: `Log is long — sending as a file (last ${n} lines, secrets redacted):`,
         files: [new AttachmentBuilder(buf, { name: `${src}.log.txt` })],
         flags: MessageFlags.Ephemeral,
       });

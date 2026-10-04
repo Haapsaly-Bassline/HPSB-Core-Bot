@@ -8,7 +8,7 @@ function entry(color, title, desc, fields = []) {
   return e;
 }
 
-// Грейс-период после старта: бэклог событий Discord не логгируем
+// Grace period after startup: Discord backlog events not logged
 function inGrace(client) {
   return client.readyTimestamp && (Date.now() - client.readyTimestamp < 60000);
 }
@@ -20,14 +20,14 @@ module.exports = {
       if (inGrace(client)) return;
       if (message.author?.bot) return;
       if (!message.guild) return;
-      // Мусорные события без автора и текста (незакэшированные/системные) — пропускаем
+      // Junk events without author and text (uncached/system) -- skip
       if (!message.author && !message.content) return;
       await modLog(client,
-        { embeds: [entry(0xef4444, '🗑 Сообщение удалено',
-          message.content ? message.content.slice(0, 1500) : '_текст недоступен (не было в кэше)_',
+        { embeds: [entry(0xef4444, '🗑 Message deleted',
+          message.content ? message.content.slice(0, 1500) : '_text unavailable (not in cache)_',
           [
-            ['Автор', message.author ? `${message.author} (${message.author.id})` : `_неизвестен (id сообщения ${message.id})_`],
-            ['Канал', `<#${message.channelId}>`],
+            ['Author', message.author ? `${message.author} (${message.author.id})` : `_unknown (message id ${message.id})_`],
+            ['Channel', `<#${message.channelId}>`],
           ])] });
     } catch {}
   },
