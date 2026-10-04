@@ -14,7 +14,7 @@ server:
 lavalink:
   server:
     # Тот же пароль впиши в .env -> LAVALINK_PASSWORD
-    password: "hpsb-lavalink-change-me"
+    password: "CHANGE-ME-AND-MIRROR-IN-BOT-ENV"
     sources:
       youtube: false                # ОБЯЗАТЕЛЬНО false: встроенный источник deprecated и перехватывает
                                     # ytsearch: у плагина (400 от YouTube). Плагин — ниже, отдельно.

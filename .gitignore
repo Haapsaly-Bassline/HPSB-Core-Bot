@@ -5,8 +5,9 @@ data/*.json
 data/bot.log
 data/bot.err.log
 !data/.gitkeep
-# Lavalink-бинарники: 100МБ+ jar GitHub отклонит, плагины докачиваются сами.
-# В репо едут только application.yml + README.md. Скачать: см. lavalink/README.md.
+# Lavalink: в репо едет ТОЛЬКО application.example.yml + README.md.
+# Рабочий application.yml (пароли/токены) живёт только локально, никогда в git.
+lavalink/application.yml
 lavalink/*.jar
 lavalink/plugins/
 # Куки YouTube-аккаунта (доступ к аккаунту!): только локально, никогда в git.

@@ -1,71 +1,73 @@
-# Lavalink — запуск на host PC (музыка уровня Jockie)
+# Lavalink — host PC setup (Jockie-level music)
 
-Почему: Jockie написан на Java и едет на Lavalink (их открытые репо — Java-инфра,
-включая форк TLS-библиотеки conscrypt: они борются с детектом на уровне TLS).
-Повторить их TLS-патчи в Node нереально, а вот вынести звук в Lavalink — да:
-весь фетч/транскод уезжает в Java-процесс, бот только управляет.
+Why: Jockie runs on Java + Lavalink (their public repos are Java infra, including
+a conscrypt TLS fork — they fight detection at the TLS layer). Repeating their
+TLS patches in Node is unrealistic, but offloading audio to Lavalink is not:
+all fetching/transcoding lives in the Java process, the bot only controls it.
 
-## Что нужно на host PC (Windows)
-- Java 17+: https://adoptium.net/ → Temurin 17 JRE, установщик `.msi`
-  (проверка: `java -version` в новом окне PowerShell)
-- Node.js 20+ для самого бота (уже стоит, раз бот едет)
+## Requirements (Windows host PC)
+- Java 17+: https://adoptium.net/ → Temurin 17 JRE `.msi` installer
+  (check: `java -version` in a fresh PowerShell window)
+- Node.js 20+ for the bot itself
 
-## Запуск (Windows)
-1. Скачай `Lavalink.jar` в эту папку:
-   https://github.com/lavalink-devs/Lavalink/releases (бери v4, файл `Lavalink.jar`)
-2. В `application.yml`:
-   - смени `lavalink.server.password` и продублируй в `.env` бота (`LAVALINK_PASSWORD`)
-   - вставь Spotify ключи в секцию `plugins.lavasrc.spotify`
-   - сверь версии плагинов с их GitHub-релизами
-3. Первый запуск руками для проверки (из PowerShell в папке `lavalink\`):
+## Setup (Windows)
+1. Download `Lavalink.jar` into this folder:
+   https://github.com/lavalink-devs/Lavalink/releases (take v4, the `Lavalink.jar` file)
+2. Copy the template and fill secrets (this file is gitignored and never committed):
    ```powershell
-   java -jar Lavalink.jar
+   Copy-Item application.example.yml application.yml
    ```
-   Жди строку про успешный старт и порт 2333 (ошибок по плагинам быть не должно).
-4. Автозапуск: Планировщик заданий → `java.exe` с аргументом
-   `-jar "C:\путь\к\lavalink\Lavalink.jar"`, рабочая папка — папка `lavalink\`,
-   триггер при запуске системы. Либо `.bat` в автозагрузку:
+   - set `lavalink.server.password` and mirror it into the bot `.env` (`LAVALINK_PASSWORD`);
+   - paste tokens as needed (see matrix below): YouTube OAuth `refreshToken`,
+     LavaSrc `arl` / `masterDecryptionKey` / store tokens, Spotify keys;
+   - check plugin versions against their GitHub releases.
+3. First manual run for verification (PowerShell inside `lavalink\`):
+   ```powershell
+   java "-Djava.net.preferIPv4Stack=true" -jar Lavalink.jar
+   ```
+   Wait for `Lavalink is ready to accept connections` on port 2333 (no plugin errors).
+   Quotes around `-D...` are required, otherwise PowerShell splits the flag.
+4. Autostart: Task Scheduler → `java.exe` with arguments
+   `"-Djava.net.preferIPv4Stack=true" -jar "C:\path\to\lavalink\Lavalink.jar"`,
+   working directory = `lavalink\`, trigger on system start. Or a `.bat` in autostart:
    ```bat
    @echo off
    cd /d C:\HPSB\lavalink
-   java -jar Lavalink.jar
+   java "-Djava.net.preferIPv4Stack=true" -jar Lavalink.jar
    ```
-5. В `.env` бота: `MUSIC_ENGINE=lavalink`, `LAVALINK_HOST=127.0.0.1`,
-   `LAVALINK_PORT=2333`, `LAVALINK_PASSWORD=...`
-6. Код движка (`src/modules/music/engine-lavalink.js`) уже готов, команды
-   мигрируют со звуковыми тестами на месте.
+5. Bot `.env`: `MUSIC_ENGINE=lavalink`, `LAVALINK_HOST=127.0.0.1`,
+   `LAVALINK_PORT=2333`, `LAVALINK_PASSWORD=...` (same as step 2).
 
-## Что это даст
-- YouTube/Spotify/Apple/Deezer/SoundCloud/Bandcamp/HTTP — все провайдеры из одного места
-- Spotify по ISRC — точные совпадения вместо «похожего»
-- Плейлисты, поиск `ytsearch:`/`scsearch:`, очередь и фильтры — как у Jockie
-- Бот переживает рестарт Lavalink (переподключение), звук не зависит от сети бота
+`preferIPv4Stack`: some ISPs have hanging IPv6 (timeout instead of refusal) and,
+unlike Node, Java has no Happy Eyeballs — without the flag, occasional requests
+(e.g. to the Spotify API) die with `Read timed out`.
 
-## Матрица источников (2026-10-04, проверено живьём)
+## What you get
+- All providers from one place (YouTube/Spotify/Apple/Deezer/SoundCloud/Bandcamp/HTTP)
+- Spotify via ISRC — exact matches instead of lookalikes
+- Playlists, `ytsearch:`/`scsearch:` search, queue and filters — like Jockie
+- The bot survives Lavalink restarts (reconnects), audio doesn't depend on the bot's network
 
-Бот работает ИСКЛЮЧИТЕЛЬНО на lavalink (legacy-движок удалён из кода).
+## Source matrix (live-tested 2026-10-04)
 
-| Источник | Статус | Что нужно |
+The bot runs EXCLUSIVELY on Lavalink (legacy engine removed from code).
+
+| Source | Status | Needed |
 |---|---|---|
-| SoundCloud / Bandcamp / HTTP-радио | ✅ работают | ничего |
-| Vimeo | ❌ выкл | источник мёртв (2026-10-04) |
-| Spotify (ссылки + `spsearch:`) | ⚠️ метаданные да, звук нет | звук — зеркалом через Deezer или YouTube (оба пока недоступны) |
-| Deezer | ⏳ ждёт токены | `arl` (cookie deezer.com) + `masterDecryptionKey`; как только появятся — звук появится и у Spotify |
-| Apple Music / Tidal / Qobuz | ⏳ ждут токены | блоки уже разведены в yml, включи `sources.*: true` после вставки токена |
-| YouTube | ⚠️ частично (2026-10-04) | Поиск/метаданные — плагин. Прямые ссылки — ytdlp с куками бернера (`cookies.txt` локально, в git не едет). Текстовый поиск unrestricted-видео играет; login-required — только по ссылкам через ytdlp. Полный возврат — OAuth уже включён (TV-клиент). |
-| Yandex / VK | ❌ не выбраны | `yandexmusic: true` + accessToken / `vkmusic: true` + userToken |
-| Audiomack | ❌ нужен yt-dlp | `winget install yt-dlp`, затем `ytdlp: true` в yml |
+| SoundCloud / Bandcamp / HTTP radio | ✅ work | nothing |
+| Vimeo | ❌ off | source is dead |
+| Spotify (links + `spsearch:`) | ❌ off | needs Premium on the Spotify app owner; keys stay in the block for later |
+| Deezer | ⏳ waits for tokens | `arl` (deezer.com cookie) + `masterDecryptionKey`; unlocks direct audio + Spotify mirror without YouTube |
+| Apple Music / Tidal / Qobuz | ⏳ wait for tokens | blocks are pre-wired in yml, flip `sources.*: true` after pasting the token |
+| YouTube | ⚠️ partial | Search/metadata — plugin. Direct links — ytdlp with burner cookies (`cookies.txt`, local only, gitignored). Unrestricted videos play from text search; login-required ones only via links through ytdlp. Full return — OAuth already on (TV client). |
+| Yandex / VK | ❌ removed | owner decision |
+| Audiomack | ❌ unavailable | not covered by this stack (LavaSrc ytdlp source is YouTube-only); only direct mp3 links work |
 
-Гайды по токенам: https://github.com/topi314/LavaSrc#configuration
-(разделы Spotify / Apple Music / Deezer / Tidal / Qobuz).
+Token guides: https://github.com/topi314/LavaSrc#configuration
+(Spotify / Apple Music / Deezer / Tidal / Qobuz sections).
 
-## Старт Lavalink (рекомендуемая строка)
-
-```powershell
-java "-Djava.net.preferIPv4Stack=true" -jar Lavalink.jar
-```
-
-`preferIPv4Stack` — потому что у провайдера висит IPv6 (таймауты вместо отказа),
-Java в отличие от Node не умеет Happy Eyeballs: без флага редкие запросы
-(например в Spotify API) падают с `Read timed out`. Проверено в логах 2026-10-04
-(кавычки вокруг -D обязательны, иначе PowerShell разваливает флаг).
+## YouTube cookies (burner account)
+1. Log into a **burner** Google account (NOT the main one) in Chrome/Edge.
+2. Install the **Get cookies.txt LOCALLY** extension, open `youtube.com`, Export.
+3. Save as `cookies.txt` next to `application.yml` (gitignored, never commit — it is a live session).
+4. Cookies expire every few weeks — re-export when YouTube links start failing.
