@@ -16,6 +16,7 @@ module.exports = {
     if (!await music.move(client, interaction.guildId, from - 1, to - 1)) {
       await interaction.reply({ content: "❌ Couldn't move the track.", flags: MessageFlags.Ephemeral }); return;
     }
-    await interaction.reply(`↕️ **${title}** moved: ${from} -> ${to}.`);
+    const { ack } = require('../utils/embeds');
+    await interaction.reply({ embeds: [ack('↕️ Moved', `**${String(title).slice(0, 200)}**: ${from} → ${to}.`)] });
   },
 };

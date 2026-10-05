@@ -6,6 +6,7 @@ module.exports = {
     if (!await music.clear(client, interaction.guildId)) {
       await interaction.reply({ content: '❌ The queue is empty.', flags: MessageFlags.Ephemeral }); return;
     }
-    await interaction.reply('🧹 Queue cleared.');
+    const { ack } = require('../utils/embeds');
+    await interaction.reply({ embeds: [ack('🧹 Queue cleared', 'Current track keeps playing.')] });
   },
 };

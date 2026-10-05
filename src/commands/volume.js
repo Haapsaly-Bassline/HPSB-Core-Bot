@@ -6,7 +6,9 @@ module.exports = {
   async execute(interaction, client) {
     const level = interaction.options.getInteger('level', true);
     if (await music.volume(client, interaction.guildId, level)) {
-      await interaction.reply(`🔊 Volume: ${level}%.`);
+      const { ack } = require('../utils/embeds');
+      const { progressBar } = require('../utils/music');
+      await interaction.reply({ embeds: [ack('🔊 Volume', `\`${level}%\` ${progressBar(level, 200, 10)}`)] });
     } else {
       await interaction.reply({ content: '❌ The queue is empty.', flags: MessageFlags.Ephemeral });
     }

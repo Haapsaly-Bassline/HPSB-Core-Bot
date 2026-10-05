@@ -32,8 +32,9 @@ module.exports = {
           extra = stageWarning(client, interaction.guildId);
         } catch {}
       }
+      const { ack, COLORS } = require('../utils/embeds');
       const label = voiceChannel.type === 13 ? 'the stage' : 'the voice channel';
-      await interaction.reply(`🔊 Joined ${label}: **${voiceChannel.name}**.${extra}`);
+      await interaction.reply({ embeds: [ack(`🔊 Joined ${label}`, `**${voiceChannel.name}**${extra}`, { color: COLORS.success })] });
     } catch (e) {
       await interaction.reply({ content: `❌ Couldn't join: ${String(e.message || e).slice(0, 200)}`, flags: MessageFlags.Ephemeral });
     }

@@ -9,7 +9,7 @@ const music = require('./service');
 const UPDATE_SECS = Math.max(5, Number(process.env.NP_UPDATE_SECS || 10));
 const sessions = new Map(); // guildId -> { channelId, messageId, timer }
 
-const { sourceBadge } = require('../../utils/embeds');
+const { sourceBadge, COLORS } = require('../../utils/embeds');
 
 function buildEmbed(snap) {
   const t = snap.track;
@@ -17,7 +17,7 @@ function buildEmbed(snap) {
   const linked = /^https?:\/\//i.test(t.url || '') ? `[${t.title}](${t.url})` : `**${t.title}**`;
   const head = snap.radioLabel ? `📻 **${String(snap.radioLabel).slice(0, 200)}**\n` : '';
   const e = new EmbedBuilder()
-    .setColor(snap.radioLabel || t.isLive ? 0xef4444 : 0x57f287)
+    .setColor(snap.radioLabel || t.isLive ? COLORS.danger : COLORS.music)
     .setTitle(snap.radioLabel ? '📻 Live / Radio' : `Now Playing${badge ? ` • ${badge}` : ''}`)
     .setDescription(`${head}${linked}\n${snap.radioLabel || t.author || ''}`.slice(0, 3500))
     .setTimestamp();

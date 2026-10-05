@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const music = require('../modules/music/service');
+const { ack, COLORS } = require('../utils/embeds');
 module.exports = {
   data: new SlashCommandBuilder().setName('pause').setDescription('Pause / resume (toggle)'),
   async execute(interaction, client) {
@@ -10,14 +11,14 @@ module.exports = {
     }
     if (snap.paused) {
       if (!await music.pause(client, interaction.guildId, false)) {
-        await interaction.reply({ content: '❌ The queue is empty.', flags: MessageFlags.Ephemeral }); return;
+        await interaction.reply({ content: '❌ No queue.', flags: MessageFlags.Ephemeral }); return;
       }
-      await interaction.reply('▶️ Resumed.');
+      await interaction.reply({ embeds: [ack('▶️ Resumed', snap.track?.title ? `**${String(snap.track.title).slice(0, 200)}**` : null, { color: COLORS.music })] });
       return;
     }
     if (!await music.pause(client, interaction.guildId, true)) {
-      await interaction.reply({ content: '❌ The queue is empty.', flags: MessageFlags.Ephemeral }); return;
+      await interaction.reply({ content: '❌ No queue.', flags: MessageFlags.Ephemeral }); return;
     }
-    await interaction.reply('⏸ Paused.');
+    await interaction.reply({ embeds: [ack('⏸ Paused', snap.track?.title ? `**${String(snap.track.title).slice(0, 200)}**` : null)] });
   },
 };

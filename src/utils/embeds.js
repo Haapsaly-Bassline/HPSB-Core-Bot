@@ -8,7 +8,20 @@ const COLORS = {
   warning: 0xf59e0b,
   danger: 0xef4444,
   music: 0x1db954,
+  accent: 0x5865f2, // blurple -- music "added / queue action" family
 };
+
+const MUSIC_FOOTER = 'Haapsaly Bassline • Music';
+
+// Compact confirmation embed for control commands (skip/pause/stop/...).
+// Errors stay plain ephemeral text; successes share one look.
+function ack(title, desc, { color = COLORS.accent, footer = MUSIC_FOOTER } = {}) {
+  const e = new EmbedBuilder().setColor(color).setTimestamp();
+  if (title) e.setTitle(String(title).slice(0, 256));
+  if (desc) e.setDescription(String(desc).slice(0, 2000));
+  if (footer) e.setFooter({ text: footer });
+  return e;
+}
 
 function baseEmbed({ title, description, url, image, color = 0x7c3aed, footer = 'Haapsaly Bassline' }) {
   const e = new EmbedBuilder().setColor(color).setTimestamp();
@@ -68,7 +81,7 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
   const { fmtMs } = require('./music');
   const badge = sourceBadge(source || track.source);
   const e = new EmbedBuilder()
-    .setColor(0x5865f2)
+    .setColor(COLORS.accent)
     .setTitle(`➕ Added Track${badge ? ` • ${badge}` : ''}`)
     .setDescription(`Track\n${trackLink(track)}\n${track.author || ''}`.slice(0, 4000))
     .setTimestamp();
@@ -90,7 +103,7 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
 function playlistAddedEmbed({ title, count, first, source }, requester) {
   const badge = sourceBadge(source || first?.source);
   const e = new EmbedBuilder()
-    .setColor(0x5865f2)
+    .setColor(COLORS.accent)
     .setTitle(`📃 Playlist added${badge ? ` • ${badge}` : ''}`)
     .setDescription(
       `**${String(title || 'playlist').slice(0, 300)}**\n` +
@@ -106,7 +119,7 @@ function playlistAddedEmbed({ title, count, first, source }, requester) {
 // --- Radio/live stream: unified overlay instead of plain-text ---
 function liveAddedEmbed({ label, url, source }, requester) {
   const e = new EmbedBuilder()
-    .setColor(0xef4444)
+    .setColor(COLORS.danger)
     .setTitle('📻 Live / Radio')
     .setDescription(
       `**${String(label || 'Stream').slice(0, 300)}**\n` +
@@ -125,7 +138,7 @@ function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, req
   );
   const more = added.length > 10 ? `\n…and ${added.length - 10} more` : '';
   const e = new EmbedBuilder()
-    .setColor(0x1f9d55)
+    .setColor(COLORS.success)
     .setTitle(`💿 Fan collection • ${String(fanName || 'Bandcamp').slice(0, 200)}`)
     .setDescription(
       `Albums/releases added: **${added.length}**, tracks: **${totalTracks}**` +
@@ -178,7 +191,7 @@ function renderTpl(tpl, vars = {}, roleOverride) {
     .trim();
 }
 
-module.exports = { COLORS, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
+module.exports = { COLORS, MUSIC_FOOTER, ack, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
 
 // --- Mod action: unified pretty output (both in chat and log) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge

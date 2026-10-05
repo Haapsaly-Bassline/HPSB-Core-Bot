@@ -16,6 +16,7 @@ module.exports = {
     if (!await music.loop(client, interaction.guildId, mode)) {
       await interaction.reply({ content: '❌ The queue is empty.', flags: MessageFlags.Ephemeral }); return;
     }
-    await interaction.reply(`🔁 Repeat: **${NAMES[mode] || mode}**.`);
+    const { ack } = require('../utils/embeds');
+    await interaction.reply({ embeds: [ack('🔁 Repeat', `**${NAMES[mode] || mode}**`)] });
   },
 };

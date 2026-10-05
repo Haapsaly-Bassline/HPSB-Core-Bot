@@ -11,7 +11,10 @@ module.exports = {
     const ms = /^\d+$/.test(raw) ? Number(raw) * 1000 : parseDuration(raw);
     if (!ms || ms <= 0) { await interaction.reply({ content: '❌ Format: `1:30` or seconds `90`.', flags: MessageFlags.Ephemeral }); return; }
     if (await music.seek(client, interaction.guildId, ms)) {
-      await interaction.reply(`⏩ Seeked to ${fmtMs(ms)}.`);
+      const { ack, COLORS } = require('../utils/embeds');
+      const { progressBar } = require('../utils/music');
+      const total = snap.durationMs > 0 ? snap.durationMs : ms;
+      await interaction.reply({ embeds: [ack('⏩ Seeked', `\`${fmtMs(ms)}\` ${progressBar(ms, total, 12)} \`${fmtMs(total)}\``, { color: COLORS.music })] });
     } else {
       await interaction.reply({ content: '❌ Seeking is not supported for this source.', flags: MessageFlags.Ephemeral });
     }

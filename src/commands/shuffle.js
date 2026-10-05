@@ -8,6 +8,7 @@ module.exports = {
       await interaction.reply({ content: '❌ Queue is empty.', flags: MessageFlags.Ephemeral }); return;
     }
     await music.shuffle(client, interaction.guildId);
-    await interaction.reply(`🔀 Shuffled tracks: ${v.size}.`);
+    const { ack } = require('../utils/embeds');
+    await interaction.reply({ embeds: [ack('🔀 Shuffled', `**${v.size}** tracks in queue.`)] });
   },
 };

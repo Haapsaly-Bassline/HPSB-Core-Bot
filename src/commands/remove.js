@@ -10,6 +10,7 @@ module.exports = {
     if (pos > v.size) { await interaction.reply({ content: `❌ Only ${v.size} in the queue.`, flags: MessageFlags.Ephemeral }); return; }
     const removed = await music.remove(client, interaction.guildId, pos - 1);
     if (!removed) { await interaction.reply({ content: "❌ Couldn't remove the track.", flags: MessageFlags.Ephemeral }); return; }
-    await interaction.reply(`🗑 Removed: **${removed.title || `#${pos}`}**.`);
+    const { ack } = require('../utils/embeds');
+    await interaction.reply({ embeds: [ack('🗑 Removed', `**${String(removed.title || `#${pos}`).slice(0, 200)}** (was #${pos}).`)] });
   },
 };
