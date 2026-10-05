@@ -104,6 +104,16 @@ class LavalinkEngine {
     return this.manager?.getPlayer(guildId) || null;
   }
 
+  // True when at least one node has a live websocket. manager.init() does NOT
+  // throw when the node is unreachable (it just logs), so check this explicitly
+  // or users get cryptic "No available Node was found" from deep inside the client.
+  available() {
+    try {
+      const nodes = [...(this.manager?.nodeManager?.nodes?.values?.() || [])];
+      return nodes.some((n) => { try { return !!n.connected; } catch { return false; } });
+    } catch { return false; }
+  }
+
   async ensurePlayer(voiceChannel, textChannelId) {
     let player = this.getPlayer(voiceChannel.guild.id);
     let isNew = false;

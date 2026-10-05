@@ -17,7 +17,21 @@ module.exports = {
         const engine = await new LavalinkEngine(client, config.music).init();
         client.music = engine;
         client.lavalink = engine;
-        logger.info('[lavalink] ready (client.music = lavalink)');
+        if (engine.available()) {
+          logger.info('[lavalink] ready (client.music = lavalink)');
+        } else {
+          // init() does NOT throw when the node is unreachable, so without this
+          // check the bot logs "ready" and every /play dies with cryptic "No available Node".
+          logger.error('[lavalink] NO CONNECTED NODES: start Lavalink (java -jar Lavalink.jar in lavalink folder) and wait for "ready to accept connections". Retrying every 30s; music commands will fail until then.');
+          const timer = setInterval(async () => {
+            try { await engine.manager.init({ id: client.user.id, username: client.user.username || client.user.tag }); } catch {}
+            if (engine.available()) {
+              clearInterval(timer);
+              logger.info('[lavalink] node connected on retry (client.music = lavalink)');
+            }
+          }, 30000);
+          timer.unref?.();
+        }
       } catch (e) {
         logger.error('[lavalink] init failed:', e?.message || e?.stack || e);
         logger.error('[lavalink] music UNAVAILABLE: check LAVALINK_* in .env and that java -jar Lavalink.jar is running');

@@ -9,6 +9,14 @@ function eng(client) {
   return e;
 }
 
+// Actions that need a live node connection fail fast with a clear message
+// instead of cryptic client internals ("No available Node was found").
+function needNode(engine) {
+  let ok = false;
+  try { ok = typeof engine.available === 'function' ? engine.available() : true; } catch { ok = false; }
+  if (!ok) throw new Error('Music unavailable: Lavalink node is not connected. Start Lavalink (java -jar Lavalink.jar in lavalink folder) and wait for "ready to accept connections", then retry. If it is running, check LAVALINK_PASSWORD.');
+}
+
 function viewOf(item) {
   if (!item) return null;
   const info = item.info || item; // lavalink-client puts fields in info.* (duration, not length!)
@@ -28,6 +36,7 @@ function viewOf(item) {
 
 async function play(client, voiceChannel, query, { requester, textChannel, radioLabel } = {}) {
   const engine = eng(client);
+  needNode(engine);
   const q = resolveSearchQuery(query);
 // Spotify disabled on node (no Premium on app): reply immediately with clear message,
 // not vague "No results" after timeouts.
@@ -70,6 +79,7 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
 // Returns { fan, added: [{band, title, kind, count}], failed, totalTracks }.
 async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, limit = 10, onProgress } = {}) {
   const engine = eng(client);
+  needNode(engine);
   const { fetchCollection } = require('./bandcamp-fan');
   const { fan, items } = await fetchCollection(fanUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
   const added = [];
@@ -129,6 +139,7 @@ module.exports = {
   // Join/switch voice (without music): creation and move handled in engine's ensurePlayer
   join: async (client, voiceChannel, textChannelId) => {
     const engine = eng(client);
+    needNode(engine);
     await engine.ensurePlayer(voiceChannel, textChannelId || null);
     return true;
   },
