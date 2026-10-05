@@ -12,19 +12,19 @@ server:
   address: 0.0.0.0
 
 lavalink:
-server:
-      # Same password in bot .env -> LAVALINK_PASSWORD
-      password: "CHANGE-ME-AND-MIRROR-IN-BOT-ENV"
-      sources:
-        youtube: false                # MUST be false: built-in source is deprecated and intercepts
-                                      # ytsearch: from plugin (400 from YouTube). Plugin is below, separate.
-        bandcamp: true
-        soundcloud: true
-        twitch: false
-        vimeo: false                      # OFF 2026-10-04: not working (source dead)
-        nico: false
-        http: true
-        local: false
+  server:
+    # Same password in bot .env -> LAVALINK_PASSWORD
+    password: "CHANGE-ME-AND-MIRROR-IN-BOT-ENV"
+    sources:
+      youtube: false                # MUST be false: built-in source is deprecated and intercepts
+                                    # ytsearch: from plugin (400 from YouTube). Plugin is below, separate.
+      bandcamp: true
+      soundcloud: true
+      twitch: false
+      vimeo: false                      # OFF 2026-10-04: not working (source dead)
+      nico: false
+      http: true
+      local: false
     filters:
       volume: true
     bufferDurationMs: 400
@@ -78,7 +78,7 @@ plugins:
       - ANDROID_VR
       - WEB
       - TVHTML5_SIMPLY
-lavasrc:
+  lavasrc:
     # Mirror (Spotify/Apple/Tidal) searches providers TOP-DOWN.
     # Deezer first: Direct and independent of banned YouTube.
     providers:
