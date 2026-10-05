@@ -23,6 +23,7 @@ jobs:
       - name: Validate lavalink example config
         run: python3 -c "import yaml; d=yaml.safe_load(open('lavalink/application.example.yml')); assert d['plugins']['youtube']['enabled'] in (True,False); print('example yml OK')"
       - name: No secrets in tracked files
+        # NOTE: ci.yml itself is excluded -- it contains these patterns by design.
         run: |
-          ! grep -rE 'MTM0Mjk0|GH5HLF|1//0c_|e76dd456|aebb85|457b8731' --include='*.js' --include='*.yml' --include='*.example' --include='*.json' --exclude-dir=node_modules --exclude=package-lock.json . \
+          ! grep -rE 'MTM0Mjk0|GH5HLF|1//0c_|e76dd456|aebb85|457b8731' --include='*.js' --include='*.yml' --include='*.example' --include='*.json' --exclude-dir=node_modules --exclude-dir=.git --exclude=package-lock.json --exclude=ci.yml --exclude=.env . \
             && echo "secret scan clean"
