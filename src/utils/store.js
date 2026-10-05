@@ -5,7 +5,7 @@ const path = require('node:path');
 // { youtube: {}, tiktok: {}, instagram: {}, site: {lastIds: []},
 //   releases: {ids: []}, events: {ids: []}, posts: {ids: []}, modcall: {} }
 
-const FILE = path.join(__dirname, '..', '..', 'data', 'store.json');
+const FILE = process.env.HPSB_STORE_FILE || path.join(__dirname, '..', '..', 'data', 'store.json');
 
 const DEFAULTS = { youtube: {}, tiktok: {}, instagram: {}, site: { lastIds: [] }, releases: { ids: [] }, events: { ids: [] }, posts: { ids: [] }, modcall: {}, warns: {}, statsChannels: {}, statsTemplates: {}, statsDisabled: [], modules: {} };
 // warns: { userId: [{ id, mod, reason, at }] }

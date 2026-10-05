@@ -119,6 +119,43 @@ const config = {
     instagramBusinessId: process.env.IG_BUSINESS_ID || '',
   },
 
+  // New Publisher routing/targets (legacy keys above stay as fallbacks).
+  publisher: {
+    sources: {
+      youtube: parseSwitch(process.env.PUBLISHER_YOUTUBE, true),
+      twitch: parseSwitch(process.env.PUBLISHER_TWITCH, true),
+      instagram: parseSwitch(process.env.PUBLISHER_INSTAGRAM, true),
+      tiktok: parseSwitch(process.env.PUBLISHER_TIKTOK, true),
+      hpsb: parseSwitch(process.env.PUBLISHER_HPSB, true),
+    },
+    announcementsChannelId: process.env.ANNOUNCEMENTS_CHANNEL_ID || '',
+    mediaChannelId: process.env.MEDIA_CHANNEL_ID || '',
+    partnersChannelId: process.env.PARTNERS_CHANNEL_ID || '',
+    youtubeLiveUrl: process.env.YOUTUBE_LIVE_URL || '',
+    twitchUrl: process.env.TWITCH_URL || '',
+    twitch: {
+      clientId: process.env.TWITCH_CLIENT_ID || '',
+      clientSecret: process.env.TWITCH_CLIENT_SECRET || '',
+      broadcasterId: process.env.TWITCH_BROADCASTER_ID || '',
+      eventsubSecret: process.env.TWITCH_EVENTSUB_SECRET || '',
+    },
+    instagram: {
+      accessToken: process.env.INSTAGRAM_ACCESS_TOKEN || '',
+      webhookSecret: process.env.INSTAGRAM_WEBHOOK_SECRET || '',
+    },
+    tiktok: {
+      accessToken: process.env.TIKTOK_ACCESS_TOKEN || '',
+      pollMinutes: Number(process.env.TIKTOK_POLL_MINUTES || 5),
+    },
+    hpsb: {
+      eventsApiUrl: process.env.HPSB_EVENTS_API_URL || 'https://events.hpsbassline.club/api/events',
+      eventsRssUrl: process.env.HPSB_EVENTS_RSS_URL || 'https://www.hpsbassline.club/api/feed/events.xml',
+      releasesApiUrl: process.env.HPSB_RELEASES_API_URL || 'https://rls.hpsbassline.club/api/releases',
+      releasesRssUrl: process.env.HPSB_RELEASES_RSS_URL || 'https://www.hpsbassline.club/api/feed/releases.xml',
+      newsRssUrl: process.env.HPSB_NEWS_RSS_URL || 'https://www.hpsbassline.club/api/feed/news.xml',
+    },
+  },
+
   // HPSB services: ONE source per feed (format auto-detected)
   hpsb: {
     pollMinutes: Number(process.env.HPSB_POLL_MINUTES || process.env.SITE_API_POLL_MINUTES || 5),
