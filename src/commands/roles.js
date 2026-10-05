@@ -137,11 +137,14 @@ module.exports = {
     await interaction.editReply({ embeds: [e], components: rows });
   },
 
-  // Button roles:fix:admin:<roleId> -- remove Administrator, leave the rest
+  // Button roles:fix:admin:<roleId> -- remove Administrator, leave the rest.
+  // Destructive to server security posture: ManageRoles or Administrator required
+  // (a plain requireMod gate would let ManageMessages-only mods strip admin).
   async handleButton(interaction, client) {
     const [, action, kind, roleId] = interaction.customId.split(':');
     if (action !== 'fix' || kind !== 'admin') return false;
-    if (!await requireMod(interaction)) return true;
+    const { requirePower } = require('../utils/mod');
+    if (!await requirePower(interaction, PermissionFlagsBits.ManageRoles, 'Manage Roles')) return true;
     const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
     if (!role) { await interaction.reply({ content: '❌ Role not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
     const me = await interaction.guild.members.fetch(client.user.id).catch(() => null);

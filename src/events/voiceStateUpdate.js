@@ -1,10 +1,15 @@
 const { Events } = require('discord.js');
 const { handleVoiceState } = require('../modules/private/rooms');
+const { logger } = require('../utils/logger');
 
 module.exports = {
   name: Events.VoiceStateUpdate,
   async execute(oldState, newState, client) {
-    await handleVoiceState(oldState, newState, client).catch(() => {});
+    try {
+      await handleVoiceState(oldState, newState, client);
+    } catch (e) {
+      logger.warn('[voiceStateUpdate]', e?.message || e);
+    }
     // Stage: bot suppressed mid-session (mod/auto) -- request speak again, quietly and rarely
     try {
       if (!client?.user || newState.member?.id !== client.user.id) return;
@@ -15,6 +20,8 @@ module.exports = {
       if (!p || (!p.playing && !p.paused)) return; // not playing -- don't bother
       const { becomeSpeaker } = require('../modules/music/stage');
       await becomeSpeaker(client, newState.guild.id, newState.channel.id, { cooldownMs: 60000 });
-    } catch {}
+    } catch (e) {
+      logger.warn('[voiceStateUpdate:stage]', e?.message || e);
+    }
   },
 };

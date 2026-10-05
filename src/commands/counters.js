@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { snapshot, TYPES, channelIdsFor, templateFor, isEnabled, renderName } = require('../modules/stats/counter');
-const { requireMod } = require('../utils/mod');
+const { requireMod, requirePower } = require('../utils/mod');
 const { config } = require('../config');
 const store = require('../utils/store');
 
@@ -25,9 +25,9 @@ module.exports = {
       .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true).addChoices(...TYPE_CHOICES))
       .addBooleanOption(o => o.setName('on').setDescription('On?').setRequired(true))
       .addRoleOption(o => o.setName('role').setDescription('Role for role counter').setRequired(false)))
-    .addSubcommand(s => s.setName('link').setDescription('Link ANOTHER channel to counter')
+    .addSubcommand(s => s.setName('link').setDescription('Link ANOTHER voice channel to counter')
       .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true).addChoices(...TYPE_CHOICES))
-      .addChannelOption(o => o.setName('channel').setDescription('Channel (voice/text)').setRequired(true)))
+      .addChannelOption(o => o.setName('channel').setDescription('Voice channel').setRequired(true)))
     .addSubcommand(s => s.setName('unlink').setDescription('Unlink channel from counter (channel not deleted)')
       .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true).addChoices(...TYPE_CHOICES))
       .addChannelOption(o => o.setName('channel').setDescription('Channel').setRequired(true)))
@@ -38,7 +38,35 @@ module.exports = {
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const sub = interaction.options.getSubcommand();
+    // Channel create/delete needs Manage Channels (requireMod alone is not enough)
+    if (['setup', 'toggle', 'link', 'unlink'].includes(sub)) {
+      if (!await requirePower(interaction, PermissionFlagsBits.ManageChannels, 'Manage Channels')) return;
+    }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    // Stored ids of channels the BOT created (only those may be auto-deleted).
+    async function markCreated(ids) {
+      const data = store.load();
+      const set = new Set(Array.isArray(data.statsCreatedIds) ? data.statsCreatedIds : []);
+      for (const id of ids) set.add(id);
+      data.statsCreatedIds = [...set];
+      store.save(data);
+    }
+    function isBotCreated(id) {
+      try {
+        const data = store.load();
+        return Array.isArray(data.statsCreatedIds) && data.statsCreatedIds.includes(id);
+      } catch { return false; }
+    }
+    // Stored id counts only if the channel still exists (deleted manually -> recreate).
+    async function aliveIds(ids) {
+      const out = [];
+      for (const id of ids) {
+        const ch = await interaction.guild.channels.fetch(id).catch(() => null);
+        if (ch) out.push(id);
+      }
+      return out;
+    }
 
     if (sub === 'setup') {
       try {
@@ -46,15 +74,16 @@ module.exports = {
         data.statsChannels = data.statsChannels || {};
         const roleOpt = interaction.options.getRole('role');
         if (roleOpt) data.statsRoleId = roleOpt.id;
-        // Idempotency: already configured types untouched (otherwise duplicate channels)
+        // Idempotency: already configured AND alive types untouched (otherwise duplicate channels)
         const already = [];
         const order = ['members', 'humans', 'bots', 'role', 'online', 'offline', 'roles', 'channels', 'boosts'];
-        const missing = order.filter(key => {
-          if (key === 'role' && !(data.statsRoleId || config.stats.roleId)) return false;
-          const has = channelIdsFor(key).length > 0;
-          if (has) already.push(key);
-          return !has;
-        });
+        const missing = [];
+        for (const key of order) {
+          if (key === 'role' && !(data.statsRoleId || config.stats.roleId)) continue;
+          const alive = await aliveIds(channelIdsFor(key));
+          if (alive.length) already.push(key);
+          else missing.push(key);
+        }
         if (!missing.length) {
           await interaction.editReply('✅ All counters already set up -- not creating duplicates. See /counters list.');
           return;
@@ -63,6 +92,7 @@ module.exports = {
           name: '📊 Server Stats 📊', type: ChannelType.GuildCategory,
         });
         const made = [];
+        const madeIds = [];
         for (const key of missing) {
           const ch = await interaction.guild.channels.create({
             name: renderName(key, 0).replace(/[\d\s.,]+$/, '').trim() || key,
@@ -73,7 +103,9 @@ module.exports = {
           cur.push(ch.id);
           data.statsChannels[key] = cur.length === 1 ? cur[0] : cur;
           made.push(`${key} -> <#${ch.id}>`);
+          madeIds.push(ch.id);
         }
+        await markCreated(madeIds);
         const dis = data.statsDisabled || [];
         data.statsDisabled = dis.filter(k => order.includes(k));
         store.save(data);
@@ -120,12 +152,13 @@ module.exports = {
       }
 
       if (!on) {
-        // Disable: stop updates + DELETE created channels (all linked)
+        // Disable: stop updates + delete ONLY bot-created channels (never production ones)
         if (!data.statsDisabled.includes(type)) data.statsDisabled.push(type);
         const stored = asArray(data.statsChannels[type]);
         const envId = config.stats[type];
-        let deleted = 0;
+        let deleted = 0, kept = 0;
         for (const sid of stored) {
+          if (!isBotCreated(sid)) { kept++; continue; }
           const ch = await interaction.guild.channels.fetch(sid).catch(() => null);
           if (ch) {
             await ch.delete('Counter disabled').catch(() => {});
@@ -134,8 +167,8 @@ module.exports = {
         }
         if (stored.length) delete data.statsChannels[type];
         store.save(data);
-await interaction.editReply(
-          deleted ? `⚪ Disabled + channels deleted: ${deleted} (**${type}**)`
+        await interaction.editReply(
+          deleted ? `⚪ Disabled + bot channels deleted: ${deleted} (**${type}**)${kept ? `, kept (not ours): ${kept}` : ''}`
             : envId ? `⚪ Disabled (updates stopped): **${type}**\nChannel from .env not touched -- delete manually if needed.`
             : `⚪ Disabled: **${type}**`
         );
@@ -161,6 +194,7 @@ await interaction.editReply(
           permissionOverwrites: [{ id: interaction.guild.id, deny: [PermissionFlagsBits.Connect] }],
         });
         data.statsChannels[type] = ch.id;
+        await markCreated([ch.id]);
         store.save(data);
         await interaction.editReply(`🟢 Enabled + channel created: **${type}** -> <#${ch.id}>\nName updates on next tick (<=10 min).`);
       } else {
@@ -173,6 +207,11 @@ await interaction.editReply(
     if (sub === 'link') {
       const type = interaction.options.getString('type', true);
       const ch = interaction.options.getChannel('channel', true);
+      // Counters rename whatever they track -- voice only, or a production chat gets renamed.
+      if (!ch.isVoiceBased?.()) {
+        await interaction.editReply('❌ Voice channels only (counters rename the channel).');
+        return;
+      }
       const data = store.load();
       data.statsChannels = data.statsChannels || {};
       const cur = asArray(data.statsChannels[type]);

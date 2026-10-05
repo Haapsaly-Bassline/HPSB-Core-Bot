@@ -36,7 +36,7 @@ async function auditGuild(client) {
   const guild = await client.guilds.fetch(config.guildId).catch(() => null);
   if (!guild) {
     logger.error('[selfcheck] guild not found:', config.guildId);
-    return { me: null, missing: [' guild' ] };
+    return { me: null, missing: ['guild'] };
   }
   const me = await guild.members.fetch(client.user.id).catch(() => null);
   if (!me) {

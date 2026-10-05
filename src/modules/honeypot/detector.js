@@ -23,12 +23,26 @@ async function logToStaff(client, text) {
   if (ch?.isTextBased()) ch.send(text).catch(() => {});
 }
 
+function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Central staff exemption: bot owner, mod role holders, anyone with ManageMessages.
+// Used by trap, punish, flood, caps, mass-ping -- staff never eats automod.
+function isExempt(member, authorId) {
+  if (config.adminIds.includes(authorId)) return true;
+  if (!member || member.user?.bot) return true;
+  try {
+    const { hasModRole } = require('../../utils/mod');
+    if (hasModRole(member)) return true;
+    if (member.permissions?.has?.(PermissionFlagsBits.ManageMessages)) return true;
+  } catch {}
+  return false;
+}
+
 async function punish(client, message, reason, opts = {}) {
   const member = message.member;
   if (!member || member.user.bot) return false;
-  // don't touch mods/admins and owners from ADMIN_DISCORD_IDS
-  if (config.adminIds.includes(member.id)) return false;
-  if (member.permissions.has(PermissionFlagsBits.ManageMessages)) return false;
+  // staff never eats automod (owner, mod role, ManageMessages)
+  if (isExempt(member, member.id)) return false;
 
   // Trap hits hard (default mute 12h), scam filter -- softer.
   const action = opts.action || (opts.trap ? config.honeypot.action : 'timeout');
@@ -45,7 +59,7 @@ async function punish(client, message, reason, opts = {}) {
       await member.kick(audit);
       try { await message.delete(); } catch {}
     } else {
-      const ms = Math.min(Math.max(hours, 1), 672) * 60 * 60 * 1000; // 1h..28d
+      const ms = Math.min(Math.max(hours * 60 * 60 * 1000, 60 * 1000), 28 * 86400 * 1000); // 1m..28d
       await member.timeout(ms, audit);
       try { await message.delete(); } catch {}
     }
@@ -69,9 +83,9 @@ async function handleMessage(message, client) {
   const content = message.content || '';
 
 // 1) Trap: public channel, posting forbidden -- first message = punishment.
-// Owners from ADMIN_DISCORD_IDS not punished (so you don't mute yourself while setting perms).
+// Staff exempt (owner, mod role, ManageMessages) -- so you don't mute yourself setting perms.
   if (config.honeypot.trapChannelId && message.channelId === config.honeypot.trapChannelId) {
-    if (config.adminIds.includes(message.author.id)) return;
+    if (isExempt(message.member, message.author.id)) return;
     await punish(client, message, 'message in honeypot trap', { trap: true });
     return;
   }
@@ -83,22 +97,27 @@ async function handleMessage(message, client) {
   }
 
   // 2.5) Links not in whitelist / invites / badwords
-  const linkHit = checkLinks(message);
+  const linkHit = await checkLinks(client, message);
   if (linkHit) {
     await punish(client, message, linkHit, { hours: config.automod.actionHours });
     try { await message.author.send('⚠️ Link removed by HPSB automod. Allowed domains + own server. Questions -- via ModCall.'); } catch {}
     return;
   }
   if (SCAM_PATTERNS.some(re => re.test(content))) {
-    await punish(client, message, 'scam pattern (nitro/gift/airdrop)');
-    try { await message.author.send('⚠️ Your message on HPSB removed as suspicious (scam filter). If this is a mistake -- use ModCall.'); } catch {}
+    if (/(?:https?:\/\/|www\.)[^\s<>()]+/i.test(content)) {
+      await punish(client, message, 'scam pattern (nitro/gift/airdrop)');
+      try { await message.author.send('⚠️ Your message on HPSB removed as suspicious (scam filter). If this is a mistake -- use ModCall.'); } catch {}
+    } else {
+      // Keyword match without any link = likely legit discussion: delete + log, no mute.
+      try { await message.delete(); } catch {}
+      await logToStaff(client, `🔍 **Automod (scam-words, no link)**: ${message.author} (${message.author.id}) in <#${message.channelId}>\n${content.slice(0, 300)}`);
+    }
     return;
   }
 
   // 3) Caps (delete + log, no mute -- false positives happen)
   if (checkCaps(content)) {
-    if (!message.member?.permissions.has(PermissionFlagsBits.ManageMessages)
-      && !config.adminIds.includes(message.author.id)) {
+    if (!isExempt(message.member, message.author.id)) {
       try { await message.delete(); } catch {}
       await logToStaff(client, `🔠 **Automod (caps)**: ${message.author} (${message.author.id}) in <#${message.channelId}>\n${content.slice(0, 300)}`);
     }
@@ -108,8 +127,10 @@ async function handleMessage(message, client) {
   // 4) Mass-mention from non-mod
   const mentionsEveryone = message.mentions?.everyone;
   const manyMentions = (message.mentions?.users?.size || 0) >= 5;
-  if ((mentionsEveryone || manyMentions) && !message.member?.permissions.has(PermissionFlagsBits.ManageMessages)) {
-    await punish(client, message, 'mass ping');
+  if (mentionsEveryone || manyMentions) {
+    if (!isExempt(message.member, message.author.id)) {
+      await punish(client, message, 'mass ping');
+    }
   }
 }
 
@@ -138,17 +159,23 @@ async function ensureTrapWarning(client) {
 
 // ---------- Automod helpers ----------
 
-// Flood: more than floodCount messages in floodSecs seconds (memory only in RAM)
-const floodMap = new Map(); // userId -> [timestamps]
+// Flood: more than floodCount messages in floodSecs seconds, per guild+user.
+// LRU eviction of oldest entries (a full clear() would open an evasion window).
+const floodMap = new Map(); // `${guildId}:${userId}` -> [timestamps]
+const FLOOD_MAX_KEYS = 2000;
 function hitFlood(message) {
-  if (message.member?.permissions.has(PermissionFlagsBits.ManageMessages)) return false;
-  if (config.adminIds.includes(message.author.id)) return false;
+  if (isExempt(message.member, message.author.id)) return false;
   const now = Date.now();
+  const key = `${message.guildId || 'dm'}:${message.author.id}`;
   const win = Math.max(config.automod.floodSecs, 3) * 1000;
-  const arr = (floodMap.get(message.author.id) || []).filter(t => now - t < win);
+  const arr = (floodMap.get(key) || []).filter(t => now - t < win);
   arr.push(now);
-  floodMap.set(message.author.id, arr);
-  if (floodMap.size > 5000) floodMap.clear();
+  floodMap.delete(key);
+  floodMap.set(key, arr); // re-insert = most-recently-used at the end
+  while (floodMap.size > FLOOD_MAX_KEYS) {
+    const oldest = floodMap.keys().next().value;
+    floodMap.delete(oldest);
+  }
   return arr.length > Math.max(config.automod.floodCount, 2);
 }
 
@@ -156,17 +183,16 @@ function hostOf(url) {
   try { return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.toLowerCase(); } catch { return ''; }
 }
 
-// Returns reason or null
-function checkLinks(message) {
+// Returns reason or null. Own-server invites are allowed (verified via API).
+async function checkLinks(client, message) {
   const content = message.content || '';
   const hasInvite = /discord\.gg\/|discord\.com\/invite|discord\.app\.com\/invite/i.test(content);
   const urls = content.match(/(?:https?:\/\/|www\.)[^\s<>()]+/gi) || [];
   const wl = config.automod.linkWhitelist.map(d => d.toLowerCase());
 
   if (hasInvite && config.automod.invites) {
-    // invite code can't be verified without extra request -- block all;
-    // moderation exempted in punish()
-    return 'invite to external server';
+    const allowed = await ownInvite(client, message).catch(() => false);
+    if (!allowed) return 'invite to external server';
   }
   if (config.automod.links && urls.length) {
     const bad = urls.some(u => {
@@ -176,16 +202,32 @@ function checkLinks(message) {
     if (bad) return 'link outside whitelist';
   }
   const low = content.toLowerCase();
-  if (config.automod.badwords.length && config.automod.badwords.some(w => low.includes(w))) {
-    return 'forbidden word';
+  if (config.automod.badwords.length) {
+    const hit = config.automod.badwords.some(w => {
+      const word = String(w || '').trim().toLowerCase();
+      return word && new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i').test(content);
+    });
+    if (hit) return 'forbidden word';
   }
   return null;
 }
 
+// True when the message contains an invite to THIS guild (then it's not "external").
+async function ownInvite(client, message) {
+  try {
+    const m = String(message.content || '').match(/discord\.gg\/([A-Za-z0-9-]+)|discord\.com\/invite\/([A-Za-z0-9-]+)/i);
+    const code = m?.[1] || m?.[2];
+    if (!code) return false;
+    const inv = await client.fetchInvite(code).catch(() => null);
+    return !!inv && inv.guildId === message.guildId;
+  } catch { return false; }
+}
+
 function checkCaps(content) {
-  const letters = (content.match(/[A-Za-zА-Яа-яЁё]/g) || []).length;
+  // Unicode-aware: õäöü and other Latin-extended letters count, so locals aren't skewed.
+  const letters = (String(content).match(/\p{L}/gu) || []).length;
   if (letters < Math.max(config.automod.capsMinLen, 4)) return false;
-  const upper = (content.match(/[A-ZА-ЯЁ]/g) || []).length;
+  const upper = (String(content).match(/\p{Lu}/gu) || []).length;
   return (upper / letters) * 100 >= (config.automod.capsPct || 75);
 }
 

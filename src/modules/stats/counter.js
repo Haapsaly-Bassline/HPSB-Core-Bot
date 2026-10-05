@@ -8,7 +8,7 @@ const store = require('../../utils/store');
 const TYPES = ['members', 'humans', 'bots', 'roles', 'channels', 'role', 'online', 'offline', 'boosts'];
 
 function fmt(n) {
-  return Number(n || 0).toLocaleString('ru-RU');
+  return Number(n || 0).toLocaleString('en-US');
 }
 
 function templateFor(key) {
@@ -64,34 +64,35 @@ async function collect(guild) {
   // Full member list needed only for some counters
   const needMembers = ['humans', 'bots', 'role', 'online', 'offline'].some(k => channelIdsFor(k).length && isEnabled(k));
   let members = null;
+  let membersOk = !needMembers;
   if (needMembers) {
-    try { await guild.members.fetch(); } catch {}
-    members = guild.members.cache;
+    try { await guild.members.fetch(); members = guild.members.cache; membersOk = members.size > 0; } catch { membersOk = false; }
   }
   const g2 = await guild.fetch().catch(() => guild);
-  const bots = members ? members.filter(m => m.user.bot).size : 0;
+  const bots = membersOk ? members.filter(m => m.user.bot).size : 0;
   const total = guild.memberCount;
-  let online = 0, offline = 0, presenceSeen = false;
-  if (members) {
+  let online = 0, presenceSeen = false;
+  if (membersOk) {
     for (const m of members.values()) {
       const st = m.presence?.status;
       if (!st) continue;
-      presenceSeen = true;
-      if (st === 'offline') offline++;
-      else online++;
+      presenceSeen = true; // any presence row (even explicit offline) proves intents work
+      if (st !== 'offline' && st !== 'invisible') online++;
     }
   }
+  // offline = remainder (members with no presence row are offline, not "unknown")
+  const offline = membersOk && presenceSeen ? Math.max(total - online, 0) : 0;
   const roleId = store.load().statsRoleId || config.stats.roleId;
-  const roleCount = members && roleId ? members.filter(m => m.roles.cache.has(roleId)).size : 0;
+  const roleCount = membersOk && roleId ? members.filter(m => m.roles.cache.has(roleId)).size : 0;
 
   return {
     members: total,
-    humans: members ? total - bots : 0,
-    bots: members ? bots : 0,
+    humans: membersOk ? total - bots : 0,
+    bots: membersOk ? bots : 0,
     roles: guild.roles.cache.size,
     channels: guild.channels.cache.size,
     role: roleCount,
-    online, offline, presenceSeen,
+    online: membersOk ? online : 0, offline, presenceSeen, membersOk,
     boosts: g2.premiumSubscriptionCount || 0,
     tier: g2.premiumTier,
   };
@@ -106,17 +107,19 @@ async function update(client) {
       presenceWarned = true;
       logger.warn('[stats] online/offline: no presences -- enable Presence Intent in Portal');
     }
+  } else if (vals.presenceSeen) {
+    presenceWarned = false; // intents recovered -- warn again on next outage
   }
   const jobs = [
     ['members', vals.members],
-    ['humans', vals.humans],
-    ['bots', vals.bots],
     ['roles', vals.roles],
     ['channels', vals.channels],
     ['boosts', vals.boosts],
   ];
+  // Member-dependent counters only with a complete member list -- never push zeros.
+  if (vals.membersOk) jobs.push(['humans', vals.humans], ['bots', vals.bots]);
   if (vals.presenceSeen) jobs.push(['online', vals.online], ['offline', vals.offline]);
-  if (store.load().statsRoleId || config.stats.roleId) jobs.push(['role', vals.role]);
+  if ((store.load().statsRoleId || config.stats.roleId) && vals.membersOk) jobs.push(['role', vals.role]);
   for (const [key, value] of jobs) {
     if (!isEnabled(key)) continue;
     for (const id of channelIdsFor(key)) {

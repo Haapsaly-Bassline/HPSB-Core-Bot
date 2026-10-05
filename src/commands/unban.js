@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { requireMod, modLog } = require('../utils/mod');
+const { requirePower, modLog, replyError } = require('../utils/mod');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -9,7 +9,7 @@ module.exports = {
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(false)),
   async execute(interaction, client) {
-    if (!await requireMod(interaction)) return;
+    if (!await requirePower(interaction, PermissionFlagsBits.BanMembers, 'Ban Members')) return;
     const id = interaction.options.getString('userid', true).trim();
     if (!/^\d{15,25}$/.test(id)) { await interaction.reply({ content: '❌ Does not look like an ID.', flags: MessageFlags.Ephemeral }); return; }
     try {
@@ -19,7 +19,7 @@ module.exports = {
       await interaction.reply({ embeds: [emb] });
       await modLog(client, { embeds: [emb] });
     } catch {
-      await interaction.reply({ content: '❌ Could not unban (no such ban?).', flags: MessageFlags.Ephemeral });
+      await replyError(interaction, '❌ Could not unban (no such ban?).');
     }
   },
 };

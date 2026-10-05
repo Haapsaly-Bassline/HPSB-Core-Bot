@@ -39,7 +39,7 @@ function backoffFail(key, err) {
 
 function backoffOk(key) {
   const f = fails[key];
-  if (f && (f.n > 0 || f.warned)) logger.info(`[hpsb/${key}] source revived`);
+  if (f && (f.n >= 2 || f.warned)) logger.info(`[hpsb/${key}] source revived after ${f.n} failure(s)`);
   delete fails[key];
 }
 
@@ -55,12 +55,36 @@ function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
+// Invalid Date objects are truthy, so `x ? new Date(x) : new Date()` still
+// throws RangeError inside setTimestamp(). This never throws.
+function safeDate(v) {
+  if (!v) return new Date();
+  const t = new Date(v);
+  return isNaN(t.getTime()) ? new Date() : t;
+}
+
+function guidStr(g) {
+  if (g === null || g === undefined) return '';
+  if (typeof g === 'string' || typeof g === 'number') return String(g);
+  if (typeof g === 'object') return String(g['#text'] ?? g._text ?? g.content ?? '');
+  return '';
+}
+
+// Embed URL setter that never throws: only real http(s) links, never undefined.
+function setUrlSafe(embed, link) {
+  if (/^https?:\/\//i.test(link || '')) embed.setURL(link);
+  return embed;
+}
+
 async function post(client, channelId, embed, content) {
   if (!channelId) return false;
   const ch = await client.channels.fetch(channelId).catch(() => null);
   if (!ch?.isTextBased()) { logger.warn('[hpsb] bad channel', channelId); return false; }
   const payload = content ? { content, embeds: [embed] } : { embeds: [embed] };
-  return ch.send(payload).then(() => true).catch(() => false);
+  return ch.send(payload).then(() => true).catch((e) => {
+    logger.warn('[hpsb] discord send failed', channelId, e?.message || e);
+    return false;
+  });
 }
 
 function pingLine(text) {
@@ -75,15 +99,22 @@ async function fetchFeed(url) {
   const { data } = await axios.get(url, { timeout: 20000, headers: { 'User-Agent': UA } });
   if (typeof data === 'string' && /^\s*</.test(data)) {
     const feed = parser.parse(data);
-    const raw = feed?.rss?.channel?.item;
+    // RSS (rss.channel.item) and Atom (feed.entry) shapes
+    const raw = feed?.rss?.channel?.item ?? feed?.feed?.entry ?? [];
     const items = Array.isArray(raw) ? raw : raw ? [raw] : [];
     return items.map(i => ({
-      uid: String(i.guid?.['#text'] || i.guid || i.link || ''),
-      title: i.title || '', link: i.link || '', desc: i.description || '',
-      date: i.pubDate || '', image: i.enclosure?.url || '', raw: i,
+      uid: guidStr(i.guid?.['#text'] ?? i.guid ?? i.id ?? i.link) || guidStr(i.link),
+      title: i.title || '',
+      link: typeof i.link === 'object' ? (i.link?.['@_href'] || i.link?.href || '') : (i.link || ''),
+      desc: i.description || i.summary || '',
+      date: i.pubDate || i.published || i.updated || '',
+      image: i.enclosure?.url || i.enclosure?.['@_url'] || '',
+      raw: i,
     })).filter(x => x.uid);
   }
-  const arr = Array.isArray(data) ? data : data.posts || data.items || data.releases || data.events || [];
+  if (!data || typeof data !== 'object') return [];
+  const arr = Array.isArray(data) ? data : data.data || data.posts || data.items || data.releases || data.events || [];
+  if (!Array.isArray(arr)) return [];
   return arr.map(i => ({
     uid: String(i.id || i.slug || i.guid || ''),
     title: i.title || i.name || '', link: i.url || i.link || '',
@@ -100,13 +131,17 @@ function releaseEmbed(r) {
   const page = `${config.hpsb.releases.pageBase || 'https://hpsbassline.club/releases'}/${r.slug || r.id}`;
   const services = [...(r.services || [])];
   if (r.merch) services.push({ type: 'merch', url: r.merch });
-  const links = services.slice(0, 10).map(s => `[${SERVICE_LABEL[s.type] || s.type}](${s.url})`).join(' • ');
+  const links = services
+    .filter(s => s?.url && /^https?:\/\//i.test(s.url))
+    .slice(0, 10)
+    .map(s => `[${SERVICE_LABEL[s.type] || s.type}](${s.url})`)
+    .join(' • ');
   const e = new EmbedBuilder()
     .setColor(0x7c3aed)
     .setTitle(`💿 ${truncate(r.title, 200)} - ${truncate(r.artist || 'HPSB', 100)}`)
     .setURL(page)
     .setDescription(truncate(r.description || '', 1500) || '_New HPSB release_')
-    .setTimestamp(r.createdAt ? new Date(r.createdAt) : new Date());
+    .setTimestamp(safeDate(r.createdAt));
   const img = abs(config.hpsb.releases.baseUrl, r.cover);
   if (img) e.setImage(img);
   if (r.genre?.length) e.addFields({ name: 'Genre', value: r.genre.join(', ').slice(0, 200), inline: true });
@@ -120,10 +155,11 @@ function releaseEmbed(r) {
 }
 
 function simpleReleaseEmbed(item) {
-  return new EmbedBuilder()
-    .setColor(0x7c3aed).setTitle(`💿 ${truncate(item.title, 250)}`).setURL(item.link || undefined)
-    .setDescription(truncate(item.desc, 1500)).setTimestamp(item.date ? new Date(item.date) : new Date())
+  const e = new EmbedBuilder()
+    .setColor(0x7c3aed).setTitle(`💿 ${truncate(item.title, 250)}`)
+    .setDescription(truncate(item.desc, 1500)).setTimestamp(safeDate(item.date))
     .setFooter({ text: 'Haapsaly Bassline • Release' });
+  return setUrlSafe(e, item.link);
 }
 
 async function checkReleases(client, state, opts = {}) {
@@ -161,14 +197,21 @@ async function checkReleases(client, state, opts = {}) {
 }
 
 // ---------- EVENTS ----------
+// Strict date or null (for display rows -- garbage must not render as "now").
+function dateOrNull(v) {
+  if (!v) return null;
+  const t = new Date(v);
+  return isNaN(t.getTime()) ? null : t;
+}
+
 function eventEmbed(ev) {
-  const start = ev.start ? new Date(ev.start) : ev.startUnix ? new Date(ev.startUnix) : null;
+  const start = dateOrNull(ev.start ?? ev.startUnix);
   const e = new EmbedBuilder()
     .setColor(0x0ea5e9)
     .setTitle(`📅 ${truncate(ev.name || 'Event', 250)}`)
-    .setURL(ev.link || undefined)
     .setDescription(truncate(ev.description || ev.descriptionRaw || '', 1800))
     .setTimestamp(start || new Date());
+  setUrlSafe(e, ev.link);
   if (ev.image) e.setImage(ev.image);
   const rows = [];
   if (start && !isNaN(start)) rows.push(`**When:** <t:${Math.floor(start.getTime() / 1000)}:F>`);
@@ -180,11 +223,12 @@ function eventEmbed(ev) {
 }
 
 function simpleEventEmbed(item) {
-  return new EmbedBuilder()
-    .setColor(0x0ea5e9).setTitle(`📅 ${truncate(item.title, 250)}`).setURL(item.link || undefined)
+  const e = new EmbedBuilder()
+    .setColor(0x0ea5e9).setTitle(`📅 ${truncate(item.title, 250)}`)
     .setDescription(truncate(item.desc, 1800))
-    .setTimestamp(item.date ? new Date(item.date) : new Date())
+    .setTimestamp(safeDate(item.date))
     .setFooter({ text: 'Haapsaly Bassline • Events' });
+  return setUrlSafe(e, item.link);
 }
 
 function eventLike(ev) {
@@ -231,26 +275,34 @@ async function checkEvents(client, state, opts = {}) {
 }
 
 // ---------- Future event reminders (24h and 1h before start) ----------
-// Start from date (RSS pubDate = start, JSON start).
+// ONLY from a real start field (raw.start/startUnix/startDate). RSS pubDate is
+// publish time (always past) -- using it would silently never fire.
 async function checkReminders(client, state) {
-  const KEY = 'remind';
+  const KEY = 'events'; // same feed+URL as checkEvents: shared backoff counter
   const { channelId, feedUrl } = config.hpsb.events;
   if (!channelId || !feedUrl) return { found: 0, posted: 0 };
   if (backoffSkip(KEY)) return { found: 0, posted: 0 };
-  state.events.reminded = state.events.reminded || {};
-  let posted = 0, found = 0;
+  state.events.reminded = (state.events.reminded && typeof state.events.reminded === 'object') ? state.events.reminded : {};
+  let posted = 0, found = 0, noStart = 0;
   try {
     const items = await fetchFeed(feedUrl);
     backoffOk(KEY);
     found = items.length;
     const now = Date.now();
+    const seen = new Set();
     for (const item of items) {
-      const t = item.date ? new Date(item.date).getTime() : 0;
-      if (!t || t <= now) continue;
+      seen.add(item.uid);
+      const raw = item.raw || {};
+      const startMs = dateOrNull(raw.start ?? raw.startUnix ?? raw.startDate)?.getTime() || 0;
+      if (!startMs) { noStart++; continue; }
+      if (startMs <= now) continue;
       const done = state.events.reminded[item.uid] || (state.events.reminded[item.uid] = []);
-      const left = t - now;
-      const need = left <= 3600 * 1000 ? '1h' : left <= 24 * 3600 * 1000 ? '24h' : null;
-      if (need && !done.includes(need)) {
+      const left = startMs - now;
+      // all due tiers, oldest first (a downtime crossing 24h->1h must not skip the 24h notice)
+      const due = [];
+      if (left <= 24 * 3600 * 1000 && !done.includes('24h')) due.push('24h');
+      if (left <= 3600 * 1000 && !done.includes('1h')) due.push('1h');
+      for (const need of due) {
         const rich = eventLike(item.raw);
         const emb = rich ? eventEmbed({ ...rich, link: rich.link || item.link }) : simpleEventEmbed(item);
         emb.setTitle(`⏰ Reminder (${need === '1h' ? '1 hour left' : '24 hours left'}): ${truncate(item.title || 'Event', 200)}`);
@@ -262,6 +314,11 @@ async function checkReminders(client, state) {
         }
       }
     }
+    // prune: past events and uids gone from the feed (unbounded growth otherwise)
+    for (const uid of Object.keys(state.events.reminded)) {
+      if (!seen.has(uid)) delete state.events.reminded[uid];
+    }
+    if (noStart) logger.info(`[hpsb/remind] ${noStart} item(s) without a start field -- reminders need raw.start/startUnix (RSS pubDate is publish time, not start)`);
   } catch (e) {
     backoffFail(KEY, e.message);
   }
@@ -291,10 +348,10 @@ async function checkPosts(client, state, opts = {}) {
       const e = new EmbedBuilder()
         .setColor(0x10b981)
         .setTitle(`📰 ${truncate(item.title, 250)}`)
-        .setURL(item.link || undefined)
         .setDescription(truncate(item.desc, 1800))
-        .setTimestamp(item.date ? new Date(item.date) : new Date())
+        .setTimestamp(safeDate(item.date))
         .setFooter({ text: `Haapsaly Bassline • Post${p.tags?.length ? ' • ' + p.tags.join(', ') : ''}`.slice(0, 200) });
+      setUrlSafe(e, item.link);
       if (item.image) e.setImage(item.image);
       const text = pingLine(`📰 **${truncate(item.title, 200)}**`);
       if (await post(client, channelId, e, text)) {
@@ -348,26 +405,35 @@ const ZERO = { found: 0, posted: 0 };
 let running = false;
 
 // One full run (for poller and for /sync). opts.backfill -- add last N.
+// Serialized via store mutex: the webhook does its own load/save mid-poll,
+// interleaved runs would overwrite each other's posted IDs (dupes).
 async function runHpsbOnce(client, opts = {}) {
-  if (running) { logger.warn('[hpsb] previous run still active, skipping'); return null; }
+  if (running) { logger.warn('[hpsb] previous run still active, skipping'); return { skipped: true }; }
   running = true;
   try {
-    const state = store.load();
-    const out = { releases: { ...ZERO }, events: { ...ZERO }, posts: { ...ZERO }, legacy: { ...ZERO }, reminders: { ...ZERO } };
-    out.releases = await checkReleases(client, state, opts);
-    out.events = await checkEvents(client, state, opts);
-    out.posts = await checkPosts(client, state, opts);
-    out.legacy = await checkLegacy(client, state);
-    out.reminders = await checkReminders(client, state);
-    store.save(state);
-    return out;
+    return await store.exclusive(async () => {
+      const state = store.load();
+      const out = { releases: { ...ZERO }, events: { ...ZERO }, posts: { ...ZERO }, legacy: { ...ZERO }, reminders: { ...ZERO } };
+      out.releases = await checkReleases(client, state, opts);
+      out.events = await checkEvents(client, state, opts);
+      out.posts = await checkPosts(client, state, opts);
+      out.legacy = await checkLegacy(client, state);
+      out.reminders = await checkReminders(client, state);
+      store.save(state);
+      return out;
+    });
   } finally {
     running = false;
   }
 }
 
+function pollMinutes() {
+  const mins = Number(config.hpsb.pollMinutes);
+  return Number.isFinite(mins) ? Math.max(1, mins) : 5;
+}
+
 function startSitePoller(client) {
-  const mins = Math.max(1, config.hpsb.pollMinutes || 5);
+  const mins = pollMinutes();
   const anyChannel = config.hpsb.releases.channelId || config.hpsb.events.channelId || config.hpsb.posts.channelId || config.siteApi.channelId;
   if (!anyChannel) {
     logger.info('[hpsb] skipped (no *_CHANNEL_ID set)');

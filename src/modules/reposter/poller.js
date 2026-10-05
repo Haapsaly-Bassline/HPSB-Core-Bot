@@ -21,7 +21,10 @@ async function postToChannel(client, channelId, { embed, content, buttons = [] }
   if (buttons.length) {
     payload.components = [new ActionRowBuilder().addComponents(...buttons.slice(0, 5))];
   }
-  return ch.send(payload).then(() => true).catch(() => false);
+  return ch.send(payload).then(() => true).catch((e) => {
+    logger.warn('[reposter] discord send failed', channelId, e?.message || e);
+    return false;
+  });
 }
 
 function mediaText(tpl, vars) {
@@ -71,6 +74,9 @@ async function fetchLatestYouTube(ytId) {
 
   const { data: html } = await axios.get(`https://www.youtube.com/channel/${ytId}/videos`, {
     timeout: 20000, headers: { 'User-Agent': YT_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+  }).catch((e) => {
+    logger.warn(`[reposter/yt] scrape failed (${e.message}), skipping quietly`);
+    return { data: '' };
   });
   const re = new RegExp('"videoId":"([A-Za-z0-9_-]{11})"', 'g');
   const ids = []; const seen = new Set(); let m;
@@ -107,20 +113,24 @@ async function postVideo(client, channelId, { id, title, author }) {
 // Publish single video with dedup -- for poller and PubSubHubbub.
 // channelId: YT channel (topic). Returns true if actually posted.
 async function publishYouTubeVideo(client, { videoId, title, author, channelId }) {
-  const entry = config.reposter.youtube.find(x => x.key === channelId) || config.reposter.youtube[0];
-  if (!entry) { logger.warn('[reposter/yt] unknown channel', channelId); return false; }
-  const state = store.load();
-  let known = state.youtube[entry.key];
-  if (typeof known === 'string') known = [known];
-  if (!Array.isArray(known)) known = [];
-  if (!videoId || known.includes(videoId)) return false;
-  const ok = await postVideo(client, entry.channelId, { id: videoId, title, author });
-  if (ok) {
-    state.youtube[entry.key] = [...new Set([...known, videoId])].slice(-20);
-    store.save(state);
-    logger.info(`[reposter/yt] new ${videoId}`);
-  }
-  return ok;
+  const vid = String(videoId || '').trim();
+  if (!/^[A-Za-z0-9_-]{11}$/.test(vid)) { logger.warn('[reposter/yt] bad videoId, skipped'); return false; }
+  const entry = config.reposter.youtube.find(x => x.key === channelId);
+  if (!entry) { logger.warn('[reposter/yt] unknown channel, skipped'); return false; }
+  return store.exclusive(async () => {
+    const state = store.load();
+    let known = state.youtube[entry.key];
+    if (typeof known === 'string') known = [known];
+    if (!Array.isArray(known)) known = [];
+    if (known.includes(vid)) return false;
+    const ok = await postVideo(client, entry.channelId, { id: vid, title, author });
+    if (ok) {
+      state.youtube[entry.key] = [...new Set([...known, vid])].slice(-20);
+      store.save(state);
+      logger.info(`[reposter/yt] new ${vid}`);
+    }
+    return ok;
+  });
 }
 
 async function checkYouTube(client, state) {
@@ -129,7 +139,7 @@ async function checkYouTube(client, state) {
     try {
       const items = await fetchLatestYouTube(ytId);
       found += items.length;
-      if (!items.length) { logger.warn(`[reposter/yt] ${ytId}: empty everywhere`); continue; }
+      if (!items.length) continue; // quiet miss (blocked/empty) -- visible as found:0 in /sync
       // known -- array of recent IDs (scrape order unstable, compare by set)
       let known = state.youtube[ytId];
       if (typeof known === 'string') known = [known];
@@ -140,8 +150,8 @@ async function checkYouTube(client, state) {
       }
       const knownSet = new Set(known);
       const fresh = items.filter(i => !knownSet.has(i.id)).slice(0, 3);
-      for (const raw of fresh) {
-        const item = await ytTitleFallback(raw);
+      const withTitles = await Promise.all(fresh.map(ytTitleFallback));
+      for (const item of withTitles) {
         if (await postVideo(client, channelId, { id: item.id, title: item.title, author: item.author })) {
           knownSet.add(item.id);
           posted++;
@@ -164,22 +174,37 @@ async function checkTikTok(client, state) {
       const videos = data?.data?.videos || data?.data?.posts || [];
       found += videos.length;
       if (!videos.length) continue;
-      const latest = videos[0];
-      const vid = String(latest.video_id || latest.id || latest.aweme_id || '');
-      if (!vid) continue;
-      const prev = state.tiktok[uname];
-      if (prev === vid) continue;
-      if (!prev) { state.tiktok[uname] = vid; continue; } // first run -- remember
-      const link = `https://www.tiktok.com/@${uname}/video/${vid}`;
-      const text = mediaText(config.reposter.templates.tiktok, { user: uname, title: latest.title || latest.desc || '', link });
-      if (await postToChannel(client, channelId, { embed: new EmbedBuilder()
-        .setColor(0x1a1a1a).setTitle(`🎵 ${(latest.title || latest.desc || 'TikTok').slice(0, 250)}`)
-        .setURL(link).setDescription(`${link}`.slice(0, 2000))
-        .setFooter({ text: `TikTok • @${uname}` })
-        .setTimestamp(), content: text, buttons: [linkBtn('🎵 Open TikTok', link)] })) {
-        state.tiktok[uname] = vid;
-        posted++;
+      // Post EVERYTHING new oldest-first (not just videos[0]): with count=3 and a
+      // poll gap, middle videos would otherwise be skipped forever.
+      let known = state.tiktok[uname];
+      if (!Array.isArray(known)) known = known ? [String(known)] : [];
+      const knownSet = new Set(known);
+      if (!knownSet.size) {
+        state.tiktok[uname] = videos.map(v => String(v.video_id || v.id || v.aweme_id || '')).filter(Boolean).slice(0, 10);
+        continue; // first run -- remember
       }
+      const fresh = videos
+        .map(v => ({
+          vid: String(v.video_id || v.id || v.aweme_id || ''),
+          title: String(v.title ?? v.desc ?? 'TikTok').slice(0, 250),
+          raw: v,
+        }))
+        .filter(v => v.vid && !knownSet.has(v.vid))
+        .reverse()
+        .slice(0, 3);
+      for (const item of fresh) {
+        const link = `https://www.tiktok.com/@${uname}/video/${item.vid}`;
+        const text = mediaText(config.reposter.templates.tiktok, { user: uname, title: item.title, link });
+        if (await postToChannel(client, channelId, { embed: new EmbedBuilder()
+          .setColor(0x1a1a1a).setTitle(`🎵 ${item.title}`)
+          .setURL(link).setDescription(`${link}`.slice(0, 2000))
+          .setFooter({ text: `TikTok • @${uname}` })
+          .setTimestamp(), content: text, buttons: [linkBtn('🎵 Open TikTok', link)] })) {
+          knownSet.add(item.vid);
+          posted++;
+        }
+      }
+      state.tiktok[uname] = [...knownSet].slice(-10);
     } catch (e) { logger.warn(`[reposter/tt] ${username}:`, e.message); }
   }
   return { found, posted };
@@ -190,23 +215,30 @@ let running = false;
 const ZERO = { found: 0, posted: 0 };
 
 async function runReposterOnce(client) {
-  if (running) { logger.warn('[reposter] previous run still active, skipping'); return null; }
+  if (running) { logger.warn('[reposter] previous run still active, skipping'); return { skipped: true }; }
   running = true;
   try {
-    const state = store.load();
-    // Instagram goes via Make webhook, scraper removed.
-    const out = { youtube: { ...ZERO }, tiktok: { ...ZERO } };
-    out.youtube = await checkYouTube(client, state);
-    out.tiktok = await checkTikTok(client, state);
-    store.save(state);
-    return out;
+    return await store.exclusive(async () => {
+      const state = store.load();
+      // Instagram goes via Make webhook, scraper removed.
+      const out = { youtube: { ...ZERO }, tiktok: { ...ZERO } };
+      out.youtube = await checkYouTube(client, state);
+      out.tiktok = await checkTikTok(client, state);
+      store.save(state);
+      return out;
+    });
   } finally {
     running = false;
   }
 }
 
+function pollMinutes() {
+  const mins = Number(config.reposter.pollMinutes);
+  return Number.isFinite(mins) ? Math.max(2, mins) : 10;
+}
+
 function startReposter(client) {
-  const mins = Math.max(2, config.reposter.pollMinutes || 10);
+  const mins = pollMinutes();
   const run = () => runReposterOnce(client);
   run().catch(e => logger.warn('[reposter]', e.message));
   if (timer) clearInterval(timer);

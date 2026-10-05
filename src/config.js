@@ -33,7 +33,8 @@ const config = {
   },
 
   modcall: {
-    panelChannelId: process.env.MODCALL_CHANNEL_ID || '1342958464355536967',
+    // Empty = disabled until configured (never arm on someone else's hardcoded IDs).
+    panelChannelId: process.env.MODCALL_CHANNEL_ID || '',
     staffChannelId: process.env.MODCALL_STAFF_CHANNEL_ID || '',
   },
 
@@ -50,7 +51,8 @@ const config = {
   },
 
   honeypot: {
-    trapChannelId: process.env.HONEYPOT_CHANNEL_ID || '1552843652307492935',
+    // Empty trap = disabled until configured (never arm on someone else's hardcoded IDs).
+    trapChannelId: process.env.HONEYPOT_CHANNEL_ID || '',
     logChannelId: process.env.HONEYPOT_LOG_CHANNEL_ID || '',
     // Public trap: first message in channel = punishment.
     // action: timeout (mute) | kick | ban; timeoutHours = mute duration.
@@ -157,7 +159,7 @@ const config = {
 
   // Private voice (VoiceMaster-style): joined generator -> own room + panel
   priv: {
-    generatorId: process.env.PRIV_GENERATOR_ID || '1555650624912236645',
+    generatorId: process.env.PRIV_GENERATOR_ID || '', // empty = private rooms disabled
     categoryId: process.env.PRIV_CATEGORY_ID || '',
     defaultLimit: Number(process.env.PRIV_DEFAULT_LIMIT || 0),
     defaultBitrate: Number(process.env.PRIV_DEFAULT_BITRATE || 64),

@@ -15,6 +15,7 @@ const MODAL_ID = 'modcall:modal';
 
 // sessions in memory + persist mapping staffMessageId -> { userId, threadId, open }
 let sessions = new Map(); // userId -> { staffMessageId, threadId }
+const inflight = new Set(); // userIds with ticket creation in flight (double-modal race guard)
 
 function loadSessions() {
   const data = store.load();
@@ -56,6 +57,12 @@ async function handleInteraction(interaction, client) {
   // Modal submit -> post to staff
   if (interaction.isModalSubmit() && interaction.customId === MODAL_ID) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    // Re-check AFTER defer: two modals submitted at once must not make two tickets.
+    if (sessions.has(interaction.user.id) || inflight.has(interaction.user.id)) {
+      await interaction.editReply('📩 You already have an open ticket. Wait for a reply in DM.');
+      return true;
+    }
+    inflight.add(interaction.user.id);
     try {
       const subject = interaction.fields.getTextInputValue('subject');
       const body = interaction.fields.getTextInputValue('body');
@@ -90,6 +97,8 @@ async function handleInteraction(interaction, client) {
     } catch (e) {
       logger.warn('[modcall] submit failed', e.message);
       await interaction.editReply('❌ Could not create ticket (no access to staff channel?).').catch(() => {});
+    } finally {
+      inflight.delete(interaction.user.id);
     }
     return true;
   }
@@ -132,16 +141,29 @@ async function handleInteraction(interaction, client) {
     }
 
     // take -> thread under staff message (reuse existing)
-    let thread = sess.threadId ? await client.channels.fetch(sess.threadId).catch(() => null) : null;
+    // Re-read session state: two mods clicking Take at once must not make two threads.
+    const fresh = sessions.get(userId);
+    if (!fresh) { await interaction.reply({ content: 'Ticket already closed.', flags: MessageFlags.Ephemeral }); return true; }
+    let thread = fresh.threadId ? await client.channels.fetch(fresh.threadId).catch(() => null) : null;
     if (!thread?.isThread?.()) {
       thread = await interaction.message.startThread({ name: `modcall-${userId.slice(-4)}`, autoArchiveDuration: 1440 }).catch(() => null);
     } else if (thread.archived) {
       await thread.setArchived(false).catch(() => {});
     }
     if (thread) {
-      sess.threadId = thread.id;
-      sessions.set(userId, sess);
+      fresh.threadId = thread.id;
+      sessions.set(userId, fresh);
       persistSessions();
+      // Take is one-shot: strip it from the staff message so a second mod can't orphan a thread.
+      try {
+        const staffMsg = await interaction.channel.messages.fetch(fresh.staffMessageId).catch(() => null);
+        if (staffMsg && staffMsg.author.id === client.user.id) {
+          const closeRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${BTN_CLOSE}:${userId}`).setLabel('Close').setStyle(ButtonStyle.Danger),
+          );
+          await staffMsg.edit({ components: [closeRow] }).catch(() => {});
+        }
+      } catch {}
       await thread.send(`🧵 Thread for ticket <@${userId}>. Write here -- bot will relay to user in DM.`);
       await interaction.reply({ content: `✅ Thread created: ${thread}`, flags: MessageFlags.Ephemeral });
     } else {
@@ -184,12 +206,20 @@ async function relayUserDm(message, client) {
     if (sess.threadId) {
       const thread = await client.channels.fetch(sess.threadId).catch(() => null);
       if (thread?.isTextBased()) { await thread.send(text); return; }
+      // Thread gone -- drop the dead pointer, fall through to staff message.
+      sess.threadId = null;
+      sessions.set(message.author.id, sess);
+      persistSessions();
     }
     const staffMsg = await staff.messages.fetch(sess.staffMessageId).catch(() => null);
     if (staffMsg) {
       await staffMsg.reply(text).catch(() => staff.send(text));
     } else {
-      await staff.send(text);
+      await staff.send(text).catch(async () => {
+        // Staff channel AND message both gone -- ticket is dead, prune it.
+        sessions.delete(message.author.id);
+        persistSessions();
+      });
     }
   } catch (e) { logger.warn('[modcall] relay failed', e.message); }
 }

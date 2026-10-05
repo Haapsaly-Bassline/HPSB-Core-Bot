@@ -33,11 +33,15 @@ module.exports = {
         const handled = await priv.handleInteraction(interaction, client);
         if (handled) return;
       }
-      // Buttons / modals / selects -> delegate to modcall module
-      if (interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu()) {
+      // Buttons / modals -> delegate to modcall module (it handles no string selects;
+      // passing those in would time them out silently, so gate them out here)
+      if (interaction.isButton() || interaction.isModalSubmit()) {
         const modcall = require('../modules/modcall/handler');
         const handled = await modcall.handleInteraction(interaction, client);
         if (handled) return;
+      }
+      if (interaction.isStringSelectMenu() && interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ Unknown menu.', flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     } catch (e) {
       logger.error('[interaction]', e?.stack || e);

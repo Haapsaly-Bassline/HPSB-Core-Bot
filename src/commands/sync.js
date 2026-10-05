@@ -1,8 +1,10 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, MessageFlags } = require('discord.js');
-const { requireMod } = require('../utils/mod');
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
+const { requireMod, replyError } = require('../utils/mod');
 
 function line(name, r) {
-  return `**${name}:** found ${r.found}, posted ${r.posted}`;
+  if (!r) return `**${name}:** error`;
+  if (r.skipped) return `**${name}:** skipped (previous run still active)`;
+  return `**${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}`;
 }
 
 module.exports = {
@@ -14,16 +16,21 @@ module.exports = {
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const backfill = interaction.options.getInteger('backfill') || 0;
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    } catch {
+      return; // interaction already dead
+    }
     try {
       const { runHpsbOnce } = require('../modules/site-publisher/poller');
       const { runReposterOnce } = require('../modules/reposter/poller');
       const h = await runHpsbOnce(client, { backfill });
       const r = await runReposterOnce(client);
       if (!h || !r) {
-        await interaction.editReply('⏳ Previous sync is still running - try again in a minute.');
+        await replyError(interaction, '❌ Sync error (runner failed).');
         return;
       }
+      const { EmbedBuilder } = require('discord.js');
       const e = new EmbedBuilder()
         .setColor(0x7c3aed).setTitle('🔄 Sync').setTimestamp()
         .setDescription([
@@ -37,7 +44,7 @@ module.exports = {
         .setFooter({ text: `${backfill ? `backfill=${backfill} • ` : ''}Haapsaly Bassline` });
       await interaction.editReply({ embeds: [e] });
     } catch (err) {
-      await interaction.editReply(`❌ Sync error: ${String(err.message || err).slice(0, 300)}`).catch(() => {});
+      await replyError(interaction, `❌ Sync error: ${String(err.message || err).slice(0, 300)}`);
     }
   },
 };

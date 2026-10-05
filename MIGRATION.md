@@ -8,7 +8,7 @@ Current PC blocks Discord voice UDP and half of media (YouTube/IG/SC).
 If host PC is on the same network — same issue. 2-minute check:
 
 1. Move bot folder, `npm install`, write `.env`, run `npm start`.
-2. Join a regular voice channel, run `/voice-debug`.
+2. Join a regular voice channel, run `/play` with a radio URL or `/perms` to check voice connectivity.
 3. Check verdict:
    - `Connection: ready` + packets + audible → network OK, proceed;
    - `signalling` + abort → UDP blocked here too, fix network/hosting, not the bot.
@@ -36,7 +36,7 @@ pm2 start src/index.js --name hpsb
 pm2 save
 pm2-startup install   # once, from PowerShell as admin
 ```
-Post-reboot check: `pm2 list` → hpsb online. Logs: `pm2 logs hpsb`. Same logs in Discord via `/logs`.
+Post-reboot check: `pm2 list` → hpsb online. Logs: `pm2 logs hpsb` (also `data/bot.log`).
 
 Option B — Windows Task Scheduler (no PM2):
 - Action: start program `C:\Program Files\nodejs\node.exe`

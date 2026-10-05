@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { requireMod, resolveMember, protectedTarget, modLog } = require('../utils/mod');
+const { requirePower, resolveMember, botMember, protectedTarget, modLog, replyError } = require('../utils/mod');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -9,11 +9,11 @@ module.exports = {
     .addUserOption(o => o.setName('user').setDescription('Who').setRequired(true))
     .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(false)),
   async execute(interaction, client) {
-    if (!await requireMod(interaction)) return;
+    if (!await requirePower(interaction, PermissionFlagsBits.KickMembers, 'Kick Members')) return;
     const user = interaction.options.getUser('user', true);
     const reason = interaction.options.getString('reason') || 'No reason';
     const member = await resolveMember(interaction, user);
-    const blocked = member ? protectedTarget(member, interaction.user.id) : 'User is not on the server.';
+    const blocked = member ? protectedTarget(member, interaction.member, await botMember(interaction)) : 'User is not on the server.';
     if (blocked) { await interaction.reply({ content: `❌ ${blocked}`, flags: MessageFlags.Ephemeral }); return; }
     try {
       await member.kick(`Kick by ${interaction.user.tag}: ${reason}`);
@@ -22,7 +22,7 @@ module.exports = {
       await interaction.reply({ embeds: [emb] });
       await modLog(client, { embeds: [emb] });
     } catch {
-      await interaction.reply({ content: '❌ Could not kick (bot role too low?).', flags: MessageFlags.Ephemeral });
+      await replyError(interaction, '❌ Could not kick (bot role too low?).');
     }
   },
 };

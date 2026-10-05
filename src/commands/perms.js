@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
+const { requireMod } = require('../utils/mod');
 
 const WANT_GUILD = [
   ['Administrator', PermissionFlagsBits.Administrator],
@@ -27,9 +28,12 @@ module.exports = {
     .setDescription('Check the bot permissions (server + voice + mutes)')
     .addChannelOption(o => o.setName('channel').setDescription('Voice channel to check (your current one by default)').setRequired(false)),
   async execute(interaction, client) {
+    if (!await requireMod(interaction)) return;
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const me = await interaction.guild.members.fetch(client.user.id).catch(() => null);
     if (!me) { await interaction.editReply('❌ I cannot see myself on the server.'); return; }
+    // Full channel list, not just cache (uncached voices would vanish from the audit)
+    try { await interaction.guild.channels.fetch().catch(() => null); } catch {}
 
     const gLines = WANT_GUILD.map(([n, f]) => `${me.permissions.has(f) ? '✅' : '❌'} ${n}`);
     const isAdmin = me.permissions.has(PermissionFlagsBits.Administrator);

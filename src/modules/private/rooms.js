@@ -96,7 +96,17 @@ async function handleVoiceState(oldS, newS, client) {
         const d = state(); delete d.privates[existing]; save(d);
       }
     }
+    // In-flight creation guard: rapid rejoins fire double voiceStateUpdate --
+    // without this two rooms get created and one is orphaned forever.
+    if (creating.has(member.id)) return;
+    creating.add(member.id);
     try {
+      // re-check after acquiring the lock (another run may have finished first)
+      const again = myRoom(member.id);
+      if (again) {
+        const ch = await client.channels.fetch(again).catch(() => null);
+        if (ch) { try { await member.voice.setChannel(ch); } catch {} return; }
+      }
       const gen = await client.channels.fetch(genId).catch(() => null);
       const parent = config.priv.categoryId || gen?.parentId || null;
       const room = await member.guild.channels.create({
@@ -110,12 +120,15 @@ async function handleVoiceState(oldS, newS, client) {
         ],
       });
       const msg = await room.send({ embeds: [panelEmbed(member.user)], components: panelRows(false) }).catch(() => null);
-      const d = state();
-      d.privates[room.id] = { ownerId: member.id, msgId: msg?.id || null };
-      save(d);
+      await store.exclusive(async () => {
+        const d = state();
+        d.privates[room.id] = { ownerId: member.id, msgId: msg?.id || null };
+        save(d);
+      });
       try { await member.voice.setChannel(room); } catch {}
       logger.info(`[priv] created ${room.id} for ${member.user.tag}`);
     } catch (e) { logger.warn('[priv] create failed', e.message); }
+    finally { creating.delete(member.id); }
     return;
   }
 
@@ -138,12 +151,17 @@ async function handleVoiceState(oldS, newS, client) {
   if (rec.ownerId && !members.some(m => m.id === rec.ownerId)) {
     rec.ownerId = members[0].id;
     save(d);
+    try {
+      await ch.permissionOverwrites.edit(members[0].id, { Connect: true, ManageChannels: true, MoveMembers: true });
+    } catch {}
     await refreshPanel(client, leftId);
     ch.send(`➡️ Owner left -- room passed to ${members[0]}.`).catch(() => {});
   }
 }
 
-// owner or bot admin
+const creating = new Set(); // userId with room creation in flight (rejoin race guard)
+
+// owner, bot admin, or ManageChannels staff -- uniform on every control path.
 function canControl(interaction, ownerId) {
   if (interaction.user.id === ownerId) return true;
   if (config.adminIds.includes(interaction.user.id)) return true;
@@ -152,10 +170,18 @@ function canControl(interaction, ownerId) {
 }
 
 async function roomOf(interaction, client) {
-  // room = voice where clicker sits (must be their private)
+  const d = state();
+  // Panel lives in the room's own voice-text chat: prefer the panel's channel,
+  // so clicking room B's panel while sitting in room A can't affect A.
+  const panelId = interaction.channelId;
+  if (panelId && d.privates[panelId]) {
+    const ch = await client.channels.fetch(panelId).catch(() => null);
+    if (ch) return { channel: ch, rec: d.privates[panelId] };
+    return { error: 'Room not found.' };
+  }
+  // Fallback: room where the clicker sits (must be their private).
   const voiceId = interaction.member?.voice?.channelId;
   if (!voiceId) return { error: 'Join your private room.' };
-  const d = state();
   const rec = d.privates[voiceId];
   if (!rec) return { error: 'This is not a bot private room.' };
   const ch = await client.channels.fetch(voiceId).catch(() => null);
@@ -222,9 +248,9 @@ async function handleInteraction(interaction, client) {
     if (interaction.customId.startsWith(MODAL_RENAME)) {
       const channelId = interaction.customId.split(':').pop();
       const d = state();
-      if (d.privates[channelId]?.ownerId !== interaction.user.id && !config.adminIds.includes(interaction.user.id)) {
-        await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
-      }
+      const rec = d.privates[channelId];
+      if (!rec) { await interaction.reply({ content: '❌ Room not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      if (!canControl(interaction, rec.ownerId)) { await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
       const name = interaction.fields.getTextInputValue('name').trim();
       const ch = await client.channels.fetch(channelId).catch(() => null);
       if (!ch) { await interaction.reply({ content: '❌ Room not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
@@ -235,9 +261,9 @@ async function handleInteraction(interaction, client) {
     if (interaction.customId.startsWith(MODAL_LIMIT)) {
       const channelId = interaction.customId.split(':').pop();
       const d = state();
-      if (d.privates[channelId]?.ownerId !== interaction.user.id && !config.adminIds.includes(interaction.user.id)) {
-        await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
-      }
+      const rec = d.privates[channelId];
+      if (!rec) { await interaction.reply({ content: '❌ Room not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      if (!canControl(interaction, rec.ownerId)) { await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
       const n = Number(interaction.fields.getTextInputValue('limit').trim());
       if (!Number.isInteger(n) || n < 0 || n > 99) {
         await interaction.reply({ content: '❌ Number 0–99.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
@@ -251,15 +277,31 @@ async function handleInteraction(interaction, client) {
   }
 
   if (interaction.isUserSelectMenu()) {
-    const [kind, channelId] = [interaction.customId.startsWith('priv:dogive') ? 'give' : 'kick', interaction.customId.split(':').pop()];
+    const customId = interaction.customId || '';
+    let kind = null;
+    if (customId.startsWith('priv:dogive')) kind = 'give';
+    else if (customId.startsWith('priv:dokick')) kind = 'kick';
+    else return false;
+    const channelId = customId.split(':').pop();
     const d = state();
-    if (d.privates[channelId]?.ownerId !== interaction.user.id && !config.adminIds.includes(interaction.user.id)) {
-      await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true;
-    }
+    const rec = d.privates[channelId];
+    if (!rec) { await interaction.reply({ content: '❌ Room not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+    if (!canControl(interaction, rec.ownerId)) { await interaction.reply({ content: '❌ Owner only.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
     const targetId = interaction.values?.[0];
     if (!targetId) { await interaction.deferUpdate().catch(() => {}); return true; }
     if (kind === 'give') {
-      d.privates[channelId].ownerId = targetId;
+      const target = await interaction.guild.members.fetch(targetId).catch(() => null);
+      if (!target) { await interaction.reply({ content: '❌ User left the server.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      const ch = await client.channels.fetch(channelId).catch(() => null);
+      if (!ch) { await interaction.reply({ content: '❌ Room not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
+      rec.ownerId = targetId;
+      try {
+        await ch.permissionOverwrites.edit(targetId, { Connect: true, ManageChannels: true, MoveMembers: true });
+        const oldOwner = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+        if (oldOwner && oldOwner.id !== targetId) {
+          await ch.permissionOverwrites.edit(oldOwner.id, { Connect: true, ManageChannels: false, MoveMembers: false }).catch(() => {});
+        }
+      } catch {}
       save(d);
       await refreshPanel(client, channelId);
       await interaction.reply({ content: `➡️ New owner: <@${targetId}>`, flags: MessageFlags.Ephemeral }).catch(() => {});

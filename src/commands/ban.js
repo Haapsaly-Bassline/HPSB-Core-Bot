@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { requireMod, resolveMember, protectedTarget, modLog } = require('../utils/mod');
+const { requirePower, resolveMember, botMember, protectedTarget, modLog, replyError } = require('../utils/mod');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -10,17 +10,17 @@ module.exports = {
     .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(false))
     .addIntegerOption(o => o.setName('delete_days').setDescription('Delete messages from the last N days (0–7)').setMinValue(0).setMaxValue(7)),
   async execute(interaction, client) {
-    if (!await requireMod(interaction)) return;
+    if (!await requirePower(interaction, PermissionFlagsBits.BanMembers, 'Ban Members')) return;
     const user = interaction.options.getUser('user', true);
     const reason = interaction.options.getString('reason') || 'No reason';
     const member = await resolveMember(interaction, user);
-    // Can ban user who left -- then no hierarchy checks, only bot admins
-    if (member) {
-      const blocked = protectedTarget(member, interaction.user.id);
-      if (blocked) { await interaction.reply({ content: `❌ ${blocked}`, flags: MessageFlags.Ephemeral }); return; }
-    } else if (require('../config').config.adminIds.includes(user.id)) {
-      await interaction.reply({ content: '❌ Forbidden: bot owner.', flags: MessageFlags.Ephemeral }); return;
+    // Absent users can't be hierarchy-checked -- refuse instead of blind banning.
+    if (!member) {
+      await interaction.reply({ content: '❌ User is not on the server. I cannot verify hierarchy -- ask an administrator to ban manually.', flags: MessageFlags.Ephemeral });
+      return;
     }
+    const blocked = protectedTarget(member, interaction.member, await botMember(interaction));
+    if (blocked) { await interaction.reply({ content: `❌ ${blocked}`, flags: MessageFlags.Ephemeral }); return; }
     try {
       await interaction.guild.members.ban(user.id, {
         reason: `Ban by ${interaction.user.tag}: ${reason}`,
@@ -31,7 +31,7 @@ module.exports = {
       await interaction.reply({ embeds: [emb] });
       await modLog(client, { embeds: [emb] });
     } catch {
-      await interaction.reply({ content: '❌ Could not ban (bot role too low?).', flags: MessageFlags.Ephemeral });
+      await replyError(interaction, '❌ Could not ban (bot role too low?).');
     }
   },
 };

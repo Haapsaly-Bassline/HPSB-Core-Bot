@@ -49,12 +49,23 @@ function startWebhook(client) {
     const mode = req.query['hub.mode'];
     const challenge = req.query['hub.challenge'];
     if ((mode === 'subscribe' || mode === 'unsubscribe' || mode === 'denied') && challenge) {
-      logger.info(`[pubsub] verify ${mode}: ${req.query['hub.topic']}`);
+      // Verify the topic is one of OUR channels -- otherwise anyone could confirm
+      // a forged subscription and push fake entries to our feed.
+      const topic = String(req.query['hub.topic'] || '');
+      let channelId = '';
+      try { channelId = new URL(topic).searchParams.get('channel_id') || ''; } catch {}
+      const known = (config.reposter.youtube || []).some(x => x.key === channelId);
+      if (mode === 'subscribe' && !known) {
+        logger.warn('[pubsub] verify REFUSED for unknown topic:', topic.slice(0, 120));
+        return res.status(404).send('unknown topic');
+      }
+      logger.info(`[pubsub] verify ${mode}: ${topic}`);
       return res.status(200).send(String(challenge));
     }
     return res.status(400).send('bad verify');
   });
   const atomParser = new XMLParser({ ignoreAttributes: false });
+  const inflight = new Set(); // videoId being processed right now (concurrent dup delivery guard)
   app.post('/hook/youtube', async (req, res) => {
     res.status(200).send('ok'); // respond immediately, process later
     try {
@@ -66,14 +77,21 @@ function startWebhook(client) {
       const feedChannel = String(feed?.feed?.['yt:channelId'] || '');
       const { publishYouTubeVideo } = require('../reposter/poller');
       for (const en of entries.slice(0, 5)) {
-        const videoId = en['yt:videoId'];
-        if (!videoId) continue;
-        await publishYouTubeVideo(client, {
-          videoId,
-          title: en.title || '',
-          author: en?.author?.name || '',
-          channelId: feedChannel,
-        });
+        const videoId = String(en?.['yt:videoId'] || '').trim();
+        if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) continue; // garbage/object instead of id
+        const key = `${feedChannel}:${videoId}`;
+        if (inflight.has(key)) continue;
+        inflight.add(key);
+        try {
+          await publishYouTubeVideo(client, {
+            videoId,
+            title: typeof en.title === 'string' ? en.title : '',
+            author: typeof en?.author?.name === 'string' ? en.author.name : '',
+            channelId: feedChannel,
+          });
+        } finally {
+          inflight.delete(key);
+        }
       }
     } catch (e) { logger.warn('[pubsub]', e.message); }
   });
@@ -140,6 +158,7 @@ function startWebhook(client) {
 }
 
 // YT channels PubSubHubbub subscription (leases up to 5 days -- renew every 4 days)
+let subTimer = null;
 async function subscribeYouTube(client) {
   const base = (config.webhook.publicBase || '').replace(/\/$/, '');
   const channels = config.reposter.youtube.map(x => x.key).filter(Boolean);
@@ -164,7 +183,9 @@ async function subscribeYouTube(client) {
     }
   };
   await run().catch(() => {});
-  setInterval(() => run().catch(() => {}), 4 * 24 * 3600 * 1000).unref?.();
+  if (subTimer) clearInterval(subTimer);
+  subTimer = setInterval(() => run().catch(() => {}), 4 * 24 * 3600 * 1000);
+  subTimer.unref?.();
 }
 
 module.exports = { startWebhook };
