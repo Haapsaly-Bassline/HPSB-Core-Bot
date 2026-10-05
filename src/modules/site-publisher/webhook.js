@@ -125,8 +125,18 @@ function startWebhook(client) {
     }
   });
 
-  // Listen on all interfaces: Caddy may be local or on adjacent host
-  app.listen(port, () => logger.info(`[webhook] listening :${port} -> #${channelId}`));
+  // Listen on all interfaces: Caddy may be local or on adjacent host.
+  // EADDRINUSE = stale duplicate bot instance running: fail LOUD and fast
+  // instead of dying with an unhandled 'error' throw and zero context.
+  const server = app.listen(port, () => logger.info(`[webhook] listening :${port} -> #${channelId}`));
+  server.on('error', (e) => {
+    if (e?.code === 'EADDRINUSE') {
+      logger.error(`[webhook] port ${port} busy -- another bot instance is already running. Kill the stale node process first, then start again.`);
+    } else {
+      logger.error('[webhook] listen failed:', e?.message || e);
+    }
+    process.exit(1);
+  });
 }
 
 // YT channels PubSubHubbub subscription (leases up to 5 days -- renew every 4 days)
