@@ -17,6 +17,15 @@ function parseIds(str) {
   return str.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+// Module switch: on/true/1 = on; off/false/0 = off; missing = defaultValue.
+function parseSwitch(str, defaultValue = true) {
+  if (str === undefined || str === null || String(str).trim() === '') return defaultValue;
+  const v = String(str).trim().toLowerCase();
+  if (['on', 'true', '1', 'yes', 'enable', 'enabled'].includes(v)) return true;
+  if (['off', 'false', '0', 'no', 'disable', 'disabled'].includes(v)) return false;
+  return defaultValue;
+}
+
 const config = {
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID,
@@ -24,6 +33,17 @@ const config = {
   modRoleId: process.env.MOD_ROLE_ID,
   logChannelId: process.env.LOG_CHANNEL_ID || '',
   adminIds: parseIds(process.env.ADMIN_DISCORD_IDS),
+
+  // Module defaults (.env overrides; Discord /modules overrides persist on top).
+  modules: {
+    music: parseSwitch(process.env.MODULE_MUSIC, true),
+    publisher: parseSwitch(process.env.MODULE_PUBLISHER, true),
+    automod: parseSwitch(process.env.MODULE_AUTOMOD, true),
+    honeypot: parseSwitch(process.env.MODULE_HONEYPOT, true),
+    modcall: parseSwitch(process.env.MODULE_MODCALL, true),
+    stats: parseSwitch(process.env.MODULE_STATS, true),
+    private: parseSwitch(process.env.MODULE_PRIVATE, true),
+  },
 
   // For future OAuth integration with website (not used by bot directly yet)
   siteAuth: {
@@ -195,4 +215,4 @@ function validate() {
   }
 }
 
-module.exports = { config, validate };
+module.exports = { config, validate, parseSwitch };

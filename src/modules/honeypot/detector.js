@@ -81,14 +81,19 @@ async function punish(client, message, reason, opts = {}) {
 
 async function handleMessage(message, client) {
   const content = message.content || '';
+  const { isEnabled } = require('../manager');
+  const huntOn = isEnabled('honeypot');
+  const autoOn = isEnabled('automod');
+  if (!huntOn && !autoOn) return;
 
 // 1) Trap: public channel, posting forbidden -- first message = punishment.
 // Staff exempt (owner, mod role, ManageMessages) -- so you don't mute yourself setting perms.
-  if (config.honeypot.trapChannelId && message.channelId === config.honeypot.trapChannelId) {
+  if (huntOn && config.honeypot.trapChannelId && message.channelId === config.honeypot.trapChannelId) {
     if (isExempt(message.member, message.author.id)) return;
     await punish(client, message, 'message in honeypot trap', { trap: true });
     return;
   }
+  if (!autoOn) return;
 
   // 2) Flood: N messages in M seconds
   if (hitFlood(message)) {

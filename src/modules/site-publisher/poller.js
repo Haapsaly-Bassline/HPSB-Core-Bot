@@ -484,4 +484,10 @@ function startSitePoller(client) {
   logger.info(`[hpsb] polling releases/events/posts every ${mins}m`);
 }
 
-module.exports = { startSitePoller, runHpsbOnce, pickTargets, skippedByFilter, dateMs, guidStr, safeDate };
+function stopSitePoller() {
+  if (timer) { clearInterval(timer); timer = null; }
+  running = false;
+  logger.info('[hpsb] stopped');
+}
+
+module.exports = { startSitePoller, stopSitePoller, runHpsbOnce, pickTargets, skippedByFilter, dateMs, guidStr, safeDate };

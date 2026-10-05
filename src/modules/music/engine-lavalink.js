@@ -73,7 +73,8 @@ class LavalinkEngine {
       autoSkipOnResolveError: true,
     });
 
-    this.client.on('raw', (d) => { this.manager.sendRawData(d).catch(() => {}); });
+    this._rawHandler = (d) => { this.manager.sendRawData(d).catch(() => {}); };
+    this.client.on('raw', this._rawHandler);
 
     // Without these handlers node crash brings down ENTIRE process (unhandled 'error')
     this.manager.nodeManager.on('error', (node, err) => {
@@ -102,6 +103,14 @@ class LavalinkEngine {
 
   getPlayer(guildId) {
     return this.manager?.getPlayer(guildId) || null;
+  }
+
+  // Detach from client (for music module stop/restart -- avoids duplicate raw listeners).
+  detach() {
+    try {
+      if (this._rawHandler) this.client.removeListener('raw', this._rawHandler);
+    } catch {}
+    this._rawHandler = null;
   }
 
   // True when at least one node has a live websocket. manager.init() does NOT

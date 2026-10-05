@@ -289,4 +289,10 @@ function startReposter(client) {
   logger.info(`[reposter] polling every ${mins}m (yt:${config.reposter.youtube.length} tt:${config.reposter.tiktok.length})`);
 }
 
-module.exports = { startReposter, runReposterOnce, publishYouTubeVideo, ytPickTargets, skippedByFilter };
+function stopReposter() {
+  if (timer) { clearInterval(timer); timer = null; }
+  running = false;
+  logger.info('[reposter] stopped');
+}
+
+module.exports = { startReposter, stopReposter, runReposterOnce, publishYouTubeVideo, ytPickTargets, skippedByFilter };

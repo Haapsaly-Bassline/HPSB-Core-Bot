@@ -17,6 +17,17 @@ const SOURCE_STYLE = [
   { match: 'twitch', color: 0x9146ff, emoji: '🟣', tag: 'Twitch' },
 ];
 
+// Module-owned HTTP server handle (null until startWebhook runs).
+let httpServer = null;
+
+function stopWebhook() {
+  if (httpServer) {
+    try { httpServer.close(); } catch {}
+    httpServer = null;
+    logger.info('[webhook] stopped');
+  }
+}
+
 function styledEmbed({ title, description, url, image, source }) {
   const s = String(source || '').toLowerCase();
   const st = SOURCE_STYLE.find(x => s.includes(x.match));
@@ -151,8 +162,8 @@ function startWebhook(client) {
   // Listen on all interfaces: Caddy may be local or on adjacent host.
   // EADDRINUSE = stale duplicate bot instance running: fail LOUD and fast
   // instead of dying with an unhandled 'error' throw and zero context.
-  const server = app.listen(port, () => logger.info(`[webhook] listening :${port} -> #${channelId}`));
-  server.on('error', (e) => {
+  httpServer = app.listen(port, () => logger.info(`[webhook] listening :${port} -> #${channelId}`));
+  httpServer.on('error', (e) => {
     if (e?.code === 'EADDRINUSE') {
       logger.error(`[webhook] port ${port} busy -- another bot instance is already running. Kill the stale node process first, then start again.`);
     } else {
@@ -193,4 +204,4 @@ async function subscribeYouTube(client) {
   subTimer.unref?.();
 }
 
-module.exports = { startWebhook };
+module.exports = { startWebhook, stopWebhook };

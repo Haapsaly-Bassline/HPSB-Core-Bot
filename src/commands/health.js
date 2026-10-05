@@ -88,11 +88,21 @@ function checkEnv() {
       'DISCORD_CLIENT_SECRET', 'LOG_CHANNEL_ID', 'TIKTOK_MAP', 'INSTAGRAM_MAP', 'SESSION_SECRET',
       'PRIV_CATEGORY_ID', 'STATS_MEMBERS_CHANNEL_ID', 'STATS_HUMANS_CHANNEL_ID', 'STATS_BOTS_CHANNEL_ID',
       'STATS_ROLES_CHANNEL_ID', 'STATS_CHANNELS_CHANNEL_ID', 'STATS_ROLE_CHANNEL_ID', 'STATS_ROLE_ID',
-      'STATS_ONLINE_CHANNEL_ID', 'STATS_OFFLINE_CHANNEL_ID', 'STATS_BOOSTS_CHANNEL_ID']);
+      'STATS_ONLINE_CHANNEL_ID', 'STATS_OFFLINE_CHANNEL_ID', 'STATS_BOOSTS_CHANNEL_ID',
+      'MODULE_MUSIC', 'MODULE_PUBLISHER', 'MODULE_AUTOMOD', 'MODULE_HONEYPOT', 'MODULE_MODCALL', 'MODULE_STATS', 'MODULE_PRIVATE']);
     const need = missing.filter(k => !optional.has(k));
     if (!need.length) return ['✅ .env complete'];
     return [`❌ .env missing: ${need.join(', ')}`];
   } catch { return ['⚪ .env.example not readable']; }
+}
+
+function checkModules() {
+  try {
+    const { status } = require('../modules/manager');
+    return status().map(s => `${s.running ? '🟢' : (s.enabled ? '🟡' : '⚪')} ${s.label}`);
+  } catch {
+    return ['⚪ modules: manager unavailable'];
+  }
 }
 
 function checkStore() {
@@ -124,6 +134,7 @@ module.exports = {
         { name: '📡 Channels', value: channels.join('\n').slice(0, 1000) || '-' },
         { name: '🌐 API', value: apis.join('\n').slice(0, 500) || '-' },
         { name: '🔊 Voice & Music', value: [...checkVoice(), ...lavalink].join('\n') },
+        { name: '🧩 Modules', value: checkModules().join('\n').slice(0, 500) || '-' },
         { name: '⚙️ Config & Store', value: [...checkEnv(), ...checkStore()].join('\n').slice(0, 500) },
       )
       .setFooter({ text: 'Haapsaly Bassline • Health' });

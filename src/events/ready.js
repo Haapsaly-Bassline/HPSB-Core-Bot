@@ -8,63 +8,12 @@ module.exports = {
   async execute(client) {
     logger.info(`[ready] Logged in as ${client.user.tag}`);
 
-// Lavalink -- ONLY AFTER ready: client.user exists, required by lavalink-client.
-// Bot exclusively on lavalink: no legacy fallback. If failed -- music
-// unavailable, commands reply "Music engine not initialized".
-    if (config.music.engine === 'lavalink') {
-      try {
-        const { LavalinkEngine } = require('../modules/music/engine-lavalink');
-        const engine = await new LavalinkEngine(client, config.music).init();
-        client.music = engine;
-        client.lavalink = engine;
-        if (engine.available()) {
-          logger.info('[lavalink] ready (client.music = lavalink)');
-        } else {
-          // init() does NOT throw when the node is unreachable, so without this
-          // check the bot logs "ready" and every /play dies with cryptic "No available Node".
-          logger.error('[lavalink] NO CONNECTED NODES: start Lavalink (java -jar Lavalink.jar in lavalink folder) and wait for "ready to accept connections". Retrying every 30s; music commands will fail until then.');
-          const timer = setInterval(async () => {
-            try { await engine.manager.init({ id: client.user.id, username: client.user.username || client.user.tag }); } catch {}
-            if (engine.available()) {
-              clearInterval(timer);
-              logger.info('[lavalink] node connected on retry (client.music = lavalink)');
-            }
-          }, 30000);
-          timer.unref?.();
-        }
-      } catch (e) {
-        logger.error('[lavalink] init failed:', e?.message || e?.stack || e);
-        logger.error('[lavalink] music UNAVAILABLE: check LAVALINK_* in .env and that java -jar Lavalink.jar is running');
-      }
-    } else {
-      logger.error(`[music] MUSIC_ENGINE=${config.music.engine} no longer supported -- legacy removed, set lavalink`);
-    }
-
-    // Start pollers lazily so index stays lean
+    // All subsystems boot through the Module Manager (enable/disable via
+    // MODULE_* env + /modules overrides). One module never takes down the rest.
     try {
-      const { startReposter } = require('../modules/reposter/poller');
-      startReposter(client);
-    } catch (e) { logger.warn('[reposter] disabled:', e.message); }
-
-    try {
-      const { startSitePoller } = require('../modules/site-publisher/poller');
-      startSitePoller(client);
-    } catch (e) { logger.warn('[site] disabled:', e.message); }
-
-    try {
-      const { startWebhook } = require('../modules/site-publisher/webhook');
-      startWebhook(client);
-    } catch (e) { logger.warn('[webhook] disabled:', e.message); }
-
-    try {
-      const { ensureTrapWarning } = require('../modules/honeypot/detector');
-      await ensureTrapWarning(client);
-    } catch (e) { logger.warn('[honeypot] disabled:', e.message); }
-
-    try {
-      const { startStats } = require('../modules/stats/counter');
-      startStats(client);
-    } catch (e) { logger.warn('[stats] disabled:', e.message); }
+      const { startAll } = require('../modules/manager');
+      await startAll(client);
+    } catch (e) { logger.warn('[modules] startAll failed:', e.message); }
 
     // Self-check permissions at startup -- no placeholders, live from API
     try {

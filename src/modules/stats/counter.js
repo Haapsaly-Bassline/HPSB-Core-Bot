@@ -161,4 +161,10 @@ async function snapshot(client) {
   };
 }
 
-module.exports = { startStats, snapshot, TYPES, channelIdFor, channelIdsFor, templateFor, isEnabled, renderName, ChannelType };
+function stopStats() {
+  if (timer) { clearInterval(timer); timer = null; }
+  running = false;
+  logger.info('[stats] stopped');
+}
+
+module.exports = { startStats, stopStats, snapshot, TYPES, channelIdFor, channelIdsFor, templateFor, isEnabled, renderName, ChannelType };
