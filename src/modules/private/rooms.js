@@ -109,12 +109,16 @@ async function handleVoiceState(oldS, newS, client) {
       }
       const gen = await client.channels.fetch(genId).catch(() => null);
       const parent = config.priv.categoryId || gen?.parentId || null;
+      // Clamp to Discord limits: userLimit 0..99, bitrate 8..384 kbps.
+      // Invalid config must not strand the user in the generator silently.
+      const limit = Math.min(Math.max(Number(config.priv.defaultLimit) || 0, 0), 99);
+      const bitrateKbps = Math.min(Math.max(Number(config.priv.defaultBitrate) || 64, 8), 384);
       const room = await member.guild.channels.create({
         name: roomName(member.user),
         type: ChannelType.GuildVoice,
         parent,
-        userLimit: config.priv.defaultLimit || 0,
-        bitrate: (config.priv.defaultBitrate || 64) * 1000,
+        userLimit: limit,
+        bitrate: bitrateKbps * 1000,
         permissionOverwrites: [
           { id: member.id, allow: [PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.MoveMembers] },
         ],
@@ -127,7 +131,13 @@ async function handleVoiceState(oldS, newS, client) {
       });
       try { await member.voice.setChannel(room); } catch {}
       logger.info(`[priv] created ${room.id} for ${member.user.tag}`);
-    } catch (e) { logger.warn('[priv] create failed', e.message); }
+    } catch (e) {
+      logger.warn('[priv] create failed', e.message);
+      try {
+        const u = await member.user;
+        await u.send?.(`❌ Could not create your private room on **${member.guild?.name || 'the server'}**: ${String(e.message || e).slice(0, 200)}`).catch(() => {});
+      } catch {}
+    }
     finally { creating.delete(member.id); }
     return;
   }
@@ -320,4 +330,30 @@ async function handleInteraction(interaction, client) {
   return false;
 }
 
-module.exports = { handleVoiceState, handleInteraction };
+// Startup sweep: rooms that emptied (or were deleted) while the bot was
+// offline never see a voiceStateUpdate-leave -- without this they (and their
+// store rows) linger forever.
+async function sweepOrphans(client) {
+  if (!config.priv.generatorId) return;
+  let cleaned = 0;
+  try {
+    const d = state();
+    const ids = Object.keys(d.privates || {});
+    for (const cid of ids) {
+      const ch = await client.channels.fetch(cid).catch(() => null);
+      if (!ch) { delete d.privates[cid]; cleaned++; continue; }
+      const humans = [...(ch.members?.values() || [])].filter((m) => !m.user.bot);
+      if (!humans.length) {
+        try { await ch.delete('Private empty (startup sweep)'); } catch {}
+        delete d.privates[cid];
+        cleaned++;
+      }
+    }
+    if (cleaned) {
+      save(d);
+      logger.info(`[priv] sweep cleaned ${cleaned} orphan room(s)`);
+    }
+  } catch (e) { logger.warn('[priv] sweep failed', e?.message || e); }
+}
+
+module.exports = { handleVoiceState, handleInteraction, sweepOrphans };

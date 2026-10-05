@@ -175,9 +175,21 @@ async function handleInteraction(interaction, client) {
   return false;
 }
 
-// Mod writes in thread -> user in DM (text + attachments)
+// Mod writes in thread -> user in DM (text + attachments).
+// Staff-only: anyone who can write in the thread is NOT automatically staff
+// (thread members, @everyone with channel access). Non-mods are ignored so a
+// random user can't message ticket owners as "HPSB Moderation".
 async function relayStaffMessage(message, client) {
   if (!message.guild || message.author.bot) return false;
+  let staff = false;
+  try {
+    const { hasModRole } = require('../../utils/mod');
+    const m = message.member;
+    staff = !!m && (hasModRole(m)
+      || m.permissions?.has?.(PermissionFlagsBits.ManageMessages)
+      || m.permissions?.has?.(PermissionFlagsBits.ModerateMembers));
+  } catch {}
+  if (!staff) return false;
   for (const [userId, sess] of sessions) {
     if (sess.threadId && message.channelId === sess.threadId) {
       try {

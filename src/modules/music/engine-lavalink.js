@@ -77,24 +77,25 @@ class LavalinkEngine {
     this.client.on('raw', this._rawHandler);
 
     // Without these handlers node crash brings down ENTIRE process (unhandled 'error')
-    this.manager.nodeManager.on('error', (node, err) => {
+    this.manager.nodeManager.on('error', (this._hNodeError = (node, err) => {
       logger.warn('[lavalink] node error', node?.options?.id || node?.id || '', err?.message || 'connection failed, retrying');
-    });
+    }));
     if (typeof this.manager.on === 'function') {
-      this.manager.on('error', (err) => logger.warn('[lavalink] manager error', err?.message || err));
+      this.manager.on('error', (this._hManagerError = (err) => logger.warn('[lavalink] manager error', err?.message || err)));
     }
 
-    this.manager.on('trackStart', (player, track) => this.onTrackStart(player, track).catch(() => {}));
-    this.manager.on('trackError', (player, track, payload) => {
+    this.manager.on('trackStart', (this._hTrackStart = (player, track) => this.onTrackStart(player, track).catch(() => {})));
+    this.manager.on('trackError', (this._hTrackError = (player, track, payload) => {
       logger.warn('[lavalink] trackError', track?.info?.title || '', JSON.stringify(payload?.exception || {}).slice(0, 200));
-    });
-    this.manager.on('trackStuck', (player, track) => {
+    }));
+    this.manager.on('trackStuck', (this._hTrackStuck = (player, track) => {
       logger.warn('[lavalink] trackStuck', track?.info?.title || '');
-    });
-    this.manager.on('queueEnd', (player) => {
-      // Queue ended -- kill live NP, otherwise eternal "Now Playing" hangs
-      try { require('./np').finalize(this.client, player.guildId, 'Queue finished'); } catch {}
-    });
+    }));
+    this.manager.on('queueEnd', (this._hQueueEnd = (player) => {
+      // Queue ended -- kill NP and leave voice (no eternal idle bot).
+      try { require('./np').finalize(this.client, player.guildId, 'Queue finished').catch(() => {}); } catch {}
+      try { player.destroy().catch(() => {}); } catch {}
+    }));
 
     await this.manager.init({ id: this.client.user.id, username: this.client.user.username || this.client.user.tag });
     logger.info('[lavalink] engine ready');
@@ -106,11 +107,18 @@ class LavalinkEngine {
   }
 
   // Detach from client (for music module stop/restart -- avoids duplicate raw listeners).
+  // Removes every listener added in init(): raw + node/manager errors + track handlers.
   detach() {
     try {
       if (this._rawHandler) this.client.removeListener('raw', this._rawHandler);
+      if (this._hNodeError && this.manager?.nodeManager) this.manager.nodeManager.removeListener?.('error', this._hNodeError);
+      if (this._hManagerError && this.manager) this.manager.removeListener?.('error', this._hManagerError);
+      for (const [ev, h] of [['trackStart', this._hTrackStart], ['trackError', this._hTrackError], ['trackStuck', this._hTrackStuck], ['queueEnd', this._hQueueEnd]]) {
+        if (h && this.manager) this.manager.removeListener?.(ev, h);
+      }
     } catch {}
-    this._rawHandler = null;
+    this._rawHandler = this._hNodeError = this._hManagerError = null;
+    this._hTrackStart = this._hTrackError = this._hTrackStuck = this._hQueueEnd = null;
   }
 
   // True when at least one node has a live websocket. manager.init() does NOT
@@ -194,6 +202,10 @@ class LavalinkEngine {
       return null;
     });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
+      // Don't strand an empty bot in voice on a failed lookup.
+      try {
+        if (!player.queue?.current && !player.queue?.tracks?.length) await player.destroy().catch(() => {});
+      } catch {}
       throw new Error(`No results for "${String(query).slice(0, 120)}"`);
     }
     this.setPlayerMeta(player, { requester, radioLabel: metadata.radioLabel || null });
@@ -223,6 +235,9 @@ class LavalinkEngine {
       return null;
     });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
+      try {
+        if (!player.queue?.current && !player.queue?.tracks?.length) await player.destroy().catch(() => {});
+      } catch {}
       throw new Error(`No results for "${String(url).slice(0, 120)}"`);
     }
     // setData -- only key/value; radioLabel of foreign stream not overwritten (keepRadioLabel)

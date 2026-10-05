@@ -9,8 +9,12 @@ const FAN_RE = /^https?:\/\/(?:www\.)?bandcamp\.com\/([A-Za-z0-9_-]+)\/?(?:[?#].
 async function fetchFanPage(url) {
   const r = await fetch(url, { headers: { 'User-Agent': UA } });
   if (!r.ok) throw new Error(`Fan page is unavailable: HTTP ${r.status}`);
-  // Bandcamp returns JSON inside HTML with " entities -- decode for regex parsing
-  return (await r.text()).replace(/"/g, '"').replace(/'/g, "'").replace(/&/g, '&');
+  // Bandcamp returns JSON inside HTML with HTML entities -- decode for regex parsing
+  return (await r.text())
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#x2F;/gi, '/')
+    .replace(/&amp;/g, '&');
 }
 
 function parseFan(html) {

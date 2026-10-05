@@ -3,9 +3,12 @@
 const { resolveSearchQuery } = require('./resolvers');
 const { fmtMs } = require('../../utils/music');
 
+// Null when the engine isn't up (client.music set in ready.js after login).
+// One-liner actions below tolerate null and answer false/null so commands show
+// a clean "nothing to do" instead of throwing "application did not respond".
 function eng(client) {
   const e = client.music;
-  if (!e || typeof e.play !== 'function') throw new Error('Music engine is not initialized (Lavalink is not connected)');
+  if (!e || typeof e.play !== 'function') return null;
   return e;
 }
 
@@ -36,6 +39,7 @@ function viewOf(item) {
 
 async function play(client, voiceChannel, query, { requester, textChannel, radioLabel } = {}) {
   const engine = eng(client);
+  if (!engine) throw new Error('Music engine is not initialized yet (bot still starting) -- try again in a few seconds');
   needNode(engine);
   const q = resolveSearchQuery(query);
 // Spotify disabled on node (no Premium on app): reply immediately with clear message,
@@ -79,6 +83,7 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
 // Returns { fan, added: [{band, title, kind, count}], failed, totalTracks }.
 async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, limit = 10, onProgress } = {}) {
   const engine = eng(client);
+  if (!engine) throw new Error('Music engine is not initialized yet (bot still starting) -- try again in a few seconds');
   needNode(engine);
   const { fetchCollection } = require('./bandcamp-fan');
   const { fan, items } = await fetchCollection(fanUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
@@ -114,31 +119,32 @@ module.exports = {
   play,
   playFan,
 
-  skip: (client, guildId, amount = 1) => eng(client).skip(guildId, amount),
-  stop: async (client, guildId) => eng(client).stop(guildId),
-  pause: (client, guildId, on) => eng(client).pause(guildId, on !== false),
-  resume: (client, guildId) => eng(client).pause(guildId, false),
-  seek: (client, guildId, ms) => eng(client).seek(guildId, ms),
-  volume: (client, guildId, vol) => eng(client).volume(guildId, vol),
+  skip: (client, guildId, amount = 1) => eng(client)?.skip(guildId, amount) ?? false,
+  stop: async (client, guildId) => eng(client)?.stop(guildId) ?? false,
+  pause: (client, guildId, on) => eng(client)?.pause(guildId, on !== false) ?? false,
+  resume: (client, guildId) => eng(client)?.pause(guildId, false) ?? false,
+  seek: (client, guildId, ms) => eng(client)?.seek(guildId, ms) ?? false,
+  volume: (client, guildId, vol) => eng(client)?.volume(guildId, vol) ?? false,
   loop: (client, guildId, mode) => {
     const m = mode === 3 ? 0 : mode;
-    return eng(client).loop(guildId, m);
+    return eng(client)?.loop(guildId, m) ?? false;
   },
-  shuffle: (client, guildId) => eng(client).shuffle(guildId),
-  clear: (client, guildId) => eng(client).clear(guildId),
+  shuffle: (client, guildId) => eng(client)?.shuffle(guildId) ?? false,
+  clear: (client, guildId) => eng(client)?.clear(guildId) ?? false,
   remove: async (client, guildId, idx) => {
-    const t = await eng(client).remove(guildId, idx);
+    const t = await eng(client)?.remove(guildId, idx);
     return t ? { title: t?.info?.title || t?.title || 'Unknown' } : null;
   },
-  move: (client, guildId, from, to) => eng(client).move(guildId, from, to),
-  prev: (client, guildId) => eng(client).prev(guildId),
+  move: (client, guildId, from, to) => eng(client)?.move(guildId, from, to) ?? false,
+  prev: (client, guildId) => eng(client)?.prev(guildId) ?? false,
 
-  queueView: (client, guildId) => eng(client).queueViewFull(guildId),
-  npSnapshot: (client, guildId) => eng(client).npSnapshot(guildId),
-  voiceChannelId: (client, guildId) => eng(client).getPlayer(guildId)?.voiceChannelId || null,
+  queueView: (client, guildId) => eng(client)?.queueViewFull(guildId) ?? null,
+  npSnapshot: (client, guildId) => eng(client)?.npSnapshot(guildId) ?? null,
+  voiceChannelId: (client, guildId) => eng(client)?.getPlayer(guildId)?.voiceChannelId || null,
   // Join/switch voice (without music): creation and move handled in engine's ensurePlayer
   join: async (client, voiceChannel, textChannelId) => {
     const engine = eng(client);
+    if (!engine) throw new Error('Music engine is not initialized yet (bot still starting) -- try again in a few seconds');
     needNode(engine);
     await engine.ensurePlayer(voiceChannel, textChannelId || null);
     return true;

@@ -214,6 +214,14 @@ module.exports = {
       }
       const data = store.load();
       data.statsChannels = data.statsChannels || {};
+      // One channel = one counter: two counters renaming the same channel
+      // fight every tick (and spam rate limits).
+      for (const [t, v] of Object.entries(data.statsChannels)) {
+        if (t !== type && asArray(v).includes(ch.id)) {
+          await interaction.editReply(`❌ <#${ch.id}> is already linked to **${t}** -- unlink it first.`);
+          return;
+        }
+      }
       const cur = asArray(data.statsChannels[type]);
       if (cur.includes(ch.id)) {
         await interaction.editReply(`ℹ️ <#${ch.id}> already linked to **${type}**.`);

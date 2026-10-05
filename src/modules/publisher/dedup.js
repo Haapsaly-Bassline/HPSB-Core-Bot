@@ -13,14 +13,16 @@ class Dedup {
   loadSeen(arr) {
     for (const k of arr || []) if (k) this.published.add(String(k));
   }
-  dumpSeen(limit = 2000) {
+  dumpSeen(limit = 5000) {
     const all = [...this.published];
     return all.slice(Math.max(0, all.length - limit));
   }
   // Returns key if this event is new, null if duplicate/in-flight.
-  reserve(ev) {
+  // force: re-queue an already-published key (explicit /sync republish).
+  reserve(ev, { force = false } = {}) {
     const k = keyOf(ev);
-    if (!ev?.id || this.published.has(k) || this.pending.has(k)) return null;
+    if (!ev?.id || this.pending.has(k)) return null;
+    if (!force && this.published.has(k)) return null;
     this.pending.add(k);
     return k;
   }

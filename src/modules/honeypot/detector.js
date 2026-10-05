@@ -25,7 +25,7 @@ async function logToStaff(client, text) {
 
 function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-// Central staff exemption: bot owner, mod role holders, anyone with ManageMessages.
+// Central staff exemption: bot owner, mod role holders, anyone with mod powers.
 // Used by trap, punish, flood, caps, mass-ping -- staff never eats automod.
 function isExempt(member, authorId) {
   if (config.adminIds.includes(authorId)) return true;
@@ -33,16 +33,23 @@ function isExempt(member, authorId) {
   try {
     const { hasModRole } = require('../../utils/mod');
     if (hasModRole(member)) return true;
-    if (member.permissions?.has?.(PermissionFlagsBits.ManageMessages)) return true;
+    const p = member.permissions;
+    if (p?.has?.(PermissionFlagsBits.ManageMessages)) return true;
+    if (p?.has?.(PermissionFlagsBits.KickMembers)) return true;
+    if (p?.has?.(PermissionFlagsBits.BanMembers)) return true;
+    if (p?.has?.(PermissionFlagsBits.ModerateMembers)) return true;
   } catch {}
   return false;
 }
 
 async function punish(client, message, reason, opts = {}) {
   const member = message.member;
-  if (!member || member.user.bot) return false;
-  // staff never eats automod (owner, mod role, ManageMessages)
-  if (isExempt(member, member.id)) return false;
+  if (!member) return false;
+  // Never punish ourselves (our trap warning lives in the trap channel).
+  if (message.author.id === client.user?.id) return false;
+  // Staff exempt -- but NOT bots: raid/spam bots are the trap's main target.
+  // (Bot authors only ever reach punish() through the trap channel.)
+  if (!message.author.bot && isExempt(member, member.id)) return false;
 
   // Trap hits hard (default mute 12h), scam filter -- softer.
   const action = opts.action || (opts.trap ? config.honeypot.action : 'timeout');
@@ -56,7 +63,18 @@ async function punish(client, message, reason, opts = {}) {
       await member.ban({ reason: audit });
       try { await message.delete(); } catch {}
     } else if (action === 'kick') {
-      await member.kick(audit);
+      // Reference behavior (RiskyMH/honeypot): kick = softban -- ban with
+      // 24h message wipe + instant unban, so the spammer's recent messages
+      // go too, not just the triggering one.
+      let kicked = false;
+      try {
+        await member.ban({ reason: audit, deleteMessageSeconds: 86400 });
+        kicked = true;
+        try { await message.guild?.members?.unban(member.id, 'Honeypot softban (kick)'); } catch {}
+      } catch {
+        try { await member.kick(audit); kicked = true; } catch {}
+      }
+      if (!kicked) throw new Error('kick failed (need Kick or Ban Members + higher role)');
       try { await message.delete(); } catch {}
     } else {
       const ms = Math.min(Math.max(hours * 60 * 60 * 1000, 60 * 1000), 28 * 86400 * 1000); // 1m..28d
@@ -88,8 +106,10 @@ async function handleMessage(message, client) {
 
 // 1) Trap: public channel, posting forbidden -- first message = punishment.
 // Staff exempt (owner, mod role, ManageMessages) -- so you don't mute yourself setting perms.
+// Bots are NOT exempt here (raid bots are the main target); our own warning is.
   if (huntOn && config.honeypot.trapChannelId && message.channelId === config.honeypot.trapChannelId) {
-    if (isExempt(message.member, message.author.id)) return;
+    if (message.author.id === client.user?.id) return;
+    if (!message.author.bot && isExempt(message.member, message.author.id)) return;
     await punish(client, message, 'message in honeypot trap', { trap: true });
     return;
   }
@@ -112,8 +132,9 @@ async function handleMessage(message, client) {
     if (/(?:https?:\/\/|www\.)[^\s<>()]+/i.test(content)) {
       await punish(client, message, 'scam pattern (nitro/gift/airdrop)');
       try { await message.author.send('⚠️ Your message on HPSB removed as suspicious (scam filter). If this is a mistake -- use ModCall.'); } catch {}
-    } else {
+    } else if (!isExempt(message.member, message.author.id)) {
       // Keyword match without any link = likely legit discussion: delete + log, no mute.
+      // Staff exempt -- same as caps/mass-ping below.
       try { await message.delete(); } catch {}
       await logToStaff(client, `🔍 **Automod (scam-words, no link)**: ${message.author} (${message.author.id}) in <#${message.channelId}>\n${content.slice(0, 300)}`);
     }
@@ -139,9 +160,25 @@ async function handleMessage(message, client) {
   }
 }
 
-module.exports = { handleMessage, ensureTrapWarning, joinBeat };
+module.exports = { handleMessage, handleTrapMessage, ensureTrapWarning, joinBeat };
 
-// Keeps RF-style warning in public trap (red embed + banner).
+// Trap-only path for BOT authors: messageCreate ignores bots entirely, so raid
+// bots posting in the trap channel would never be punished. Automod proper
+// (flood/links/caps) still skips bots -- only the trap acts on them.
+async function handleTrapMessage(message, client) {
+  try {
+    const { isEnabled } = require('../manager');
+    if (!isEnabled('honeypot')) return false;
+  } catch { return false; }
+  if (!config.honeypot.trapChannelId || message.channelId !== config.honeypot.trapChannelId) return false;
+  if (message.author.id === client.user?.id) return false; // our own warning
+  await punish(client, message, 'message in honeypot trap (bot)', { trap: true });
+  return true;
+}
+
+// Keeps RF-style warning in public trap (banner on TOP as its own message,
+// warning text below -- Discord embeds always render images at the bottom,
+// so a single embed can never show the banner first).
 // Called on startup; no spam -- checks recent messages by footer marker.
 async function ensureTrapWarning(client) {
   const id = config.honeypot.trapChannelId;
@@ -157,8 +194,12 @@ async function ensureTrapWarning(client) {
     );
     if (hasOurs) return;
     const action = config.honeypot.action;
-    const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick' : `mute ${config.honeypot.timeoutHours}h`;
-    await ch.send({ embeds: [honeypotEmbed({ punishment: what, banner: config.honeypot.bannerUrl || undefined })] });
+    const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick (softban)' : `mute ${config.honeypot.timeoutHours}h`;
+    const banner = config.honeypot.bannerUrl || '';
+    if (/^https?:\/\/\S+$/i.test(banner)) {
+      await ch.send(banner).catch(() => {});
+    }
+    await ch.send({ embeds: [honeypotEmbed({ punishment: what })] });
   } catch (e) { logger.warn('[honeypot] warn failed', e.message); }
 }
 

@@ -23,6 +23,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildModeration, // ban add/remove audit events
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
@@ -78,7 +79,14 @@ client.modules = {};
 process.on('unhandledRejection', (e) => logger.error('[unhandled]', e?.stack || e));
 
 client.login(config.token).catch((e) => {
-  logger.error('Login failed. Check DISCORD_TOKEN in .env');
-  logger.error(e.message);
+  const msg = e?.message || String(e);
+  // Don't blame the token for a dead route: connect/DNS timeouts mean the
+  // machine can't reach discord.com:443 at all (ISP/VPN/firewall).
+  if (/connect timeout|UND_ERR_CONNECT_TIMEOUT|ENOTFOUND|EAI_AGAIN|ETIMEDOUT/i.test(msg)) {
+    logger.error('Network unreachable: cannot reach discord.com:443. Check internet/VPN/firewall/IPv6 -- token was not even tried.');
+  } else {
+    logger.error('Login failed. Check DISCORD_TOKEN in .env');
+  }
+  logger.error(msg);
   process.exit(1);
 });

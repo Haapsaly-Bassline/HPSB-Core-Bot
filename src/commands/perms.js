@@ -26,6 +26,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('perms')
     .setDescription('Check the bot permissions (server + voice + mutes)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addChannelOption(o => o.setName('channel').setDescription('Voice channel to check (your current one by default)').setRequired(false)),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;

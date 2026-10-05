@@ -31,7 +31,7 @@ module.exports = {
         await interaction.reply({ content: '❌ No text channel to publish into.', flags: MessageFlags.Ephemeral });
         return;
       }
-      await channel.send({
+      const posted = await channel.send({
         embeds: [newsEmbed({
           title: interaction.options.getString('title', true),
           description: interaction.options.getString('description', true),
@@ -39,6 +39,12 @@ module.exports = {
           source: `manual by ${interaction.user.tag}`,
         })],
       });
+      // Announcement channels don't push to followers without an explicit
+      // publish -- pollers do it, manual posts must too.
+      try {
+        const { ChannelType } = require('discord.js');
+        if (posted && channel.type === ChannelType.GuildAnnouncement) await posted.crosspost().catch(() => {});
+      } catch {}
       await interaction.reply({ content: `✅ Published in <#${channel.id}>`, flags: MessageFlags.Ephemeral });
     } catch (e) {
       await replyError(interaction, `❌ Publish failed: ${String(e.message || e).slice(0, 200)}`);

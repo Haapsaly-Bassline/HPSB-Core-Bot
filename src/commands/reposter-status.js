@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
+const { requireMod } = require('../utils/mod');
 const { config } = require('../config');
 
 module.exports = {
@@ -7,6 +8,7 @@ module.exports = {
     .setDescription('Reposter subscription status')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction) {
+    if (!await requireMod(interaction)) return;
     const { youtube, tiktok, pollMinutes } = config.reposter;
     await interaction.reply({
       flags: MessageFlags.Ephemeral,

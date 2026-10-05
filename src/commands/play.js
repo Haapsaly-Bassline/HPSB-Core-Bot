@@ -5,8 +5,9 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('play')
     .setDescription('Play: text search / SoundCloud / Spotify / Deezer / Apple / Tidal / Qobuz / Bandcamp / mp3 / radio')
-    .addStringOption(o => o.setName('query').setDescription('Title, track/playlist link or direct mp3').setRequired(true))
-    .addChannelOption(o => o.setName('channel').setDescription('Voice channel (defaults to yours)').setRequired(false)),
+    .addStringOption(o => o.setName('query').setDescription('Title, track/playlist link, Bandcamp fan profile or direct mp3').setRequired(true))
+    .addChannelOption(o => o.setName('channel').setDescription('Voice channel (defaults to yours)').setRequired(false))
+    .addIntegerOption(o => o.setName('count').setDescription('Fan collection: how many releases to take (1-25, default 10)').setMinValue(1).setMaxValue(25).setRequired(false)),
   async execute(interaction, client) {
     const query = interaction.options.getString('query', true);
     await interaction.deferReply();
@@ -29,15 +30,20 @@ module.exports = {
       }
     } catch {}
 
-    // Bandcamp fan profile -- this is a collection, not a track: route to /bandcamp-fan logic
+    // Bandcamp fan profile -- this is a collection, not a track (fan import lives here, no separate command)
     try {
       const { FAN_RE } = require('../modules/music/bandcamp-fan');
       if (FAN_RE.test(query.trim())) {
         const { fanCollectionEmbed } = require('../utils/embeds');
+        const limit = interaction.options.getInteger('count') || 10;
+        await interaction.editReply('⏳ Reading the collection…');
         const fanRes = await music.playFan(client, voiceChannel, query.trim(), {
           requester: interaction.user,
           textChannel: interaction.channel,
-          limit: 10,
+          limit,
+          onProgress: (done, total) => {
+            interaction.editReply(`⏳ Queueing: ${done}/${total}…`).catch(() => {});
+          },
         });
         const { stageWarning } = require('../modules/music/stage');
         const fanWarn = voiceChannel.type === 13 ? stageWarning(client, interaction.guildId) : '';

@@ -3,7 +3,7 @@
 Multipurpose Discord bot: Lavalink music engine (Jockie-style) + HPSB radio + reposters + site news + honeypot/automod + ModCall tickets + stats + webhooks. Written from scratch for HPSB (inspired by Jockie/Carl, no copied code).
 
 ## Features
-- **Music (Lavalink-only):** `/play` (text / links / playlists / direct mp3), `/radio` (HPSB stations + custom streams), `/bandcamp-fan` (purchased collection into queue), `/queue`, `/nowplaying` (live ticking embed with buttons), `/skip [count]`, `/join`, `/loop`, `/shuffle`, `/remove`, `/move`, `/seek`, `/volume`, `/clear`, `/pause` (toggle), `/stop`, `/onair` (radio station metadata).
+- **Music (Lavalink-only):** `/play` (text / links / playlists / direct mp3 / Bandcamp fan profile + `count`), `/radio` (HPSB stations + custom streams), `/queue`, `/nowplaying` (live ticking embed with buttons), `/skip [count]`, `/join`, `/loop`, `/shuffle`, `/remove`, `/move`, `/seek`, `/volume`, `/clear`, `/pause` (toggle), `/stop`, `/onair` (radio station metadata).
   Sources: YouTube (plugin + OAuth + yt-dlp cookies fallback), SoundCloud, Bandcamp, Vimeo, Deezer/Apple/Tidal/Qobuz (via LavaSrc, need tokens), HTTP radio/files. Spotify is OFF until the Spotify app gets Premium.
 - **Stage speaker:** the bot auto-requests speaker on Stage channels (unsuppress REST + request fallback, re-asks if suppressed).
 - **Reposter:** YouTube / TikTok / Instagram → Discord media posts.

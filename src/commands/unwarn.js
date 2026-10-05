@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { requireMod, modLog, replyError } = require('../utils/mod');
+const { requireMod, resolveMember, botMember, protectedTarget, modLog, replyError } = require('../utils/mod');
 const store = require('../utils/store');
 
 module.exports = {
@@ -12,6 +12,9 @@ module.exports = {
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const user = interaction.options.getUser('user', true);
+    const member = await resolveMember(interaction, user);
+    const blocked = member ? protectedTarget(member, interaction.member, await botMember(interaction)) : null;
+    if (blocked) { await interaction.reply({ content: `❌ ${blocked}`, flags: MessageFlags.Ephemeral }); return; }
     const res = await store.exclusive(() => {
       const data = store.load();
       const list = data.warns[user.id] || [];

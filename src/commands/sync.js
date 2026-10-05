@@ -1,26 +1,31 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags, EmbedBuilder } = require('discord.js');
 const { requireMod, replyError } = require('../utils/mod');
 
-function line(name, r) {
-  if (!r) return `**${name}:** error`;
-  if (r.skipped) return `**${name}:** skipped (previous run still active)`;
-  if (r.filtered) return `**${name}:** — not selected`;
-  return `**${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}`;
-}
-
 const SOURCE_CHOICES = [
   { name: 'All', value: 'all' },
-  { name: 'News (posts)', value: 'news' },
+  { name: 'HPSB (releases+events+news)', value: 'hpsb' },
+  { name: 'News', value: 'news' },
   { name: 'Releases', value: 'releases' },
   { name: 'Events', value: 'events' },
+  { name: 'Media (YT+TT+IG)', value: 'media' },
   { name: 'YouTube', value: 'youtube' },
   { name: 'TikTok', value: 'tiktok' },
+  { name: 'Instagram', value: 'instagram' },
 ];
+
+function line(emoji, name, r) {
+  if (!r) return `${emoji} **${name}:** error`;
+  if (r.filtered) return `${emoji} **${name}:** — not selected`;
+  if (r.disabled) return `${emoji} **${name}:** — disabled`;
+  if (r.unavailable) return `${emoji} **${name}:** — unavailable (not configured)`;
+  if (r.error) return `${emoji} **${name}:** error (${r.error})`;
+  return `${emoji} **${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}`;
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('sync')
-    .setDescription('Force-sync feeds (releases/events/posts/reposters)')
+    .setDescription('Force-sync Publisher feeds (oldest-first)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addStringOption(o => o.setName('source').setDescription('What to import').setRequired(false).addChoices(...SOURCE_CHOICES))
     .addStringOption(o => o.setName('mode').setDescription('New only, or republish known oldest-first').setRequired(false)
@@ -33,32 +38,53 @@ module.exports = {
     const mode = interaction.options.getString('mode') || 'new';
     const backfill = interaction.options.getInteger('backfill') || 0;
     const republish = mode === 'republish' ? (interaction.options.getInteger('count') || 10) : 0;
-    const sources = source === 'all' ? null : [source];
     try {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     } catch {
       return; // interaction already dead
     }
     try {
-      const { runHpsbOnce } = require('../modules/site-publisher/poller');
-      const { runReposterOnce } = require('../modules/reposter/poller');
-      const h = await runHpsbOnce(client, { backfill, sources, republish });
-      const r = await runReposterOnce(client, { sources, republish });
-      if (!h || !r) {
+      const pub = require('../modules/publisher');
+      let pipeline = pub.getPipeline();
+      let owned = false;
+      let ownedRun = null;
+      if (!pipeline) {
+        // Publisher module stopped: run sync on an ad-hoc pipeline (sender
+        // goes straight to Discord, nothing persists beyond dedup in memory).
+        const { config } = require('../config');
+        const { createPipeline } = require('../modules/publisher/pipeline');
+        const { loadState } = require('../modules/publisher/state');
+        pipeline = createPipeline({ client, config, log: console });
+        pipeline.dedup.loadSeen(loadState().seen);
+        ownedRun = pipeline.start();
+        owned = true;
+      }
+      let out;
+      try {
+        out = await pub.runSync(pipeline, require('../config').config, {
+          sources: source, backfill, republish,
+        });
+      } finally {
+        if (owned) {
+          pipeline.stop();
+          await ownedRun;
+        }
+      }
+      if (!out) {
         await replyError(interaction, '❌ Sync error (runner failed).');
         return;
       }
       const e = new EmbedBuilder()
-        .setColor(0x7c3aed).setTitle('🔄 Sync').setTimestamp()
+        .setColor(0x7c3aed).setTitle('🔄 Publisher Sync').setTimestamp()
         .setDescription([
-          line('💿 Releases', h.releases),
-          line('📅 Events', h.events),
-          line('📰 News', h.posts),
-          line('⏰ Reminders', h.reminders),
-          line('▶️ YouTube', r.youtube),
-          line('🎵 TikTok', r.tiktok),
+          line('💿', 'Releases', out.releases),
+          line('📅', 'Events', out.events),
+          line('📰', 'News', out.news),
+          line('▶️', 'YouTube', out.youtube),
+          line('🎵', 'TikTok', out.tiktok),
+          line('📸', 'Instagram', out.instagram),
         ].join('\n'))
-        .setFooter({ text: `${source !== 'all' ? `source=${source} • ` : ''}${mode === 'republish' ? `republish≤${republish} • ` : ''}${backfill ? `backfill=${backfill} • ` : ''}Haapsaly Bassline` });
+        .setFooter({ text: `${source !== 'all' ? `source=${source} • ` : ''}${mode === 'republish' ? `republish≤${republish} • ` : ''}${backfill ? `backfill=${backfill} • ` : ''}oldest-first • Haapsaly Bassline` });
       await interaction.editReply({ embeds: [e] });
     } catch (err) {
       await replyError(interaction, `❌ Sync error: ${String(err.message || err).slice(0, 300)}`);

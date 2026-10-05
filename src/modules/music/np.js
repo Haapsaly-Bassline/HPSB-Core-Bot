@@ -8,6 +8,7 @@ const music = require('./service');
 
 const UPDATE_SECS = Math.max(5, Number(process.env.NP_UPDATE_SECS || 10));
 const sessions = new Map(); // guildId -> { channelId, messageId, timer }
+const trackGen = new Map(); // guildId -> generation counter (trackStart race guard)
 
 const { sourceBadge, COLORS } = require('../../utils/embeds');
 
@@ -73,6 +74,11 @@ async function render(client, guildId) {
 }
 
 async function trackStart(client, guildId, channel) {
+  // Generation guard: two fast consecutive trackStarts race (both read the old
+  // session, both send a new message). Only the latest may own the session --
+  // the loser must not overwrite it (leaked timer + double edits every tick).
+  const gen = (trackGen.get(guildId) || 0) + 1;
+  trackGen.set(guildId, gen);
   stopTimer(guildId);
 // Old NP message goes away (footer + remove buttons), new track -- always NEW
 // message: editing buried-in-history NP nobody will see.
@@ -82,7 +88,7 @@ async function trackStart(client, guildId, channel) {
     try {
       const ch = await client.channels.fetch(prev.channelId).catch(() => null);
       const msg = ch?.isTextBased?.() ? await ch.messages.fetch(prev.messageId).catch(() => null) : null;
-      if (msg) {
+      if (msg && trackGen.get(guildId) === gen) {
         const e = EmbedBuilder.from(msg.embeds[0] || new EmbedBuilder().setTitle('Now Playing'));
         e.setFooter({ text: 'Played • Haapsaly Bassline' });
         await msg.edit({ embeds: [e], components: [] }).catch(() => {});
@@ -90,11 +96,17 @@ async function trackStart(client, guildId, channel) {
     } catch {}
   }
   if (!channel?.isTextBased?.()) return;
+  if (trackGen.get(guildId) !== gen) return; // superseded while editing prev
   let snap = null;
   try { snap = music.npSnapshot(client, guildId); } catch { snap = null; }
   if (!snap) return;
   try {
     const msg = await channel.send({ embeds: [buildEmbed(snap)], components: [buildRow(snap)] });
+    if (trackGen.get(guildId) !== gen) {
+      // Superseded while sending -- remove our orphan, keep the winner's session.
+      await msg.delete().catch(() => {});
+      return;
+    }
     const timer = setInterval(() => render(client, guildId).catch(() => {}), UPDATE_SECS * 1000);
     timer.unref?.();
     sessions.set(guildId, { channelId: channel.id, messageId: msg.id, timer });
@@ -134,13 +146,15 @@ async function handleButton(interaction, client) {
     return true;
   }
   try {
+    // Acknowledge FIRST (3s interaction budget), then do the work.
+    // A late deferUpdate throws away the token even when the action succeeded.
+    await interaction.deferUpdate().catch(() => {});
     const id = interaction.customId;
     if (id === 'np:shuffle') await music.shuffle(client, guildId);
     else if (id === 'np:prev') await music.prev(client, guildId);
     else if (id === 'np:pause') await music.pause(client, guildId, !snap.paused);
     else if (id === 'np:next') await music.skip(client, guildId);
     else if (id === 'np:loop') await music.loop(client, guildId, ((snap.repeatMode ?? 0) + 1) % 3);
-    await interaction.deferUpdate().catch(() => {});
     await render(client, guildId);
   } catch (e) {
     logger.warn('[np] button failed', e.message);

@@ -25,10 +25,10 @@ function ack(title, desc, { color = COLORS.accent, footer = MUSIC_FOOTER } = {})
 
 function baseEmbed({ title, description, url, image, color = 0x7c3aed, footer = 'Haapsaly Bassline' }) {
   const e = new EmbedBuilder().setColor(color).setTimestamp();
-  if (title) e.setTitle(title.slice(0, 256));
-  if (description) e.setDescription(description.slice(0, 4000));
-  if (url) e.setURL(url);
-  if (image) e.setImage(image);
+  if (title) e.setTitle(String(title).slice(0, 256));
+  if (description) e.setDescription(String(description).slice(0, 4000));
+  if (url && /^https?:\/\/\S+$/i.test(String(url))) e.setURL(String(url));
+  if (image && /^https?:\/\/\S+$/i.test(String(image))) e.setImage(String(image));
   if (footer) e.setFooter({ text: footer });
   return e;
 }
@@ -38,13 +38,16 @@ function newsEmbed({ title, description, url, image, source = 'HPSB' }) {
 }
 
 // --- RF-style: link button rows (up to 5 per row, rows in chunks) ---
-// links: [{ label, url, emoji }]
+// links: [{ label, url, emoji }]. Invalid entries (no label/url, non-http URL)
+// are SKIPPED, never throw -- callers pass user/webhook-controlled data.
 function linkButtonRows(links = []) {
   const rows = [];
-  for (let i = 0; i < links.slice(0, 25).length; i += 5) {
+  const clean = (Array.isArray(links) ? links : []).filter((l) =>
+    l && typeof l.label === 'string' && l.label.trim() && /^https?:\/\/\S+$/i.test(String(l.url || '')));
+  for (let i = 0; i < clean.slice(0, 25).length; i += 5) {
     const row = new ActionRowBuilder();
-    for (const l of links.slice(i, i + 5)) {
-      const b = new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(l.label.slice(0, 80)).setURL(l.url);
+    for (const l of clean.slice(i, i + 5)) {
+      const b = new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(l.label.slice(0, 80)).setURL(String(l.url));
       if (l.emoji) b.setEmoji(l.emoji);
       row.addComponents(b);
     }

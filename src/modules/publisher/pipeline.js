@@ -4,7 +4,7 @@
 const { Dedup, keyOf } = require('./dedup');
 const { createQueue } = require('./queue');
 const { resolveTarget, resolveChannel, pingFor } = require('./router');
-const { format } = require('./formatter');
+const { format, reminder } = require('./formatter');
 const { loadState, saveState } = require('./state');
 
 function validate(ev) {
@@ -43,10 +43,20 @@ function createPipeline({ client, config, log = console, sender } = {}) {
     const liveButtons = target === 'announcements' && ev.type === 'live'
       ? require('./live').liveButtons(live || {}, config?.publisher || {})
       : [];
-    const { embed, components } = format(ev, { liveButtons });
-    const payload = { embeds: [embed] };
-    if (ping) payload.content = ping;
-    if (components?.length) payload.components = components;
+    let payload;
+    try {
+      const { embed, components } = ev?.metadata?.reminderTier
+        ? reminder(ev, ev.metadata.reminderTier)
+        : format(ev, { liveButtons });
+      payload = { embeds: [embed] };
+      if (ping) payload.content = ping;
+      if (components?.length) payload.components = components;
+    } catch (e) {
+      // Bad event data (e.g. unusable url/image) must not wedge the key in pending.
+      dedup.release(key);
+      log.warn?.(`[publisher] format failed ${key}, released:`, e?.message || e);
+      return;
+    }
     try {
       await sendToDiscord(channelId, payload);
       dedup.commit(key);
@@ -62,13 +72,13 @@ function createPipeline({ client, config, log = console, sender } = {}) {
     }
   }
 
-  async function ingest(ev) {
+  async function ingest(ev, opts = {}) {
     const err = validate(ev);
     if (err) {
       log.warn?.('[publisher] invalid event dropped:', err);
       return { ok: false, reason: err };
     }
-    const key = dedup.reserve(ev);
+    const key = dedup.reserve(ev, { force: !!opts.force });
     if (!key) return { ok: false, reason: 'duplicate' };
     if (!queue.push({ ev, key })) {
       dedup.release(key);

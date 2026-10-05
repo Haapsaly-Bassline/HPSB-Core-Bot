@@ -87,22 +87,14 @@ async function stopMusic(client) {
 }
 
 async function startPublisher(client) {
-  const { startReposter } = require('./reposter/poller');
-  const { startSitePoller } = require('./site-publisher/poller');
-  const { startWebhook } = require('./site-publisher/webhook');
-  startReposter(client);
-  startSitePoller(client);
-  startWebhook(client);
+  const pub = require('./publisher');
+  await pub.startPublisher(client);
   logger.info('[module] publisher started');
 }
 
 async function stopPublisher() {
-  const { stopReposter } = require('./reposter/poller');
-  const { stopSitePoller } = require('./site-publisher/poller');
-  const { stopWebhook } = require('./site-publisher/webhook');
-  try { stopReposter(); } catch {}
-  try { stopSitePoller(); } catch {}
-  try { stopWebhook(); } catch {}
+  const pub = require('./publisher');
+  try { await pub.stopPublisher(); } catch {}
   logger.info('[module] publisher stopped');
 }
 
@@ -137,6 +129,14 @@ async function noopStart(name) {
   logger.info(`[module] ${name} started`);
 }
 
+async function startPrivate(client) {
+  try {
+    const { sweepOrphans } = require('./private/rooms');
+    await sweepOrphans(client);
+  } catch {}
+  logger.info('[module] private started');
+}
+
 function defaultManifests() {
   return [
     { name: 'music', label: 'Music', dependsOn: [], start: startMusic, stop: stopMusic },
@@ -145,7 +145,7 @@ function defaultManifests() {
     { name: 'honeypot', label: 'Honeypot', dependsOn: [], start: startHoneypot },
     { name: 'modcall', label: 'ModCall', dependsOn: [], start: startModcall },
     { name: 'stats', label: 'Stats', dependsOn: [], start: startStats, stop: stopStats },
-    { name: 'private', label: 'Private Rooms', dependsOn: [], start: async () => noopStart('private') },
+    { name: 'private', label: 'Private Rooms', dependsOn: [], start: startPrivate },
   ];
 }
 

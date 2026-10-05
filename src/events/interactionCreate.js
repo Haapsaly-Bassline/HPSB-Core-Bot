@@ -18,6 +18,14 @@ module.exports = {
         const handled = await np.handleButton(interaction, client);
         if (handled) return;
       }
+      // Partner post modal -> dedicated handler on the command module
+      if (interaction.isModalSubmit() && interaction.customId === 'partner-post:modal') {
+        const cmd = client.commands.get('partner-post');
+        if (cmd?.handleModal) {
+          const handled = await cmd.handleModal(interaction, client);
+          if (handled !== false) return;
+        }
+      }
       // Roles audit fix buttons
       if (interaction.isButton() && interaction.customId.startsWith('roles:fix:')) {
         const cmd = client.commands.get('roles');

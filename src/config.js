@@ -1,244 +1,334 @@
 require('dotenv').config();
 
-function parseMap(str) {
-  // "a:b,c:d" -> [{ key: a, channelId: b }]
-  if (!str) return [];
-  return str.split(',').map(s => s.trim()).filter(Boolean).map(pair => {
-    const idx = pair.lastIndexOf(':');
-    if (idx === -1) return null;
-    const key = pair.slice(0, idx).trim();
-    const channelId = pair.slice(idx + 1).trim();
-    return { key, channelId };
-  }).filter(x => x && x.key && x.channelId);
+// ============================================================================
+// Типы параметров .env
+// ----------------------------------------------------------------------------
+// string       — любая строка (токен, URL, шаблон). Пусто '' = выключено.
+// secret       — string, но секрет (никому не показывать, не коммитить).
+// snowflake-id — string из цифр (ID Discord: сервер/канал/роль). Пусто = выкл.
+// boolean      — on/true/1/yes/enable  = вкл; off/false/0/no/disable = выкл.
+//                Пусто = значение по умолчанию (указано в .env.example).
+// integer      — целое число. Пусто/мусор = значение по умолчанию.
+// list         — string[] через запятую: "a,b,c". Пусто = [].
+// map          — пары "ключ:значение" через запятую: "YT_ID:DISCORD_ID,...".
+//                Пусто = [].
+// url          — string с http(s)://. Проверяется только наличие, не формат.
+// template     — string с плейсхолдерами {role} {author} {user} {title} {link} {count}.
+// ============================================================================
+
+/**
+ * @typedef {'timeout'|'kick'|'ban'} HoneypotAction
+ * @typedef {{ key: string, channelId: string }} ReposterBinding
+ * @typedef {Object} BotConfig полный типизированный конфиг (см. объект config ниже).
+ */
+
+// --- базовые парсеры ---
+
+/** string: вернёт def, если переменная пустая/отсутствует. */
+function str(name, def = '') {
+  const v = process.env[name];
+  if (v === undefined || v === null) return def;
+  const s = String(v).trim();
+  return s === '' ? def : s;
 }
 
-function parseIds(str) {
-  if (!str) return [];
-  return str.split(',').map(s => s.trim()).filter(Boolean);
+/** secret: то же что string, просто помечает что значение секретное. */
+function secret(name, def = '') {
+  return str(name, def);
 }
 
-// Module switch: on/true/1 = on; off/false/0 = off; missing = defaultValue.
-function parseSwitch(str, defaultValue = true) {
-  if (str === undefined || str === null || String(str).trim() === '') return defaultValue;
-  const v = String(str).trim().toLowerCase();
+/** snowflake-id: ID Discord, '' = не настроено (фича выключена). */
+function id(name, def = '') {
+  return str(name, def);
+}
+
+/** url: строка-URL, '' = не настроено. Слэш в конце убирается при needTrimSlash. */
+function url(name, def = '', needTrimSlash = false) {
+  const s = str(name, def);
+  return needTrimSlash ? s.replace(/\/$/, '') : s;
+}
+
+/**
+ * boolean: on/true/1/yes/enable = true; off/false/0/no/disable = false.
+ * Пусто/мусор = def.
+ */
+function bool(name, def = true) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return def;
+  const v = String(raw).trim().toLowerCase();
+  if (['on', 'true', '1', 'yes', 'enable', 'enabled'].includes(v)) return true;
+  if (['off', 'false', '0', 'no', 'disable', 'disabled'].includes(v)) return false;
+  return def;
+}
+
+/** integer: целое число, при пусто/NaN = def. */
+function int(name, def) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return def;
+  const n = Number(String(raw).trim());
+  return Number.isFinite(n) ? Math.trunc(n) : def;
+}
+
+/** list: "a, b, c" -> string[]. Пусто = []. */
+function list(name, def = []) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return [...def];
+  return String(raw).split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * map: "key:channelId,key2:channelId2" -> ReposterBinding[].
+ * Делит по ПОСЛЕДНЕМУ двоеточию. Пусто = [].
+ */
+function envMap(name) {
+  const raw = process.env[name];
+  if (!raw) return [];
+  return String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const idx = pair.lastIndexOf(':');
+      if (idx === -1) return null;
+      const key = pair.slice(0, idx).trim();
+      const channelId = pair.slice(idx + 1).trim();
+      return key && channelId ? { key, channelId } : null;
+    })
+    .filter(Boolean);
+}
+
+/** Совместимость: старое имя парсера свитчей. */
+function parseSwitch(strVal, defaultValue = true) {
+  if (strVal === undefined || strVal === null || String(strVal).trim() === '') return defaultValue;
+  const v = String(strVal).trim().toLowerCase();
   if (['on', 'true', '1', 'yes', 'enable', 'enabled'].includes(v)) return true;
   if (['off', 'false', '0', 'no', 'disable', 'disabled'].includes(v)) return false;
   return defaultValue;
 }
 
+/** honeypot action: только timeout|kick|ban, иначе def. */
+function honeypotAction(name, def = 'timeout') {
+  const v = str(name, def).toLowerCase();
+  return ['timeout', 'kick', 'ban'].includes(v) ? v : def;
+}
+
+// --- конфиг ---
+
+/** @type {BotConfig} */
 const config = {
-  token: process.env.DISCORD_TOKEN,
-  clientId: process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID,
-  guildId: process.env.GUILD_ID,
-  modRoleId: process.env.MOD_ROLE_ID,
-  logChannelId: process.env.LOG_CHANNEL_ID || '',
-  adminIds: parseIds(process.env.ADMIN_DISCORD_IDS),
+  // Discord core (обязательно). string/secret/snowflake-id.
+  token: secret('DISCORD_TOKEN', ''), // secret, обязательно
+  clientId: id('CLIENT_ID', '') || id('DISCORD_CLIENT_ID', ''), // snowflake-id, обязательно
+  guildId: id('GUILD_ID', ''), // snowflake-id, обязательно
+  modRoleId: id('MOD_ROLE_ID', ''), // snowflake-id
+  logChannelId: id('LOG_CHANNEL_ID', ''), // snowflake-id, '' = без логов
+  adminIds: list('ADMIN_DISCORD_IDS'), // list<snowflake-id>, [] = нет админов
 
-  // Module defaults (.env overrides; Discord /modules overrides persist on top).
+  // Модули on/off. boolean, пусто = true (включено).
   modules: {
-    music: parseSwitch(process.env.MODULE_MUSIC, true),
-    publisher: parseSwitch(process.env.MODULE_PUBLISHER, true),
-    automod: parseSwitch(process.env.MODULE_AUTOMOD, true),
-    honeypot: parseSwitch(process.env.MODULE_HONEYPOT, true),
-    modcall: parseSwitch(process.env.MODULE_MODCALL, true),
-    stats: parseSwitch(process.env.MODULE_STATS, true),
-    private: parseSwitch(process.env.MODULE_PRIVATE, true),
+    music: bool('MODULE_MUSIC', true),
+    publisher: bool('MODULE_PUBLISHER', true),
+    automod: bool('MODULE_AUTOMOD', true),
+    honeypot: bool('MODULE_HONEYPOT', true),
+    modcall: bool('MODULE_MODCALL', true),
+    stats: bool('MODULE_STATS', true),
+    private: bool('MODULE_PRIVATE', true),
   },
 
-  // For future OAuth integration with website (not used by bot directly yet)
+  // OAuth сайта (на будущее, бот напрямую не использует). string/secret/url.
   siteAuth: {
-    clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
-    redirectUri: process.env.DISCORD_REDIRECT_URI || '',
-    sessionSecret: process.env.SESSION_SECRET || '',
+    clientSecret: secret('DISCORD_CLIENT_SECRET', ''),
+    redirectUri: url('DISCORD_REDIRECT_URI', ''),
+    sessionSecret: secret('SESSION_SECRET', ''),
   },
 
+  // ModCall. snowflake-id, '' = выключено.
   modcall: {
-    // Empty = disabled until configured (never arm on someone else's hardcoded IDs).
-    panelChannelId: process.env.MODCALL_CHANNEL_ID || '',
-    staffChannelId: process.env.MODCALL_STAFF_CHANNEL_ID || '',
+    panelChannelId: id('MODCALL_CHANNEL_ID', ''),
+    staffChannelId: id('MODCALL_STAFF_CHANNEL_ID', ''),
   },
 
+  // Automod (стиль Carl-bot).
   automod: {
-    floodCount: Number(process.env.AUTOMOD_FLOOD_COUNT || 6),
-    floodSecs: Number(process.env.AUTOMOD_FLOOD_SECS || 8),
-    capsMinLen: Number(process.env.AUTOMOD_CAPS_MINLEN || 12),
-    capsPct: Number(process.env.AUTOMOD_CAPS_PCT || 75),
-    links: (process.env.AUTOMOD_LINKS || 'on') === 'on',
-    linkWhitelist: (process.env.AUTOMOD_LINK_WHITELIST || 'hpsbassline.club,azura.hpsbassline.club,youtube.com,youtu.be,spotify.com,soundcloud.com,bandcamp.com,audiomack.com,discord.gg,discord.com,streamable.com,reddit.com,github.com,google.com,tiktok.com,instagram.com,twitpic.com,cdn.discordapp.com,discordapp.net,tenor.com,giphy.com').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
-    invites: (process.env.AUTOMOD_INVITES || 'on') === 'on',
-    badwords: (process.env.AUTOMOD_BADWORDS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
-    actionHours: Number(process.env.AUTOMOD_ACTION_HOURS || 1),
+    floodCount: int('AUTOMOD_FLOOD_COUNT', 6), // integer, сообщений
+    floodSecs: int('AUTOMOD_FLOOD_SECS', 8), // integer, за N секунд
+    capsMinLen: int('AUTOMOD_CAPS_MINLEN', 12), // integer, мин. длина для проверки CAPS
+    capsPct: int('AUTOMOD_CAPS_PCT', 75), // integer, % заглавных
+    links: bool('AUTOMOD_LINKS', true), // boolean
+    linkWhitelist: list('AUTOMOD_LINK_WHITELIST', // list<string> доменов (lowercase)
+      ['hpsbassline.club', 'azura.hpsbassline.club', 'youtube.com', 'youtu.be',
+        'spotify.com', 'soundcloud.com', 'bandcamp.com', 'audiomack.com',
+        'discord.gg', 'discord.com', 'streamable.com', 'reddit.com', 'github.com',
+        'google.com', 'tiktok.com', 'instagram.com', 'twitpic.com',
+        'cdn.discordapp.com', 'discordapp.net', 'tenor.com', 'giphy.com'])
+      .map((s) => s.trim().toLowerCase()).filter(Boolean),
+    invites: bool('AUTOMOD_INVITES', true), // boolean
+    badwords: list('AUTOMOD_BADWORDS').map((s) => s.toLowerCase()), // list<string>, [] = нет
+    actionHours: int('AUTOMOD_ACTION_HOURS', 1), // integer, часов мута
   },
 
+  // Honeypot-ловушка: первое сообщение в канале = наказание.
   honeypot: {
-    // Empty trap = disabled until configured (never arm on someone else's hardcoded IDs).
-    trapChannelId: process.env.HONEYPOT_CHANNEL_ID || '',
-    logChannelId: process.env.HONEYPOT_LOG_CHANNEL_ID || '',
-    // Public trap: first message in channel = punishment.
-    // action: timeout (mute) | kick | ban; timeoutHours = mute duration.
-    action: process.env.HONEYPOT_ACTION || 'timeout',
-    timeoutHours: Number(process.env.HONEYPOT_TIMEOUT_HOURS || 12),
-    // Banner URL for warning (upload WARNING image to Discord and paste link). Without it -- plain red embed.
-    bannerUrl: process.env.HONEYPOT_BANNER_URL || '',
+    trapChannelId: id('HONEYPOT_CHANNEL_ID', ''), // snowflake-id, '' = ловушка выкл
+    logChannelId: id('HONEYPOT_LOG_CHANNEL_ID', ''), // snowflake-id
+    action: honeypotAction('HONEYPOT_ACTION', 'timeout'), // 'timeout'|'kick'|'ban'
+    timeoutHours: int('HONEYPOT_TIMEOUT_HOURS', 12), // integer, часов (для timeout)
+    bannerUrl: url('HONEYPOT_BANNER_URL', ''), // url картинки, '' = без баннера
   },
 
+  // Music (Lavalink).
   music: {
-    // Keys duplicated in lavalink/application.yml (LavaSrc-Spotify). Bot reads them via node.
-    spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
-    spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
-    // Single engine -- lavalink. Legacy hpsb engine removed (bot is exclusively on lavalink).
-    engine: (process.env.MUSIC_ENGINE || 'lavalink').toLowerCase(),
+    spotifyClientId: secret('SPOTIFY_CLIENT_ID', ''),
+    spotifyClientSecret: secret('SPOTIFY_CLIENT_SECRET', ''),
+    engine: str('MUSIC_ENGINE', 'lavalink').toLowerCase(), // string: 'lavalink'
     lavalink: {
-      host: process.env.LAVALINK_HOST || '127.0.0.1',
-      port: Number(process.env.LAVALINK_PORT || 2333),
-      password: process.env.LAVALINK_PASSWORD || '',
-      secure: (process.env.LAVALINK_SECURE || 'false') === 'true',
+      host: str('LAVALINK_HOST', '127.0.0.1'), // string
+      port: int('LAVALINK_PORT', 2333), // integer
+      password: secret('LAVALINK_PASSWORD', ''), // secret (= lavalink.server.password)
+      secure: bool('LAVALINK_SECURE', false), // boolean
     },
+    npUpdateSecs: int('NP_UPDATE_SECS', 10), // integer, секунд (мин. 5)
   },
 
+  // Reposter: YT/TT/IG -> Discord (старый модуль).
   reposter: {
-    youtube: parseMap(process.env.YOUTUBE_MAP),
-    tiktok: parseMap(process.env.TIKTOK_MAP),
-    instagram: parseMap(process.env.INSTAGRAM_MAP),
-    pollMinutes: Number(process.env.REPOST_POLL_MINUTES || 10),
-    // Free YouTube Data API v3 key (console.cloud.google.com, quota is plenty).
-    // Without it: RSS -> scrape. With it -> perfectly accurate.
-    youtubeApiKey: process.env.YT_API_KEY || '',
-    // EN media post templates. Placeholders: {role} {author} {user} {title} {link}
+    youtube: envMap('YOUTUBE_MAP'), // map: "YT_CHANNEL_ID:DISCORD_CHANNEL_ID,..."
+    tiktok: envMap('TIKTOK_MAP'), // map: "username:discordChannelId,..."
+    instagram: envMap('INSTAGRAM_MAP'), // map: "username:discordChannelId,..."
+    pollMinutes: int('REPOST_POLL_MINUTES', 10), // integer, минут
+    youtubeApiKey: secret('YT_API_KEY', ''), // secret, '' = fallback RSS->scrape
     templates: {
-      youtube: process.env.YT_TEMPLATE || '{role} **{author}** uploaded a new video!',
-      tiktok: process.env.TT_TEMPLATE || '{role} **@{user}** posted on TikTok!',
-      instagram: process.env.IG_TEMPLATE || '{role} **@{user}** posted on Instagram!',
+      youtube: str('YT_TEMPLATE', '{role} **{author}** uploaded a new video!'), // template
+      tiktok: str('TT_TEMPLATE', '{role} **@{user}** posted on TikTok!'), // template
+      instagram: str('IG_TEMPLATE', '{role} **@{user}** posted on Instagram!'), // template
     },
-    // Instagram without subscription: like other bots -- scrape public profile.
-    // Optionally speed up/stabilize with your session cookie (see .env.example).
-    instagramSessionId: process.env.IG_SESSIONID || '',
-    instagramCsrf: process.env.IG_CSRFTOKEN || '',
-    instagramDid: process.env.IG_DID || '',
-    instagramGraphToken: process.env.IG_GRAPH_TOKEN || '',
-    instagramBusinessId: process.env.IG_BUSINESS_ID || '',
+    instagramSessionId: secret('IG_SESSIONID', ''),
+    instagramCsrf: secret('IG_CSRFTOKEN', ''),
+    instagramDid: secret('IG_DID', ''),
+    instagramGraphToken: secret('IG_GRAPH_TOKEN', ''),
+    instagramBusinessId: id('IG_BUSINESS_ID', ''),
   },
 
-  // New Publisher routing/targets (legacy keys above stay as fallbacks).
+  // Новый Publisher: маршрутизация и источники.
   publisher: {
     sources: {
-      youtube: parseSwitch(process.env.PUBLISHER_YOUTUBE, true),
-      twitch: parseSwitch(process.env.PUBLISHER_TWITCH, true),
-      instagram: parseSwitch(process.env.PUBLISHER_INSTAGRAM, true),
-      tiktok: parseSwitch(process.env.PUBLISHER_TIKTOK, true),
-      hpsb: parseSwitch(process.env.PUBLISHER_HPSB, true),
+      youtube: bool('PUBLISHER_YOUTUBE', true), // boolean
+      twitch: bool('PUBLISHER_TWITCH', true), // boolean
+      instagram: bool('PUBLISHER_INSTAGRAM', true), // boolean
+      tiktok: bool('PUBLISHER_TIKTOK', true), // boolean
+      hpsb: bool('PUBLISHER_HPSB', true), // boolean
     },
-    announcementsChannelId: process.env.ANNOUNCEMENTS_CHANNEL_ID || '',
-    mediaChannelId: process.env.MEDIA_CHANNEL_ID || '',
-    partnersChannelId: process.env.PARTNERS_CHANNEL_ID || '',
-    youtubeLiveUrl: process.env.YOUTUBE_LIVE_URL || '',
-    twitchUrl: process.env.TWITCH_URL || '',
+    announcementsChannelId: id('ANNOUNCEMENTS_CHANNEL_ID', ''), // snowflake-id
+    mediaChannelId: id('MEDIA_CHANNEL_ID', ''), // snowflake-id
+    partnersChannelId: id('PARTNERS_CHANNEL_ID', ''), // snowflake-id
+    youtubeLiveUrl: url('YOUTUBE_LIVE_URL', ''), // url
+    twitchUrl: url('TWITCH_URL', ''), // url
     twitch: {
-      clientId: process.env.TWITCH_CLIENT_ID || '',
-      clientSecret: process.env.TWITCH_CLIENT_SECRET || '',
-      broadcasterId: process.env.TWITCH_BROADCASTER_ID || '',
-      eventsubSecret: process.env.TWITCH_EVENTSUB_SECRET || '',
+      clientId: secret('TWITCH_CLIENT_ID', ''),
+      clientSecret: secret('TWITCH_CLIENT_SECRET', ''),
+      broadcasterId: id('TWITCH_BROADCASTER_ID', ''),
+      eventsubSecret: secret('TWITCH_EVENTSUB_SECRET', ''),
     },
     instagram: {
-      accessToken: process.env.INSTAGRAM_ACCESS_TOKEN || '',
-      webhookSecret: process.env.INSTAGRAM_WEBHOOK_SECRET || '',
+      accessToken: secret('INSTAGRAM_ACCESS_TOKEN', ''),
+      webhookSecret: secret('INSTAGRAM_WEBHOOK_SECRET', ''),
     },
     tiktok: {
-      accessToken: process.env.TIKTOK_ACCESS_TOKEN || '',
-      pollMinutes: Number(process.env.TIKTOK_POLL_MINUTES || 5),
+      accessToken: secret('TIKTOK_ACCESS_TOKEN', ''),
+      pollMinutes: int('TIKTOK_POLL_MINUTES', 5), // integer, минут
     },
     hpsb: {
-      eventsApiUrl: process.env.HPSB_EVENTS_API_URL || 'https://events.hpsbassline.club/api/events',
-      eventsRssUrl: process.env.HPSB_EVENTS_RSS_URL || 'https://www.hpsbassline.club/api/feed/events.xml',
-      releasesApiUrl: process.env.HPSB_RELEASES_API_URL || 'https://rls.hpsbassline.club/api/releases',
-      releasesRssUrl: process.env.HPSB_RELEASES_RSS_URL || 'https://www.hpsbassline.club/api/feed/releases.xml',
-      newsRssUrl: process.env.HPSB_NEWS_RSS_URL || 'https://www.hpsbassline.club/api/feed/news.xml',
+      eventsApiUrl: url('HPSB_EVENTS_API_URL', 'https://events.hpsbassline.club/api/events'),
+      eventsRssUrl: url('HPSB_EVENTS_RSS_URL', 'https://www.hpsbassline.club/api/feed/events.xml'),
+      releasesApiUrl: url('HPSB_RELEASES_API_URL', 'https://rls.hpsbassline.club/api/releases'),
+      releasesRssUrl: url('HPSB_RELEASES_RSS_URL', 'https://www.hpsbassline.club/api/feed/releases.xml'),
+      newsRssUrl: url('HPSB_NEWS_RSS_URL', 'https://www.hpsbassline.club/api/feed/news.xml'),
     },
   },
 
-  // HPSB services: ONE source per feed (format auto-detected)
+  // HPSB фиды сайта: ОДИН источник на ленту (JSON или RSS — автоопределение).
   hpsb: {
-    pollMinutes: Number(process.env.HPSB_POLL_MINUTES || process.env.SITE_API_POLL_MINUTES || 5),
+    pollMinutes: int('HPSB_POLL_MINUTES', int('SITE_API_POLL_MINUTES', 5)), // integer, минут
     releases: {
-      feedUrl: process.env.RELEASES_FEED_URL || 'https://release.hpsbassline.club/api/releases',
-      channelId: process.env.RELEASES_CHANNEL_ID || process.env.SITE_NEWS_CHANNEL_ID || '',
-      baseUrl: (process.env.RELEASES_BASE_URL || 'https://release.hpsbassline.club').replace(/\/$/, ''),
-      pageBase: (process.env.RELEASES_PAGE_BASE || 'https://hpsbassline.club/releases').replace(/\/$/, ''),
+      feedUrl: url('RELEASES_FEED_URL', 'https://release.hpsbassline.club/api/releases'),
+      channelId: id('RELEASES_CHANNEL_ID', '') || id('SITE_NEWS_CHANNEL_ID', ''), // snowflake-id
+      baseUrl: url('RELEASES_BASE_URL', 'https://release.hpsbassline.club', true),
+      pageBase: url('RELEASES_PAGE_BASE', 'https://hpsbassline.club/releases', true),
     },
     events: {
-      feedUrl: process.env.EVENTS_FEED_URL || 'https://www.hpsbassline.club/api/feed/events.xml',
-      channelId: process.env.EVENTS_CHANNEL_ID || process.env.SITE_NEWS_CHANNEL_ID || '',
-      pageBase: (process.env.EVENTS_PAGE_BASE || 'https://hpsbassline.club/events').replace(/\/$/, ''),
+      feedUrl: url('EVENTS_FEED_URL', 'https://www.hpsbassline.club/api/feed/events.xml'),
+      channelId: id('EVENTS_CHANNEL_ID', '') || id('SITE_NEWS_CHANNEL_ID', ''), // snowflake-id
+      pageBase: url('EVENTS_PAGE_BASE', 'https://hpsbassline.club/events', true),
     },
     posts: {
-      apiUrl: process.env.POSTS_API_URL || 'https://www.hpsbassline.club/api/posts',
-      channelId: process.env.POSTS_CHANNEL_ID || process.env.SITE_NEWS_CHANNEL_ID || '',
+      apiUrl: url('POSTS_API_URL', 'https://www.hpsbassline.club/api/posts'),
+      channelId: id('POSTS_CHANNEL_ID', '') || id('SITE_NEWS_CHANNEL_ID', ''), // snowflake-id
     },
   },
 
-  // Anti-raid: join spike -> mute newcomers. 0 = off.
+  // Anti-raid: всплеск заходов -> мут новичков. 0 = выкл.
   antiraid: {
-    joins: Number(process.env.ANTIRAID_JOINS || 8),
-    secs: Number(process.env.ANTIRAID_SECS || 30),
-    hours: Number(process.env.ANTIRAID_HOURS || 1),
+    joins: int('ANTIRAID_JOINS', 8), // integer, заходов
+    secs: int('ANTIRAID_SECS', 30), // integer, за N секунд
+    hours: int('ANTIRAID_HOURS', 1), // integer, мут на N часов
   },
 
-  // Member Count parity: 9 counters + {count} templates + on/off
+  // Счётчики онлайна (9 штук + шаблоны с {count}). ID пустой = счётчик выкл.
   stats: {
-    intervalMin: Number(process.env.STATS_INTERVAL_MIN || 10),
-    members: process.env.STATS_MEMBERS_CHANNEL_ID || '',
-    humans: process.env.STATS_HUMANS_CHANNEL_ID || '',
-    bots: process.env.STATS_BOTS_CHANNEL_ID || '',
-    roles: process.env.STATS_ROLES_CHANNEL_ID || '',
-    channels: process.env.STATS_CHANNELS_CHANNEL_ID || '',
-    role: process.env.STATS_ROLE_CHANNEL_ID || '',
-    roleId: process.env.STATS_ROLE_ID || '',
-    online: process.env.STATS_ONLINE_CHANNEL_ID || '',
-    offline: process.env.STATS_OFFLINE_CHANNEL_ID || '',
-    boosts: process.env.STATS_BOOSTS_CHANNEL_ID || '',
+    intervalMin: int('STATS_INTERVAL_MIN', 10), // integer, минут
+    members: id('STATS_MEMBERS_CHANNEL_ID', ''),
+    humans: id('STATS_HUMANS_CHANNEL_ID', ''),
+    bots: id('STATS_BOTS_CHANNEL_ID', ''),
+    roles: id('STATS_ROLES_CHANNEL_ID', ''),
+    channels: id('STATS_CHANNELS_CHANNEL_ID', ''),
+    role: id('STATS_ROLE_CHANNEL_ID', ''),
+    roleId: id('STATS_ROLE_ID', ''), // какую роль считать для STATS_ROLE_*
+    online: id('STATS_ONLINE_CHANNEL_ID', ''),
+    offline: id('STATS_OFFLINE_CHANNEL_ID', ''),
+    boosts: id('STATS_BOOSTS_CHANNEL_ID', ''),
     t: {
-      members: process.env.STATS_MEMBERS_TEMPLATE || '👥 Members: {count}',
-      humans: process.env.STATS_HUMANS_TEMPLATE || '🧍 Users: {count}',
-      bots: process.env.STATS_BOTS_TEMPLATE || '🤖 Bots: {count}',
-      roles: process.env.STATS_ROLES_TEMPLATE || '🎭 Roles: {count}',
-      channels: process.env.STATS_CHANNELS_TEMPLATE || '📁 Channels: {count}',
-      role: process.env.STATS_ROLE_TEMPLATE || '🎖 {count}',
-      online: process.env.STATS_ONLINE_TEMPLATE || '🟢 Online: {count}',
-      offline: process.env.STATS_OFFLINE_TEMPLATE || '⚫ Offline: {count}',
-      boosts: process.env.STATS_BOOSTS_TEMPLATE || '💎 Boosts: {count}',
+      members: str('STATS_MEMBERS_TEMPLATE', '👥 Members: {count}'), // template {count}
+      humans: str('STATS_HUMANS_TEMPLATE', '🧍 Users: {count}'),
+      bots: str('STATS_BOTS_TEMPLATE', '🤖 Bots: {count}'),
+      roles: str('STATS_ROLES_TEMPLATE', '🎭 Roles: {count}'),
+      channels: str('STATS_CHANNELS_TEMPLATE', '📁 Channels: {count}'),
+      role: str('STATS_ROLE_TEMPLATE', '🎖 {count}'),
+      online: str('STATS_ONLINE_TEMPLATE', '🟢 Online: {count}'),
+      offline: str('STATS_OFFLINE_TEMPLATE', '⚫ Offline: {count}'),
+      boosts: str('STATS_BOOSTS_TEMPLATE', '💎 Boosts: {count}'),
     },
   },
 
-  // Role for ping in announcements (media + news). Empty = no ping.
-  announceRoleId: process.env.ANNOUNCE_ROLE_ID || '',
-  // Separate role for MEDIA posts (YT/IG/TT). Empty = general announceRoleId.
-  mediaRoleId: process.env.MEDIA_ROLE_ID || '',
+  // Пинг ролей в анонсах. snowflake-id, '' = без пинга.
+  announceRoleId: id('ANNOUNCE_ROLE_ID', ''),
+  mediaRoleId: id('MEDIA_ROLE_ID', ''), // '' = используется announceRoleId
 
-  // Private voice (VoiceMaster-style): joined generator -> own room + panel
+  // Приватные голосовые (стиль VoiceMaster).
   priv: {
-    generatorId: process.env.PRIV_GENERATOR_ID || '', // empty = private rooms disabled
-    categoryId: process.env.PRIV_CATEGORY_ID || '',
-    defaultLimit: Number(process.env.PRIV_DEFAULT_LIMIT || 0),
-    defaultBitrate: Number(process.env.PRIV_DEFAULT_BITRATE || 64),
-    nameTemplate: process.env.PRIV_NAME_TEMPLATE || `{user}'s room`,
+    generatorId: id('PRIV_GENERATOR_ID', ''), // snowflake-id, '' = приватки выкл
+    categoryId: id('PRIV_CATEGORY_ID', ''), // snowflake-id категории
+    defaultLimit: int('PRIV_DEFAULT_LIMIT', 0), // integer, 0 = без лимита
+    defaultBitrate: int('PRIV_DEFAULT_BITRATE', 64), // integer, кбит/с
+    nameTemplate: str('PRIV_NAME_TEMPLATE', `{user}'s room`), // template {user}
   },
 
-  // Auto-crosspost from announcement channels to subscribers (comma-separated IDs)
-  autopublish: parseIds(process.env.AUTOPUBLISH_CHANNEL_IDS),
+  // Автокросспост анонсов подписчикам. list<snowflake-id>.
+  autopublish: list('AUTOPUBLISH_CHANNEL_IDS'),
 
-  // legacy single-feed (kept for compatibility)
+  // Legacy single-feed (совместимость).
   siteApi: {
-    url: process.env.SITE_API_URL || '',
-    key: process.env.SITE_API_KEY || '',
-    pollMinutes: Number(process.env.SITE_API_POLL_MINUTES || 5),
-    channelId: process.env.SITE_NEWS_CHANNEL_ID || '',
+    url: url('SITE_API_URL', ''),
+    key: secret('SITE_API_KEY', ''),
+    pollMinutes: int('SITE_API_POLL_MINUTES', 5),
+    channelId: id('SITE_NEWS_CHANNEL_ID', ''),
   },
 
+  // Webhook-приёмник: внешние сервисы шлют POST сюда.
   webhook: {
-    port: Number(process.env.WEBHOOK_PORT || 3100),
-    secret: process.env.WEBHOOK_SECRET || '',
-    channelId: process.env.WEBHOOK_NEWS_CHANNEL_ID || '',
-    publicBase: process.env.WEBHOOK_PUBLIC_BASE || '',
+    port: int('WEBHOOK_PORT', 3100), // integer, порт (не 3001-3006)
+    secret: secret('WEBHOOK_SECRET', ''), // secret
+    channelId: id('WEBHOOK_NEWS_CHANNEL_ID', ''), // snowflake-id
+    publicBase: url('WEBHOOK_PUBLIC_BASE', '', true), // url без слэша в конце
   },
 };
 
@@ -252,4 +342,4 @@ function validate() {
   }
 }
 
-module.exports = { config, validate, parseSwitch };
+module.exports = { config, validate, parseSwitch, str, int, bool, list, envMap, id };

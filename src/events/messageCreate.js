@@ -7,7 +7,19 @@ const { logger } = require('../utils/logger');
 module.exports = {
   name: Events.MessageCreate,
   async execute(message, client) {
-    if (message.author.bot) return;
+    // Bots are ignored everywhere EXCEPT the honeypot trap: raid bots posting
+    // there are exactly what the trap is for (own warning message is exempt).
+    if (message.author.bot) {
+      if (message.guild && message.author.id !== client.user?.id) {
+        try {
+          const { handleTrapMessage } = require('../modules/honeypot/detector');
+          await handleTrapMessage(message, client);
+        } catch (e) {
+          logger.warn('[messageCreate] trap failed', e?.message || e);
+        }
+      }
+      return;
+    }
 
     // 1) honeypot / automod (guild messages)
     if (message.guild) {

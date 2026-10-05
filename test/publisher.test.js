@@ -140,9 +140,13 @@ describe('publisher core', () => {
     assert.equal(live.isLive(st), false);
     assert.equal(live.applyOnline(st, 'nope', {}), 'noop');
   });
-  it('state blank/load shape', () => {
+  it('state blank/load shape', async () => {
     const b = blank();
     assert.deepEqual(Object.keys(b).sort(), ['live', 'reminders', 'seen']);
+    // Earlier tests in this file persist seen keys to the real store --
+    // reset the publisher slice so this asserts shape, not test order.
+    const { saveState } = require('../src/modules/publisher/state');
+    await saveState({ seen: [], live: {}, reminders: {} });
     assert.deepEqual(loadState(), b);
   });
 });

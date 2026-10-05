@@ -38,13 +38,14 @@ function applyOffline(st, source) {
 }
 
 // Link buttons for the LIVE message. Never fake URLs: only known ones,
-// plus configured fallbacks (YOUTUBE_LIVE_URL / TWITCH_URL).
+// plus configured fallbacks (YOUTUBE_LIVE_URL / TWITCH_URL). Non-http values skipped.
 function liveButtons(st, cfg) {
   const out = [];
+  const ok = (u) => /^https?:\/\/\S+$/i.test(String(u || ''));
   const yUrl = st.youtube?.url || cfg?.youtubeLiveUrl || '';
   const tUrl = st.twitch?.url || cfg?.twitchUrl || '';
-  if (yUrl) out.push({ label: '▶️ YouTube', url: yUrl });
-  if (tUrl) out.push({ label: '🟣 Twitch', url: tUrl });
+  if (ok(yUrl)) out.push({ label: '▶️ YouTube', url: String(yUrl) });
+  if (ok(tUrl)) out.push({ label: '🟣 Twitch', url: String(tUrl) });
   return out;
 }
 

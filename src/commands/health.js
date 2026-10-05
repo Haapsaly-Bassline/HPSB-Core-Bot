@@ -15,6 +15,9 @@ async function checkChannels(client) {
     'modcall-staff': config.modcall.staffChannelId,
     'honeypot': config.honeypot.trapChannelId,
     'honeypot-log': config.honeypot.logChannelId || config.logChannelId,
+    'announcements': config.publisher.announcementsChannelId,
+    'media': config.publisher.mediaChannelId,
+    'partners': config.publisher.partnersChannelId,
     'releases': config.hpsb.releases.channelId,
     'events': config.hpsb.events.channelId,
     'posts': config.hpsb.posts.channelId,
@@ -35,6 +38,9 @@ async function checkChannels(client) {
 
 async function checkApis() {
   const urls = {
+    'hpsb-events': config.publisher.hpsb.eventsApiUrl,
+    'hpsb-releases': config.publisher.hpsb.releasesApiUrl,
+    'hpsb-news': config.publisher.hpsb.newsRssUrl,
     'releases': config.hpsb.releases.feedUrl,
     'events': config.hpsb.events.feedUrl,
     'posts': config.hpsb.posts.apiUrl,
@@ -80,17 +86,10 @@ function checkEnv() {
     const ex = fs.readFileSync(path.join(__dirname, '..', '..', '.env.example'), 'utf8');
     const keys = [...ex.matchAll(/^([A-Z][A-Z0-9_]+)=/gm)].map(m => m[1]);
     const missing = keys.filter(k => !process.env[k]);
-    // optional ones don't count as problems
-    // Empty ID = feature disabled (counter/category/mapping not configured) -- valid state, not error.
-    const optional = new Set(['WEBHOOK_SECRET', 'WEBHOOK_NEWS_CHANNEL_ID', 'SITE_API_URL', 'SITE_API_KEY',
-      'SITE_NEWS_CHANNEL_ID', 'HONEYPOT_BANNER_URL', 'YT_API_KEY', 'IG_GRAPH_TOKEN', 'IG_BUSINESS_ID',
-      'IG_CSRFTOKEN', 'IG_DID', 'IG_SESSIONID', 'AUTOMOD_BADWORDS', 'SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET',
-      'DISCORD_CLIENT_SECRET', 'LOG_CHANNEL_ID', 'TIKTOK_MAP', 'INSTAGRAM_MAP', 'SESSION_SECRET',
-      'PRIV_CATEGORY_ID', 'STATS_MEMBERS_CHANNEL_ID', 'STATS_HUMANS_CHANNEL_ID', 'STATS_BOTS_CHANNEL_ID',
-      'STATS_ROLES_CHANNEL_ID', 'STATS_CHANNELS_CHANNEL_ID', 'STATS_ROLE_CHANNEL_ID', 'STATS_ROLE_ID',
-      'STATS_ONLINE_CHANNEL_ID', 'STATS_OFFLINE_CHANNEL_ID', 'STATS_BOOSTS_CHANNEL_ID',
-      'MODULE_MUSIC', 'MODULE_PUBLISHER', 'MODULE_AUTOMOD', 'MODULE_HONEYPOT', 'MODULE_MODCALL', 'MODULE_STATS', 'MODULE_PRIVATE']);
-    const need = missing.filter(k => !optional.has(k));
+    // Only these are truly required (config.validate warns on the same set).
+    // Everything else either has a compiled-in default or means "feature off".
+    const required = new Set(['DISCORD_TOKEN', 'CLIENT_ID', 'GUILD_ID']);
+    const need = missing.filter(k => required.has(k));
     if (!need.length) return ['✅ .env complete'];
     return [`❌ .env missing: ${need.join(', ')}`];
   } catch { return ['⚪ .env.example not readable']; }

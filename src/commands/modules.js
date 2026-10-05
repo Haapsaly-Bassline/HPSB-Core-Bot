@@ -22,8 +22,16 @@ module.exports = {
     try {
       if (action === 'status' || !name) {
         const rows = status().map(s => `${s.running ? '🟢' : (s.enabled ? '🟡' : '⚪')} **${s.label}** \`${s.name}\`${s.running ? '' : (s.enabled ? ' — enabled, not running' : ' — disabled')}`);
+        let srcRows = [];
+        try {
+          const { sourceStatus } = require('../modules/publisher');
+          const { config } = require('../config');
+          srcRows = sourceStatus(config).map(s =>
+            `  ${s.state === 'on' ? '🟢' : s.state === 'disabled' ? '⚪' : '⚠️'} ${s.emoji} ${s.label} — ${s.state === 'on' ? 'ON' : s.state === 'disabled' ? 'disabled' : 'unavailable (not configured)'}`);
+        } catch {}
+        const desc = [...rows, '', '📡 **Publisher sources**', ...srcRows].join('\n');
         const e = new EmbedBuilder().setColor(0x7c3aed).setTitle('🧩 HPSB Core Modules').setTimestamp()
-          .setDescription(rows.join('\n'))
+          .setDescription(desc)
           .setFooter({ text: 'Haapsaly Bassline • Modules' });
         await interaction.reply({ embeds: [e], flags: MessageFlags.Ephemeral });
         return;

@@ -7,15 +7,25 @@ function str(v, n) {
   return String(v ?? '').slice(0, n);
 }
 
+// Only real http(s) URLs reach discord.js builders (setURL/setImage throw
+// on garbage, which would wedge the event -- see pipeline worker).
+function safeUrl(v) {
+  const s = String(v || '').trim();
+  return /^https?:\/\/\S+$/i.test(s) ? s.slice(0, 400) : '';
+}
+
 function linkedTitle(ev) {
   const t = str(ev.title || 'Untitled', 250);
-  return ev.url ? `**[${t}](${ev.url})**` : `**${t}**`;
+  const u = safeUrl(ev.url);
+  return u ? `**[${t}](${u})**` : `**${t}**`;
 }
 
 function base(color, ev) {
   const e = new EmbedBuilder().setColor(color).setTimestamp();
-  if (ev.image) e.setImage(String(ev.image).slice(0, 400));
-  else if (ev.thumbnail) e.setThumbnail(String(ev.thumbnail).slice(0, 400));
+  const img = safeUrl(ev.image);
+  const thumb = safeUrl(ev.thumbnail);
+  if (img) e.setImage(img);
+  else if (thumb) e.setThumbnail(thumb);
   e.setFooter({ text: 'Haapsaly Bassline' });
   return e;
 }
