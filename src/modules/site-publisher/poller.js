@@ -4,7 +4,7 @@
 // Format detected from response. Errors: backoff (3 failures = silent 30 min).
 // First run only remembers (no history spam).
 const axios = require('axios');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ChannelType } = require('discord.js');
 const { XMLParser } = require('fast-xml-parser');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
@@ -70,6 +70,34 @@ function guidStr(g) {
   return '';
 }
 
+function dateMs(item) {
+  const t = item?.date ? new Date(item.date).getTime() : 0;
+  return Number.isFinite(t) ? t : 0;
+}
+
+// Target picker shared by all checks.
+// Normal mode: unseen items (or backfill first N), capped at 5.
+// Republish mode: already-known items, oldest first, capped at limit.
+// Feeds are newest-first, so reverse to get oldest-first base order;
+// valid dates then sort chronologically, undated keep that relative order.
+function pickTargets(items, known, { backfill = 0, republish = 0 } = {}) {
+  if (republish > 0) {
+    return [...items].reverse()
+      .map((item, ix) => ({ item, ix, t: dateMs(item) }))
+      .filter(x => known.has(x.item.uid))
+      .sort((a, b) => (a.t - b.t) || (a.ix - b.ix))
+      .slice(0, Math.min(republish, 25))
+      .map(x => x.item);
+  }
+  const list = backfill ? items.slice(0, backfill) : items.filter(i => !known.has(i.uid));
+  return list.slice(0, 5);
+}
+
+// Source filter for /sync: opts.sources is null (all) or an array like ['releases','news'].
+function skippedByFilter(opts, key) {
+  return !!(opts?.sources && !opts.sources.includes(key));
+}
+
 // Embed URL setter that never throws: only real http(s) links, never undefined.
 function setUrlSafe(embed, link) {
   if (/^https?:\/\//i.test(link || '')) embed.setURL(link);
@@ -81,10 +109,16 @@ async function post(client, channelId, embed, content) {
   const ch = await client.channels.fetch(channelId).catch(() => null);
   if (!ch?.isTextBased()) { logger.warn('[hpsb] bad channel', channelId); return false; }
   const payload = content ? { content, embeds: [embed] } : { embeds: [embed] };
-  return ch.send(payload).then(() => true).catch((e) => {
+  const m = await ch.send(payload).catch((e) => {
     logger.warn('[hpsb] discord send failed', channelId, e?.message || e);
-    return false;
+    return null;
   });
+  if (!m) return false;
+  // Announcement channels don't push to followers without an explicit publish.
+  if (ch.type === ChannelType.GuildAnnouncement) {
+    await m.crosspost().catch((e) => logger.warn('[hpsb] crosspost failed', channelId, e?.message || e));
+  }
+  return true;
 }
 
 function pingLine(text) {
@@ -164,6 +198,7 @@ function simpleReleaseEmbed(item) {
 
 async function checkReleases(client, state, opts = {}) {
   const KEY = 'releases';
+  if (skippedByFilter(opts, 'releases')) return { found: 0, posted: 0, filtered: true };
   const { channelId, feedUrl } = config.hpsb.releases;
   if (!channelId || !feedUrl) return { found: 0, posted: 0 };
   if (backoffSkip(KEY)) return { found: 0, posted: 0 };
@@ -173,11 +208,11 @@ async function checkReleases(client, state, opts = {}) {
   try {
     const items = await fetchFeed(feedUrl);
     backoffOk(KEY);
-    if (!known.size && items.length && !backfill) {
+    if (!known.size && items.length && !backfill && !opts.republish) {
       state.releases.ids = items.slice(0, 30).map(i => i.uid);
       return { found: items.length, posted: 0 };
     }
-    const targets = (backfill ? items.slice(0, backfill) : items.filter(i => !known.has(i.uid))).slice(0, 5);
+    const targets = pickTargets(items, known, { backfill, republish: opts.republish || 0 });
     let posted = 0;
     for (const item of targets) {
       const rich = item.raw?.services || item.raw?.tracks;
@@ -241,6 +276,7 @@ function eventLike(ev) {
 
 async function checkEvents(client, state, opts = {}) {
   const KEY = 'events';
+  if (skippedByFilter(opts, 'events')) return { found: 0, posted: 0, filtered: true };
   const { channelId, feedUrl } = config.hpsb.events;
   if (!channelId || !feedUrl) return { found: 0, posted: 0 };
   if (backoffSkip(KEY)) return { found: 0, posted: 0 };
@@ -250,11 +286,11 @@ async function checkEvents(client, state, opts = {}) {
   try {
     const items = await fetchFeed(feedUrl);
     backoffOk(KEY);
-    if (!known.size && items.length && !backfill) {
+    if (!known.size && items.length && !backfill && !opts.republish) {
       state.events.ids = items.slice(0, 30).map(i => i.uid);
       return { found: items.length, posted: 0 };
     }
-    const targets = (backfill ? items.slice(0, backfill) : items.filter(i => !known.has(i.uid))).slice(0, 5);
+    const targets = pickTargets(items, known, { backfill, republish: opts.republish || 0 });
     let posted = 0;
     for (const item of targets) {
       const rich = eventLike(item.raw);
@@ -328,6 +364,7 @@ async function checkReminders(client, state) {
 // ---------- POSTS ----------
 async function checkPosts(client, state, opts = {}) {
   const KEY = 'posts';
+  if (skippedByFilter(opts, 'news')) return { found: 0, posted: 0, filtered: true };
   const { channelId, apiUrl } = { channelId: config.hpsb.posts.channelId, apiUrl: config.hpsb.posts.apiUrl };
   if (!channelId || !apiUrl) return { found: 0, posted: 0 };
   if (backoffSkip(KEY)) return { found: 0, posted: 0 };
@@ -337,11 +374,11 @@ async function checkPosts(client, state, opts = {}) {
   try {
     const items = await fetchFeed(apiUrl);
     backoffOk(KEY);
-    if (!known.size && items.length && !backfill) {
+    if (!known.size && items.length && !backfill && !opts.republish) {
       state.posts.ids = items.slice(0, 30).map(i => i.uid);
       return { found: items.length, posted: 0 };
     }
-    const targets = (backfill ? items.slice(0, backfill) : items.filter(i => !known.has(i.uid))).slice(0, 5);
+    const targets = pickTargets(items, known, { backfill, republish: opts.republish || 0 });
     let posted = 0;
     for (const item of targets) {
       const p = item.raw || {};
@@ -447,4 +484,4 @@ function startSitePoller(client) {
   logger.info(`[hpsb] polling releases/events/posts every ${mins}m`);
 }
 
-module.exports = { startSitePoller, runHpsbOnce };
+module.exports = { startSitePoller, runHpsbOnce, pickTargets, skippedByFilter, dateMs, guidStr, safeDate };

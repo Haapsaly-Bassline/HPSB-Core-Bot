@@ -135,7 +135,12 @@ function startWebhook(client) {
         catch { return false; }
       });
       if (uniq.length) payload.components = linkButtonRows(uniq.slice(0, 25));
-      await ch.send(payload);
+      const posted = await ch.send(payload).catch(() => null);
+      if (!posted) return res.status(500).json({ ok: false, error: 'send failed' });
+      const { ChannelType } = require('discord.js');
+      if (ch.type === ChannelType.GuildAnnouncement) {
+        await posted.crosspost().catch(() => {});
+      }
       res.json({ ok: true });
     } catch (e) {
       logger.warn('[webhook]', e.message);

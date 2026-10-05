@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { XMLParser } = require('fast-xml-parser');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
 const { config } = require('../../config');
 const { logger } = require('../../utils/logger');
 const store = require('../../utils/store');
@@ -21,15 +21,41 @@ async function postToChannel(client, channelId, { embed, content, buttons = [] }
   if (buttons.length) {
     payload.components = [new ActionRowBuilder().addComponents(...buttons.slice(0, 5))];
   }
-  return ch.send(payload).then(() => true).catch((e) => {
+  const m = await ch.send(payload).catch((e) => {
     logger.warn('[reposter] discord send failed', channelId, e?.message || e);
-    return false;
+    return null;
   });
+  if (!m) return false;
+  // Announcement channels don't push to followers without an explicit publish.
+  if (ch.type === ChannelType.GuildAnnouncement) {
+    await m.crosspost().catch(() => {});
+  }
+  return true;
 }
 
 function mediaText(tpl, vars) {
   const t = renderTpl(tpl, vars, mediaPing());
   return t || undefined;
+}
+
+function ytDateMs(item) {
+  const t = item?.date ? new Date(item.date).getTime() : 0;
+  return Number.isFinite(t) ? t : 0;
+}
+
+// Same republish semantics as HPSB checks: known items, oldest first.
+function ytPickTargets(items, knownSet, { republish = 0 } = {}) {
+  if (!(republish > 0)) return null;
+  return [...items].reverse()
+    .map((item, ix) => ({ item, ix, t: ytDateMs(item) }))
+    .filter(x => knownSet.has(x.item.id))
+    .sort((a, b) => (a.t - b.t) || (a.ix - b.ix))
+    .slice(0, Math.min(republish, 25))
+    .map(x => x.item);
+}
+
+function skippedByFilter(opts, key) {
+  return !!(opts?.sources && !opts.sources.includes(key));
 }
 
 const YT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -54,6 +80,7 @@ async function fetchLatestYouTube(ytId) {
           id: i.contentDetails?.videoId,
           title: i.snippet?.title,
           author: i.snippet?.channelTitle,
+          date: i.contentDetails?.videoPublishedAt || i.snippet?.publishedAt || '',
         })).filter(x => x.id);
         if (items.length) return items;
       }
@@ -68,6 +95,7 @@ async function fetchLatestYouTube(ytId) {
     const entries = Array.isArray(feed?.feed?.entry) ? feed.feed.entry : feed?.feed?.entry ? [feed.feed.entry] : [];
     const items = entries.slice(0, 8).map(en => ({
       id: en['yt:videoId'], title: en.title, author: en?.author?.name,
+      date: en.published || en.updated || '',
     })).filter(x => x.id);
     if (items.length) return items;
   } catch (e) { logger.warn(`[reposter/yt] rss blocked (${e.message}), trying scrape`); }
@@ -133,7 +161,8 @@ async function publishYouTubeVideo(client, { videoId, title, author, channelId }
   });
 }
 
-async function checkYouTube(client, state) {
+async function checkYouTube(client, state, opts = {}) {
+  if (skippedByFilter(opts, 'youtube')) return { found: 0, posted: 0, filtered: true };
   let found = 0, posted = 0;
   for (const { key: ytId, channelId } of config.reposter.youtube) {
     try {
@@ -149,7 +178,10 @@ async function checkYouTube(client, state) {
         continue;
       }
       const knownSet = new Set(known);
-      const fresh = items.filter(i => !knownSet.has(i.id)).slice(0, 3);
+      const republish = opts.republish || 0;
+      const fresh = republish > 0
+        ? ytPickTargets(items, knownSet, { republish })
+        : items.filter(i => !knownSet.has(i.id)).slice(0, 3);
       const withTitles = await Promise.all(fresh.map(ytTitleFallback));
       for (const item of withTitles) {
         if (await postVideo(client, channelId, { id: item.id, title: item.title, author: item.author })) {
@@ -164,7 +196,8 @@ async function checkYouTube(client, state) {
   return { found, posted };
 }
 
-async function checkTikTok(client, state) {
+async function checkTikTok(client, state, opts = {}) {
+  if (skippedByFilter(opts, 'tiktok')) return { found: 0, posted: 0, filtered: true };
   let found = 0, posted = 0;
   for (const { key: username, channelId } of config.reposter.tiktok) {
     try {
@@ -183,15 +216,24 @@ async function checkTikTok(client, state) {
         state.tiktok[uname] = videos.map(v => String(v.video_id || v.id || v.aweme_id || '')).filter(Boolean).slice(0, 10);
         continue; // first run -- remember
       }
-      const fresh = videos
-        .map(v => ({
+      const republish = opts.republish || 0;
+      const norm = videos
+        .map((v, ix) => ({
           vid: String(v.video_id || v.id || v.aweme_id || ''),
           title: String(v.title ?? v.desc ?? 'TikTok').slice(0, 250),
-          raw: v,
+          t: Number(v.create_time) > 0 ? Number(v.create_time) * 1000 : 0,
+          ix,
         }))
-        .filter(v => v.vid && !knownSet.has(v.vid))
-        .reverse()
-        .slice(0, 3);
+        .filter(v => v.vid);
+      let fresh;
+      if (republish > 0) {
+        fresh = [...norm].reverse()
+          .filter(v => knownSet.has(v.vid))
+          .sort((a, b) => (a.t - b.t) || (a.ix - b.ix))
+          .slice(0, Math.min(republish, 25));
+      } else {
+        fresh = norm.filter(v => !knownSet.has(v.vid)).reverse().slice(0, 3);
+      }
       for (const item of fresh) {
         const link = `https://www.tiktok.com/@${uname}/video/${item.vid}`;
         const text = mediaText(config.reposter.templates.tiktok, { user: uname, title: item.title, link });
@@ -214,7 +256,7 @@ let timer = null;
 let running = false;
 const ZERO = { found: 0, posted: 0 };
 
-async function runReposterOnce(client) {
+async function runReposterOnce(client, opts = {}) {
   if (running) { logger.warn('[reposter] previous run still active, skipping'); return { skipped: true }; }
   running = true;
   try {
@@ -222,8 +264,8 @@ async function runReposterOnce(client) {
       const state = store.load();
       // Instagram goes via Make webhook, scraper removed.
       const out = { youtube: { ...ZERO }, tiktok: { ...ZERO } };
-      out.youtube = await checkYouTube(client, state);
-      out.tiktok = await checkTikTok(client, state);
+      out.youtube = await checkYouTube(client, state, opts);
+      out.tiktok = await checkTikTok(client, state, opts);
       store.save(state);
       return out;
     });
@@ -247,4 +289,4 @@ function startReposter(client) {
   logger.info(`[reposter] polling every ${mins}m (yt:${config.reposter.youtube.length} tt:${config.reposter.tiktok.length})`);
 }
 
-module.exports = { startReposter, runReposterOnce, publishYouTubeVideo };
+module.exports = { startReposter, runReposterOnce, publishYouTubeVideo, ytPickTargets, skippedByFilter };
