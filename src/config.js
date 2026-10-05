@@ -44,7 +44,7 @@ const config = {
     capsMinLen: Number(process.env.AUTOMOD_CAPS_MINLEN || 12),
     capsPct: Number(process.env.AUTOMOD_CAPS_PCT || 75),
     links: (process.env.AUTOMOD_LINKS || 'on') === 'on',
-    linkWhitelist: (process.env.AUTOMOD_LINK_WHITELIST || 'hpsbassline.club,azura.hpsbassline.club,youtube.com,youtu.be,spotify.com,soundcloud.com,bandcamp.com,audiomack.com,discord.gg,discord.com,streamable.com,reddit.com,github.com,google.com,tiktok.com,instagram.com,twitpic.com,cdn.discordapp.com').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
+    linkWhitelist: (process.env.AUTOMOD_LINK_WHITELIST || 'hpsbassline.club,azura.hpsbassline.club,youtube.com,youtu.be,spotify.com,soundcloud.com,bandcamp.com,audiomack.com,discord.gg,discord.com,streamable.com,reddit.com,github.com,google.com,tiktok.com,instagram.com,twitpic.com,cdn.discordapp.com,discordapp.net,tenor.com,giphy.com').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     invites: (process.env.AUTOMOD_INVITES || 'on') === 'on',
     badwords: (process.env.AUTOMOD_BADWORDS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     actionHours: Number(process.env.AUTOMOD_ACTION_HOURS || 1),

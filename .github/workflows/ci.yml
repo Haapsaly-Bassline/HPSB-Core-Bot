@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: Validate lavalink example config
+        run: python3 -c "import yaml; d=yaml.safe_load(open('lavalink/application.example.yml')); assert d['plugins']['youtube']['enabled'] in (True,False); print('example yml OK')"
+      - name: No secrets in tracked files
+        run: |
+          ! grep -rE 'MTM0Mjk0|GH5HLF|1//0c_|e76dd456|aebb85|457b8731' --include='*.js' --include='*.yml' --include='*.example' --include='*.json' --exclude-dir=node_modules --exclude=package-lock.json . \
+            && echo "secret scan clean"
