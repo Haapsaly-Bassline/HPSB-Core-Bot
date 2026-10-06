@@ -1,18 +1,15 @@
-const { describe, it, before, after } = require('node:test');
+const { describe, it, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const store = require('../src/utils/store');
 
-const FILE = 'data/store.json';
-let backup = null;
+const FILE = 'data/store.test.tmp.json';
+store._useFile(FILE);
 
 describe('store', () => {
-  before(() => {
-    backup = fs.existsSync(FILE) ? fs.readFileSync(FILE, 'utf8') : null;
-  });
   after(() => {
-    if (backup !== null) fs.writeFileSync(FILE, backup);
-    else if (fs.existsSync(FILE)) fs.unlinkSync(FILE);
+    store._useFile(null);
+    if (fs.existsSync(FILE)) fs.unlinkSync(FILE);
   });
 
   it('load never returns null sub-objects', () => {

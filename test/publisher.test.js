@@ -17,13 +17,12 @@ const cfg = {
 };
 
 describe('publisher core', () => {
-  let backup = null;
-  before(() => {
-    backup = fs.existsSync('data/store.json') ? fs.readFileSync('data/store.json', 'utf8') : null;
-  });
+  const TMP = 'data/store.publisher.test.tmp.json';
+  const store = require('../src/utils/store');
+  before(() => { store._useFile(TMP); });
   after(() => {
-    if (backup !== null) fs.writeFileSync('data/store.json', backup);
-    else if (fs.existsSync('data/store.json')) fs.unlinkSync('data/store.json');
+    store._useFile(null);
+    if (fs.existsSync(TMP)) fs.unlinkSync(TMP);
   });
   it('dedup keys and reserve/commit/release', () => {
     const d = new Dedup();

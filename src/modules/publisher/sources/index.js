@@ -10,9 +10,18 @@ const { fetchTikTok } = require('./tiktok');
 const { availability: igAvailability } = require('./instagram');
 const { fetchHpsb, dueReminders } = require('./hpsb');
 const { availability: twAvailability } = require('./twitch');
+const { scanChannel, isPresent } = require('./channel-scan');
+const { resolveChannel } = require('../router');
+const { isSourceOn } = require('../source-state');
 
 function srcOn(cfg, key) {
-  return cfg?.publisher?.sources?.[key] !== false;
+  // Runtime override wins; .env PUBLISHER_* is the fallback (same priority as
+  // the module manager: override > env > default on).
+  try {
+    return isSourceOn(key);
+  } catch {
+    return cfg?.publisher?.sources?.[key] !== false;
+  }
 }
 
 function ytChannels(cfg) {
@@ -23,24 +32,35 @@ function ttAccounts(cfg) {
   return cfg?.reposter?.tiktok || [];
 }
 
+// Each fetch returns { events (oldest-first), note } -- note explains an empty
+// result (blocked transport, rate limit) so /sync shows WHY, not just 0.
 const SOURCES = [
   {
     key: 'releases', label: 'Releases', emoji: '💿', family: 'hpsb',
     enabled: (cfg) => srcOn(cfg, 'hpsb'),
     configured: (cfg) => !!(cfg?.hpsb?.releases?.channelId || cfg?.publisher?.announcementsChannelId),
-    fetch: async (cfg, opts) => (await fetchHpsb(cfg, opts)).releases,
+    fetch: async (cfg, opts) => {
+      const r = await fetchHpsb(cfg, opts);
+      return { events: r.releases, note: r.notes.releases };
+    },
   },
   {
     key: 'events', label: 'Events', emoji: '📅', family: 'hpsb',
     enabled: (cfg) => srcOn(cfg, 'hpsb'),
     configured: (cfg) => !!(cfg?.hpsb?.events?.channelId || cfg?.publisher?.announcementsChannelId),
-    fetch: async (cfg, opts) => (await fetchHpsb(cfg, opts)).events,
+    fetch: async (cfg, opts) => {
+      const r = await fetchHpsb(cfg, opts);
+      return { events: r.events, note: r.notes.events };
+    },
   },
   {
     key: 'news', label: 'News', emoji: '📰', family: 'hpsb',
     enabled: (cfg) => srcOn(cfg, 'hpsb'),
     configured: (cfg) => !!(cfg?.hpsb?.posts?.channelId || cfg?.publisher?.announcementsChannelId),
-    fetch: async (cfg, opts) => (await fetchHpsb(cfg, opts)).news,
+    fetch: async (cfg, opts) => {
+      const r = await fetchHpsb(cfg, opts);
+      return { events: r.news, note: r.notes.news };
+    },
   },
   {
     key: 'youtube', label: 'YouTube', emoji: '▶️', family: 'media',
@@ -61,7 +81,7 @@ const SOURCES = [
     enabled: (cfg) => srcOn(cfg, 'instagram'),
     configured: (cfg) => igAvailability(cfg).ok,
     // No polling provider configured: webhook/API-first (see webhooks.js).
-    fetch: async () => [],
+    fetch: async () => ({ events: [], note: '' }),
   },
 ];
 
@@ -116,22 +136,27 @@ function pickTargets(fetched, published, { backfill = 0, republish = 0 } = {}) {
 }
 
 // Run one sync pass over selected sources through a live pipeline.
-// Returns { <key>: { found, posted } | { filtered:true } | { disabled:true } | { unavailable } }.
+// Returns { <key>: { found, posted, note? } | { filtered:true } | { disabled:true } | { unavailable } }.
 // First run (nothing published yet) only remembers -- no history spam --
-// unless backfill/republish explicitly requested.
+// unless backfill/republish explicitly requested. `baseline: true` forces the
+// remember-only pass (scheduler boot: never post on restart, ever).
 async function runSync(pipeline, cfg, opts = {}) {
   const out = {};
   // Snapshot ONCE: first run after a fresh start remembers everything silently
   // (no history spam). Re-snapshotting per source would let source #2+ post
   // up to 5 old items each on the very first run.
   const initiallyEmpty = pipeline.dedup.dumpSeen().length === 0 && !opts.republish && !opts.backfill;
+  const rememberOnly = initiallyEmpty || !!opts.baseline;
   for (const src of SOURCES) {
     if (skippedByFilter(opts, src.key)) { out[src.key] = { found: 0, posted: 0, filtered: true }; continue; }
     if (!src.enabled(cfg)) { out[src.key] = { found: 0, posted: 0, disabled: true }; continue; }
     if (!src.configured(cfg)) { out[src.key] = { found: 0, posted: 0, unavailable: true }; continue; }
     let fetched = [];
+    let note = '';
     try {
-      fetched = (await src.fetch(cfg, opts)) || [];
+      const res = (await src.fetch(cfg, opts)) || {};
+      fetched = Array.isArray(res) ? res : (res.events || []);
+      note = res.note || '';
     } catch (e) {
       logger.warn(`[publisher/${src.key}] fetch failed: ${e.message}`);
       out[src.key] = { found: 0, posted: 0, error: String(e.message || e).slice(0, 120) };
@@ -139,18 +164,42 @@ async function runSync(pipeline, cfg, opts = {}) {
     }
     const republish = opts.republish || 0;
     const backfill = opts.backfill || 0;
-    if (initiallyEmpty) {
+    if (rememberOnly && !republish && !backfill && !opts.missing) {
       for (const ev of fetched) {
         const k = pipeline.dedup.reserve(ev);
         if (k) pipeline.dedup.commit(k);
       }
-      out[src.key] = { found: fetched.length, posted: 0 };
+      out[src.key] = { found: fetched.length, posted: 0, note };
       continue;
     }
+    // mode=missing: post what is NOT actually in the channel right now
+    // (channel was wiped/recreated -- seen-memory alone would skip it all).
+    let missingScan = null;
+    if (opts.missing && opts.client) {
+      if (!opts._scans) opts._scans = {};
+      const target = src.family === 'media' ? 'media' : 'announcements';
+      if (!opts._scans[target]) {
+        opts._scans[target] = await scanChannel(opts.client, resolveChannel(target, cfg));
+      }
+      missingScan = opts._scans[target];
+      if (!missingScan.ok) {
+        out[src.key] = { found: fetched.length, posted: 0, error: 'cannot read channel history (need View + Read History)' };
+        continue;
+      }
+    }
     const published = new Set(pipeline.dedup.dumpSeen());
-    const targets = pickTargets(fetched, published, { backfill, republish });
-    // Explicit re-post modes bypass the published-guard (in-flight guard stays).
-    const force = republish > 0 || backfill > 0;
+    let targets;
+    let force = republish > 0 || backfill > 0;
+    if (missingScan) {
+      const limit = Math.min(opts.missingLimit || 25, 25);
+      targets = [...fetched]
+        .sort((a, b) => (evTime(a) - evTime(b)))
+        .filter((ev) => !isPresent(ev, missingScan))
+        .slice(0, limit);
+      force = true; // seen-memory may claim these as posted -- channel is the truth
+    } else {
+      targets = pickTargets(fetched, published, { backfill, republish });
+    }
     let posted = 0;
     for (const ev of targets) {
       const r = await pipeline.ingest(ev, { force });
@@ -158,7 +207,7 @@ async function runSync(pipeline, cfg, opts = {}) {
       await pipeline.queue.onIdle();
       if (pipeline.dedup.published.has(r.key)) posted++;
     }
-    out[src.key] = { found: fetched.length, posted };
+    out[src.key] = { found: fetched.length, posted, note };
   }
   try {
     const { saveState } = require('../state');

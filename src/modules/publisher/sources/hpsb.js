@@ -93,20 +93,20 @@ function normalizeNews(item) {
 
 async function fetchEvents(cfg = {}, { http } = {}) {
   const h = cfg?.publisher?.hpsb || {};
-  const { items, via } = await fetchWithFallback(h.eventsApiUrl, h.eventsRssUrl, { http });
-  return { events: items.map((i) => normalizeEvent(i, cfg)), via };
+  const { items, via, note } = await fetchWithFallback(h.eventsApiUrl, h.eventsRssUrl, { http });
+  return { events: items.map((i) => normalizeEvent(i, cfg)), via, note };
 }
 
 async function fetchReleases(cfg = {}, { http } = {}) {
   const h = cfg?.publisher?.hpsb || {};
-  const { items, via } = await fetchWithFallback(h.releasesApiUrl, h.releasesRssUrl, { http });
-  return { events: items.map((i) => normalizeRelease(i, cfg)), via };
+  const { items, via, note } = await fetchWithFallback(h.releasesApiUrl, h.releasesRssUrl, { http });
+  return { events: items.map((i) => normalizeRelease(i, cfg)), via, note };
 }
 
 async function fetchNews(cfg = {}, { http } = {}) {
   const h = cfg?.publisher?.hpsb || {};
-  const { items, via } = await fetchWithFallback(h.newsRssUrl, null, { http });
-  return { events: items.map(normalizeNews), via: via === 'api' ? 'rss' : via };
+  const { items, via, note } = await fetchWithFallback(h.newsRssUrl, null, { http });
+  return { events: items.map(normalizeNews), via: via === 'api' ? 'rss' : via, note };
 }
 
 // Reminder scan: needs a REAL start field (raw.start/startUnix/startDate).
@@ -129,9 +129,9 @@ function dueReminders(items, reminded, now = Date.now()) {
 
 async function fetchHpsb(cfg = {}, { http } = {}) {
   const [evRes, relRes, newsRes] = await Promise.all([
-    fetchEvents(cfg, { http }).catch((e) => { logger.warn(`[publisher/hpsb] events: ${e.message}`); return { events: [], via: 'none' }; }),
-    fetchReleases(cfg, { http }).catch((e) => { logger.warn(`[publisher/hpsb] releases: ${e.message}`); return { events: [], via: 'none' }; }),
-    fetchNews(cfg, { http }).catch((e) => { logger.warn(`[publisher/hpsb] news: ${e.message}`); return { events: [], via: 'none' }; }),
+    fetchEvents(cfg, { http }).catch((e) => { logger.warn(`[publisher/hpsb] events: ${e.message}`); return { events: [], via: 'none', note: e.message }; }),
+    fetchReleases(cfg, { http }).catch((e) => { logger.warn(`[publisher/hpsb] releases: ${e.message}`); return { events: [], via: 'none', note: e.message }; }),
+    fetchNews(cfg, { http }).catch((e) => { logger.warn(`[publisher/hpsb] news: ${e.message}`); return { events: [], via: 'none', note: e.message }; }),
   ]);
   const sortOld = (arr) => arr.sort((a, b) => (dateMs(a.publishedAt) - dateMs(b.publishedAt)));
   return {
@@ -139,6 +139,7 @@ async function fetchHpsb(cfg = {}, { http } = {}) {
     events: sortOld(evRes.events),
     news: sortOld(newsRes.events),
     via: { releases: relRes.via, events: evRes.via, news: newsRes.via },
+    notes: { releases: relRes.note || '', events: evRes.note || '', news: newsRes.note || '' },
   };
 }
 

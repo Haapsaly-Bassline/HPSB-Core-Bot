@@ -35,21 +35,29 @@ async function fetchUserPosts(username, { http, count = 6 } = {}) {
   return Array.isArray(videos) ? videos : [];
 }
 
-// Fetch all configured accounts -> normalized events, oldest-first.
+// Fetch all configured accounts -> { events (oldest-first), note }.
 async function fetchTikTok({ accounts = [], http } = {}) {
   const out = [];
+  const problems = [];
   for (const acc of accounts) {
     const username = acc?.key;
     if (!username) continue;
     try {
       const videos = await fetchUserPosts(username, { http });
+      if (!videos.length) { problems.push(`${username}: empty (rate-limited?)`); continue; }
       for (const v of videos) {
         const ev = normalize(v, username);
         if (ev) out.push(ev);
       }
-    } catch (e) { logger.warn(`[publisher/tiktok] ${username}: ${e.message}`); }
+    } catch (e) {
+      logger.warn(`[publisher/tiktok] ${username}: ${e.message}`);
+      problems.push(`${username}: ${String(e.message || e).slice(0, 80)}`);
+    }
   }
-  return out.sort((a, b) => (dateMs(a.publishedAt) - dateMs(b.publishedAt)));
+  return {
+    events: out.sort((a, b) => (dateMs(a.publishedAt) - dateMs(b.publishedAt))),
+    note: problems.join('; '),
+  };
 }
 
 module.exports = { fetchTikTok, fetchUserPosts, normalize };

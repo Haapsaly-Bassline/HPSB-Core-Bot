@@ -13,13 +13,21 @@ const SOURCE_CHOICES = [
   { name: 'Instagram', value: 'instagram' },
 ];
 
-function line(emoji, name, r) {
+function line(emoji, name, r, mode) {
   if (!r) return `${emoji} **${name}:** error`;
   if (r.filtered) return `${emoji} **${name}:** — not selected`;
   if (r.disabled) return `${emoji} **${name}:** — disabled`;
   if (r.unavailable) return `${emoji} **${name}:** — unavailable (not configured)`;
   if (r.error) return `${emoji} **${name}:** error (${r.error})`;
-  return `${emoji} **${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}`;
+  const base = `${emoji} **${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}`;
+  // Explain a confusing zero: everything found is already published --
+  // use mode=republish (repost known) or mode=missing (repost what's gone).
+  if (mode === 'new' && (r.found ?? 0) > 0 && !r.posted && !r.note) {
+    return `${base}\n↳ _all already published — mode=republish to repost, mode=missing to restore wiped channels_`;
+  }
+  // Show WHY nothing came back (blocked transport, rate limit) -- not just 0.
+  if (!r.posted && r.note) return `${base}\n↳ _${String(r.note).slice(0, 200)}_`;
+  return base;
 }
 
 module.exports = {
@@ -28,16 +36,25 @@ module.exports = {
     .setDescription('Force-sync Publisher feeds (oldest-first)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addStringOption(o => o.setName('source').setDescription('What to import').setRequired(false).addChoices(...SOURCE_CHOICES))
-    .addStringOption(o => o.setName('mode').setDescription('New only, or republish known oldest-first').setRequired(false)
-      .addChoices({ name: 'New only', value: 'new' }, { name: 'Republish (oldest first)', value: 'republish' }))
-    .addIntegerOption(o => o.setName('count').setDescription('Republish limit (1–25, default 10)').setMinValue(1).setMaxValue(25))
+    .addStringOption(o => o.setName('mode').setDescription('How to sync (default: missing in channel)').setRequired(false)
+      .addChoices(
+        { name: 'Missing in channel (restore wiped)', value: 'missing' },
+        { name: 'New only', value: 'new' },
+        { name: 'Republish known (oldest first)', value: 'republish' }))
+    .addIntegerOption(o => o.setName('count').setDescription('Limit for republish/missing (1–25)').setMinValue(1).setMaxValue(25))
     .addIntegerOption(o => o.setName('backfill').setDescription('Backfill the last N (0–5) even if already seen').setMinValue(0).setMaxValue(5)),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
     const source = interaction.options.getString('source') || 'all';
-    const mode = interaction.options.getString('mode') || 'new';
+    // Default = missing: sync publishes whatever the channel lost (recreated
+    // channels, purged history). Memory-only 'new' would skip it all silently.
+    const mode = interaction.options.getString('mode') || 'missing';
     const backfill = interaction.options.getInteger('backfill') || 0;
-    const republish = mode === 'republish' ? (interaction.options.getInteger('count') || 10) : 0;
+    // republish default 10, missing default 25 (channel restore wants them all).
+    const countOpt = interaction.options.getInteger('count');
+    const republish = mode === 'republish' ? (countOpt || 10) : 0;
+    const missing = mode === 'missing';
+    const missingLimit = missing ? (countOpt || 25) : 0;
     try {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     } catch {
@@ -62,7 +79,7 @@ module.exports = {
       let out;
       try {
         out = await pub.runSync(pipeline, require('../config').config, {
-          sources: source, backfill, republish,
+          sources: source, backfill, republish, missing, missingLimit, client,
         });
       } finally {
         if (owned) {
@@ -77,14 +94,14 @@ module.exports = {
       const e = new EmbedBuilder()
         .setColor(0x7c3aed).setTitle('🔄 Publisher Sync').setTimestamp()
         .setDescription([
-          line('💿', 'Releases', out.releases),
-          line('📅', 'Events', out.events),
-          line('📰', 'News', out.news),
-          line('▶️', 'YouTube', out.youtube),
-          line('🎵', 'TikTok', out.tiktok),
-          line('📸', 'Instagram', out.instagram),
+          line('💿', 'Releases', out.releases, mode),
+          line('📅', 'Events', out.events, mode),
+          line('📰', 'News', out.news, mode),
+          line('▶️', 'YouTube', out.youtube, mode),
+          line('🎵', 'TikTok', out.tiktok, mode),
+          line('📸', 'Instagram', out.instagram, mode),
         ].join('\n'))
-        .setFooter({ text: `${source !== 'all' ? `source=${source} • ` : ''}${mode === 'republish' ? `republish≤${republish} • ` : ''}${backfill ? `backfill=${backfill} • ` : ''}oldest-first • Haapsaly Bassline` });
+        .setFooter({ text: `${source !== 'all' ? `source=${source} • ` : ''}${mode !== 'new' ? `mode=${mode} • ` : ''}${backfill ? `backfill=${backfill} • ` : ''}oldest-first • Haapsaly Bassline` });
       await interaction.editReply({ embeds: [e] });
     } catch (err) {
       await replyError(interaction, `❌ Sync error: ${String(err.message || err).slice(0, 300)}`);

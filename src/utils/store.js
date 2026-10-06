@@ -5,7 +5,17 @@ const path = require('node:path');
 // { youtube: {}, tiktok: {}, instagram: {}, site: {lastIds: []},
 //   releases: {ids: []}, events: {ids: []}, posts: {ids: []}, modcall: {} }
 
-const FILE = process.env.HPSB_STORE_FILE || path.join(__dirname, '..', '..', 'data', 'store.json');
+const DEFAULT_FILE = process.env.HPSB_STORE_FILE || path.join(__dirname, '..', '..', 'data', 'store.json');
+let FILE = DEFAULT_FILE;
+
+// Test hook: isolate the store file per test process (node --test runs files
+// in PARALLEL and they share data/store.json -- concurrent read/write across
+// processes flakes assertions). Pass null to restore the default.
+function _useFile(p) {
+  FILE = p || DEFAULT_FILE;
+  if (!p) delete process.env.HPSB_STORE_FILE;
+  else process.env.HPSB_STORE_FILE = p;
+}
 
 const DEFAULTS = { youtube: {}, tiktok: {}, instagram: {}, site: { lastIds: [] }, releases: { ids: [] }, events: { ids: [] }, posts: { ids: [] }, modcall: {}, warns: {}, statsChannels: {}, statsTemplates: {}, statsDisabled: [], modules: {} };
 // warns: { userId: [{ id, mod, reason, at }] }
@@ -65,4 +75,4 @@ function exclusive(fn) {
   return run;
 }
 
-module.exports = { load, save, exclusive };
+module.exports = { load, save, exclusive, _useFile };

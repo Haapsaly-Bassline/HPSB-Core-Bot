@@ -108,7 +108,9 @@ function checkStore() {
   try {
     const dir = path.join(__dirname, '..', '..', 'data');
     fs.accessSync(dir, fs.constants.W_OK);
-    require('../utils/store').load();
+    const store = require('../utils/store');
+    const d = store.load();
+    store.save(d); // roundtrip: an unwritable store = lost dedup = reposts on restart
     return ['✅ store (read/write)'];
   } catch (e) { return [`❌ store: ${e.message}`]; }
 }

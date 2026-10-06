@@ -142,13 +142,12 @@ describe('publisher sources: twitch webhook security', () => {
 });
 
 describe('publisher sources: runSync through pipeline', () => {
-  let backup = null;
-  before(() => {
-    backup = fs.existsSync('data/store.json') ? fs.readFileSync('data/store.json', 'utf8') : null;
-  });
+  const TMP = 'data/store.publisher-sources.test.tmp.json';
+  const store = require('../src/utils/store');
+  before(() => { store._useFile(TMP); });
   after(() => {
-    if (backup !== null) fs.writeFileSync('data/store.json', backup);
-    else if (fs.existsSync('data/store.json')) fs.unlinkSync('data/store.json');
+    store._useFile(null);
+    if (fs.existsSync(TMP)) fs.unlinkSync(TMP);
   });
 
   const rss2 = `<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><yt:videoId>VIDNEW12345</yt:videoId><title>New vid</title><published>2026-10-02T10:00:00Z</published></entry><entry><yt:videoId>VIDOLD12345</yt:videoId><title>Old vid</title><published>2026-10-01T10:00:00Z</published></entry></feed>`;
@@ -202,6 +201,98 @@ describe('publisher sources: runSync through pipeline', () => {
       const igCfg = { ...baseCfg, publisher: { ...baseCfg.publisher, sources: { ...baseCfg.publisher.sources, instagram: true } } };
       const r3 = await runSync(p, igCfg, { sources: 'instagram' });
       assert.equal(r3.instagram.unavailable, true);
+    } finally {
+      p.stop();
+      await run;
+    }
+  });
+
+  it('baseline boot pass remembers everything, posts nothing', async () => {
+    const sent = [];
+    const p = createPipeline({
+      client: {}, config: baseCfg, log: { warn() {} },
+      sender: async (ch) => { sent.push(ch); return { id: 'm' }; },
+    });
+    const run = p.start();
+    try {
+      // Fresh pipeline (nothing seen) + baseline: even unseen items are only remembered.
+      const r = await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp, baseline: true });
+      assert.equal(r.youtube.found, 2);
+      assert.equal(r.youtube.posted, 0);
+      assert.equal(sent.length, 0);
+      // And the next normal pass finds nothing new (baseline persisted in-memory).
+      const r2 = await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp });
+      assert.equal(r2.youtube.posted, 0);
+    } finally {
+      p.stop();
+      await run;
+    }
+  });
+
+  it('empty fetch carries a note explaining why (not just 0)', async () => {
+    const dead = { get: async () => { throw new Error('blocked by remote host'); } };
+    const p = createPipeline({ client: {}, config: baseCfg, log: { warn() {} }, sender: async () => ({ id: 'm' }) });
+    const run = p.start();
+    try {
+      const r = await runSync(p, baseCfg, { sources: 'youtube', http: dead, republish: 5 });
+      assert.equal(r.youtube.found, 0);
+      assert.ok(r.youtube.note && r.youtube.note.includes('blocked by remote host'));
+    } finally {
+      p.stop();
+      await run;
+    }
+  });
+
+  it('missing mode reposts what the channel lost (seen-memory ignored)', async () => {
+    const sent = [];
+    // Channel history contains only the NEW video -- OLD was wiped with the channel.
+    const history = [
+      { content: '', embeds: [{ url: 'https://www.youtube.com/watch?v=VIDNEW12345', title: 'New vid', description: '' }], components: [] },
+    ];
+    const fakeClient = {
+      channels: {
+        fetch: async () => ({
+          isTextBased: () => true,
+          messages: { fetch: async () => history },
+        }),
+      },
+    };
+    const p = createPipeline({
+      client: {}, config: baseCfg, log: { warn() {} },
+      sender: async (ch, payload) => { sent.push(payload.embeds[0].toJSON().description); return { id: 'm' }; },
+    });
+    const run = p.start();
+    try {
+      // Baseline first: everything remembered (simulates pre-wipe state).
+      await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp });
+      // Normal sync: nothing new -> posted 0.
+      const normal = await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp });
+      assert.equal(normal.youtube.posted, 0);
+      // Missing mode: OLD is gone from the channel -> reposted oldest-first.
+      const miss = await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp, missing: true, missingLimit: 25, client: fakeClient });
+      assert.equal(miss.youtube.found, 2);
+      assert.equal(miss.youtube.posted, 1);
+      assert.equal(sent.length, 1);
+      assert.ok(sent[0].includes('Old vid'));
+    } finally {
+      p.stop();
+      await run;
+    }
+  });
+
+  it('missing mode refuses blind repost when history is unreadable', async () => {
+    const sent = [];
+    const blindClient = { channels: { fetch: async () => null } };
+    const p = createPipeline({
+      client: {}, config: baseCfg, log: { warn() {} },
+      sender: async () => { sent.push(1); return { id: 'm' }; },
+    });
+    const run = p.start();
+    try {
+      const r = await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp, missing: true, client: blindClient });
+      assert.equal(r.youtube.posted, 0);
+      assert.ok(r.youtube.error && r.youtube.error.includes('history'));
+      assert.equal(sent.length, 0);
     } finally {
       p.stop();
       await run;

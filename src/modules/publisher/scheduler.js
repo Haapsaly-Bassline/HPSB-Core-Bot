@@ -16,14 +16,17 @@ function minutes(v, def, min) {
   return Number.isFinite(n) ? Math.max(min, n) : def;
 }
 
-async function runHpsb(pipeline, cfg) {
+async function runHpsb(pipeline, cfg, opts = {}) {
   try {
-    const res = await runSync(pipeline, cfg, { sources: 'hpsb' });
+    const res = await runSync(pipeline, cfg, { sources: 'hpsb', ...opts });
     for (const [k, r] of Object.entries(res)) {
       if (r.posted) logger.info(`[publisher/hpsb] poll ${k}: found ${r.found}, posted ${r.posted}`);
+      else if (r.note) logger.info(`[publisher/hpsb] poll ${k}: found ${r.found} (${r.note.slice(0, 160)})`);
     }
   } catch (e) { logger.warn('[publisher/hpsb] poll failed:', e.message); }
-  await runReminders(pipeline, cfg).catch((e) => logger.warn('[publisher/hpsb] reminders failed:', e.message));
+  if (!opts.baseline) {
+    await runReminders(pipeline, cfg).catch((e) => logger.warn('[publisher/hpsb] reminders failed:', e.message));
+  }
 }
 
 async function runReminders(pipeline, cfg) {
@@ -63,11 +66,12 @@ async function runReminders(pipeline, cfg) {
   }
 }
 
-async function runMedia(pipeline, cfg) {
+async function runMedia(pipeline, cfg, opts = {}) {
   try {
-    const res = await runSync(pipeline, cfg, { sources: 'media' });
+    const res = await runSync(pipeline, cfg, { sources: 'media', ...opts });
     for (const [k, r] of Object.entries(res)) {
       if (r.posted) logger.info(`[publisher/${k}] poll: found ${r.found}, posted ${r.posted}`);
+      else if (r.note) logger.info(`[publisher/${k}] poll: found ${r.found} (${r.note.slice(0, 160)})`);
     }
   } catch (e) { logger.warn('[publisher/media] poll failed:', e.message); }
 }
@@ -80,7 +84,11 @@ function start(pipeline, cfg) {
 
   if (hpsbOn) {
     const mins = minutes(cfg?.hpsb?.pollMinutes, 5, 1);
-    runHpsb(pipeline, cfg).catch(() => {});
+    // Boot baseline: remember everything WITHOUT posting (a restart must never
+    // re-post history; catch-up after downtime = /sync backfill/republish).
+    runHpsb(pipeline, cfg, { baseline: true })
+      .then(() => logger.info('[publisher/hpsb] boot baseline remembered'))
+      .catch(() => {});
     hpsbTimer = setInterval(() => { if (running) runHpsb(pipeline, cfg).catch(() => {}); }, mins * 60 * 1000);
     hpsbTimer.unref?.();
     logger.info(`[publisher/hpsb] polling every ${mins}m`);
@@ -90,7 +98,9 @@ function start(pipeline, cfg) {
 
   if (mediaOn) {
     const mins = minutes(cfg?.reposter?.pollMinutes, 10, 2);
-    runMedia(pipeline, cfg).catch(() => {});
+    runMedia(pipeline, cfg, { baseline: true })
+      .then(() => logger.info('[publisher/media] boot baseline remembered'))
+      .catch(() => {});
     mediaTimer = setInterval(() => { if (running) runMedia(pipeline, cfg).catch(() => {}); }, mins * 60 * 1000);
     mediaTimer.unref?.();
     logger.info(`[publisher/media] polling every ${mins}m`);

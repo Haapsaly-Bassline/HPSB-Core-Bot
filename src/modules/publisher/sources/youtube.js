@@ -82,24 +82,31 @@ async function fetchViaScrape(ytId, http) {
   return ids.map((id) => ({ id, channelId: ytId }));
 }
 
-// Returns raw items (newest-first like the upstream). Never throws.
+// Returns raw items (newest-first like the upstream). Throws with the stage
+// errors when every transport failed -- callers surface it as a note.
 async function fetchLatestYouTube(ytId, { apiKey, http } = {}) {
+  const stageErrors = [];
   if (apiKey) {
     try {
       const items = await fetchViaApi(ytId, apiKey, http);
       if (items.length) return items;
-    } catch (e) { logger.warn(`[publisher/youtube] api fallback: ${e.message}`); }
+      stageErrors.push('api: empty');
+    } catch (e) { logger.warn(`[publisher/youtube] api fallback: ${e.message}`); stageErrors.push(`api: ${e.message}`); }
   }
   try {
     const items = await fetchViaRss(ytId, http);
     if (items.length) return items;
-  } catch (e) { logger.warn(`[publisher/youtube] rss blocked (${e.message}), trying scrape`); }
+    stageErrors.push('rss: empty');
+  } catch (e) { logger.warn(`[publisher/youtube] rss blocked (${e.message}), trying scrape`); stageErrors.push(`rss: ${e.message}`); }
   try {
-    return await fetchViaScrape(ytId, http);
+    const scraped = await fetchViaScrape(ytId, http);
+    if (scraped.length) return scraped;
+    stageErrors.push('scrape: empty');
   } catch (e) {
     logger.warn(`[publisher/youtube] scrape failed: ${e.message}`);
-    return [];
+    stageErrors.push(`scrape: ${e.message}`);
   }
+  throw new Error(stageErrors.join('; ') || 'all transports empty');
 }
 
 async function enrichTitles(items, http) {
@@ -115,15 +122,17 @@ async function enrichTitles(items, http) {
   }));
 }
 
-// Fetch all configured YT channels -> normalized events, oldest-first.
-// opts: { apiKey, channels: [{key}], http }.
+// Fetch all configured YT channels -> { events (oldest-first), note }.
+// Polling is FALLBACK only -- PubSubHubbub push (webhooks.js) is primary.
 async function fetchYouTube({ apiKey, channels = [], http } = {}) {
   const out = [];
+  const problems = [];
   for (const ch of channels) {
     const ytId = ch?.key;
     if (!ytId) continue;
     try {
       const items = await fetchLatestYouTube(ytId, { apiKey, http });
+      if (!items.length) { problems.push(`${ytId}: empty (api/rss/scrape gave nothing)`); continue; }
       const rich = await enrichTitles(items, http);
       // Dated oldest-first; undated (scrape fallback) keep feed-relative order
       // reversed (feed is newest-first, so reverse = oldest-first assumption).
@@ -137,9 +146,12 @@ async function fetchYouTube({ apiKey, channels = [], http } = {}) {
       }
       dated.sort((a, b) => (dateMs(a.publishedAt) - dateMs(b.publishedAt)));
       out.push(...dated, ...undated.reverse());
-    } catch (e) { logger.warn(`[publisher/youtube] ${ytId}: ${e.message}`); }
+    } catch (e) {
+      logger.warn(`[publisher/youtube] ${ytId}: ${e.message}`);
+      problems.push(`${ytId}: ${String(e.message || e).slice(0, 80)}`);
+    }
   }
-  return out;
+  return { events: out, note: problems.join('; ') };
 }
 
 module.exports = { fetchLatestYouTube, fetchYouTube, normalize, truncate };

@@ -62,25 +62,29 @@ async function fetchFeed(url, opts = {}) {
 }
 
 // Fetch primary, fall back to secondary when primary errors OR returns empty.
-// Returns { items, via: 'api'|'rss'|'none' }.
+// Returns { items, via: 'api'|'rss'|'none', note } -- note explains WHY nothing
+// came back ('api: timeout; rss: empty'), so /sync can show it instead of a bare 0.
 async function fetchWithFallback(primaryUrl, fallbackUrl, opts = {}) {
+  const problems = [];
   if (primaryUrl) {
     try {
       const items = toItems(await get(primaryUrl, opts));
-      if (items.length) return { items, via: 'api' };
-    } catch {
-      // fall through to RSS
+      if (items.length) return { items, via: 'api', note: '' };
+      problems.push('api: empty');
+    } catch (e) {
+      problems.push(`api: ${String(e?.message || e).slice(0, 80)}`);
     }
   }
   if (fallbackUrl) {
     try {
       const items = toItems(await get(fallbackUrl, opts));
-      if (items.length) return { items, via: 'rss' };
-    } catch {
-      // none available
+      if (items.length) return { items, via: 'rss', note: problems.length ? problems.join('; ') + ' -> rss ok' : '' };
+      problems.push('rss: empty');
+    } catch (e) {
+      problems.push(`rss: ${String(e?.message || e).slice(0, 80)}`);
     }
   }
-  return { items: [], via: 'none' };
+  return { items: [], via: 'none', note: problems.join('; ') || 'no source configured' };
 }
 
 function dateMs(v) {

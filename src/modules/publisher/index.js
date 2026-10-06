@@ -25,6 +25,7 @@ async function startPublisher(client) {
   pipeline = createPipeline({ client, config, log: logger });
   const st = loadState();
   pipeline.dedup.loadSeen(st.seen);
+  logger.info(`[publisher] loaded ${st.seen.length} seen keys (restart reposts: none of these)`);
   live = liveMod.fromStored(st.live);
   pipeline.setLive(live);
   pipeline.start();
