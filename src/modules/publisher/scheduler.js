@@ -9,9 +9,11 @@ const { saveState } = require('./state');
 
 let hpsbTimer = null;
 let mediaTimer = null;
+let liveTimer = null;
 let running = false;
 let hpsbBusy = false;
 let mediaBusy = false;
+let liveBusy = false;
 
 function srcEnabled(cfg, key) {
   try {
@@ -94,13 +96,64 @@ async function runMedia(pipeline, cfg, opts = {}) {
   finally { mediaBusy = false; }
 }
 
+// --- YouTube live watch (multistream): Twitch EventSub pushes, YouTube is
+// polled on a short loop. Offline fires only after 2 consecutive misses so a
+// single failed check can't end the stream message by accident.
+const liveMisses = new Map(); // channelId -> consecutive not-live count
+
+async function pollLive(pipeline, cfg, deps = {}) {
+  if (!srcEnabled(cfg, 'youtube')) return;
+  if (liveBusy) { logger.warn('[publisher/live] previous check still active, skipping'); return; }
+  liveBusy = true;
+  try {
+    const channels = cfg?.reposter?.youtube || [];
+    if (!channels.length) return;
+    const { checkYoutubeLive } = require('./sources/youtube-live');
+    const states = await checkYoutubeLive({ channels, apiKey: cfg?.reposter?.youtubeApiKey, http: deps.http });
+    const wh = () => require('./webhooks');
+    const onOnline = deps.onOnline || ((ref, ev) => wh().handleLiveOnline('youtube', ref, ev));
+    const onOffline = deps.onOffline || ((ev) => wh().handleLiveOffline('youtube', ev));
+    const liveNow = (() => { try { return pipeline.getLive?.()?.youtube || null; } catch { return null; } })();
+    for (const st of states) {
+      if (st.live && st.videoId) {
+        liveMisses.delete(st.channelId);
+        const ev = {
+          source: 'youtube', type: 'live', id: st.videoId,
+          author: st.author || 'HPSB', title: st.title || 'Live',
+          description: '', url: st.url,
+          image: `https://i.ytimg.com/vi/${st.videoId}/hqdefault.jpg`,
+          publishedAt: new Date().toISOString(),
+          target: 'announcements', metadata: { channelId: st.channelId },
+        };
+        logger.info(`[publisher/live] youtube live: ${st.videoId}`);
+        await onOnline({ videoId: st.videoId, url: st.url }, ev);
+      } else {
+        if (!liveNow?.live) { liveMisses.delete(st.channelId); continue; }
+        const n = (liveMisses.get(st.channelId) || 0) + 1;
+        if (n < 2) { liveMisses.set(st.channelId, n); continue; }
+        liveMisses.delete(st.channelId);
+        logger.info('[publisher/live] youtube ended');
+        await onOffline();
+      }
+    }
+  } catch (e) {
+    logger.warn('[publisher/live] check failed:', e?.message || e);
+  } finally {
+    liveBusy = false;
+  }
+}
+
+function _clearLiveMisses() { liveMisses.clear(); }
+
 function start(pipeline, cfg) {
   stop();
   running = true;
   hpsbBusy = false;
   mediaBusy = false;
+  liveBusy = false;
   const hpsbOn = srcEnabled(cfg, 'hpsb');
   const mediaOn = srcEnabled(cfg, 'youtube') || srcEnabled(cfg, 'tiktok');
+  const liveOn = srcEnabled(cfg, 'youtube');
 
   if (hpsbOn) {
     const mins = minutes(cfg?.hpsb?.pollMinutes, 5, 1);
@@ -128,6 +181,16 @@ function start(pipeline, cfg) {
     logger.info('[publisher/media] disabled');
   }
 
+  if (liveOn) {
+    const mins = minutes(cfg?.publisher?.live?.checkMinutes, 2, 1);
+    pollLive(pipeline, cfg).catch(() => {});
+    liveTimer = setInterval(() => { if (running) pollLive(pipeline, cfg).catch(() => {}); }, mins * 60 * 1000);
+    liveTimer.unref?.();
+    logger.info(`[publisher/live] youtube live check every ${mins}m`);
+  } else {
+    logger.info('[publisher/live] disabled');
+  }
+
   // runReminders ingests through the pipeline (formatter picks the reminder variant).
 }
 
@@ -135,7 +198,8 @@ function stop() {
   running = false;
   if (hpsbTimer) { clearInterval(hpsbTimer); hpsbTimer = null; }
   if (mediaTimer) { clearInterval(mediaTimer); mediaTimer = null; }
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
   logger.info('[publisher] scheduler stopped');
 }
 
-module.exports = { start, stop, runHpsb, runMedia, runReminders };
+module.exports = { start, stop, runHpsb, runMedia, runReminders, pollLive, _clearLiveMisses };

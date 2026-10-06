@@ -1,52 +1,51 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const hpsb = require('../src/modules/site-publisher/poller');
-const { ytPickTargets, skippedByFilter } = require('../src/modules/reposter/poller');
+// Legacy reposter/site-publisher are deleted: sync targets live on the new
+// Publisher (sources -> normalize -> dedup -> queue -> router -> Discord).
+const { pickTargets, skippedByFilter, keyOfEv } = require('../src/modules/publisher/sources/index');
 
-describe('sync pickTargets', () => {
+describe('sync pickTargets (new Publisher)', () => {
+  const ev = (id, publishedAt) => ({ source: 'hpsb', type: 'news', id, publishedAt });
   const items = [
-    { uid: 'c', date: '2026-10-03T10:00:00Z' },
-    { uid: 'a', date: '2026-10-01T10:00:00Z' },
-    { uid: 'b', date: '2026-10-02T10:00:00Z' },
-    { uid: 'z', date: '' },
+    ev('c', '2026-10-03T10:00:00Z'),
+    ev('a', '2026-10-01T10:00:00Z'),
+    ev('b', '2026-10-02T10:00:00Z'),
+    ev('z', ''),
   ];
-  const known = new Set(['a', 'b', 'c', 'z']);
-  it('republish returns known oldest-first', () => {
-    const got = hpsb.pickTargets(items, known, { republish: 10 }).map(i => i.uid);
+  const known = new Set(items.map(keyOfEv));
+  it('republish returns known oldest-first (undated keep feed order first)', () => {
+    const got = pickTargets(items, known, { republish: 10 }).map((i) => i.id);
     assert.deepEqual(got, ['z', 'a', 'b', 'c']);
   });
   it('republish respects limit', () => {
-    assert.equal(hpsb.pickTargets(items, known, { republish: 2 }).length, 2);
+    assert.equal(pickTargets(items, known, { republish: 2 }).length, 2);
   });
   it('republish caps at 25', () => {
-    const many = Array.from({ length: 30 }, (_, i) => ({ uid: 'u' + i, date: '2026-10-05T10:00:00Z' }));
-    assert.equal(hpsb.pickTargets(many, new Set(many.map(m => m.uid)), { republish: 99 }).length, 25);
+    const many = Array.from({ length: 30 }, (_, i) => ev('u' + i, '2026-10-05T10:00:00Z'));
+    assert.equal(pickTargets(many, new Set(many.map(keyOfEv)), { republish: 99 }).length, 25);
   });
   it('normal mode returns only unseen, capped at 5', () => {
-    const got = hpsb.pickTargets(items, new Set(['a']), {}).map(i => i.uid);
+    const got = pickTargets(items, new Set([keyOfEv(ev('a'))]), {}).map((i) => i.id);
     assert.deepEqual(got, ['c', 'b', 'z']);
   });
-  it('backfill takes first N regardless', () => {
-    assert.deepEqual(hpsb.pickTargets(items, new Set(), { backfill: 2 }).map(i => i.uid), ['c', 'a']);
+  it('backfill takes newest N, posted oldest-first', () => {
+    const got = pickTargets(items, new Set(), { backfill: 2 }).map((i) => i.id);
+    assert.deepEqual(got, ['b', 'c']);
   });
   it('skippedByFilter honors source list', () => {
-    assert.equal(hpsb.skippedByFilter(null, 'news'), false);
-    assert.equal(hpsb.skippedByFilter({ sources: ['news'] }, 'releases'), true);
-    assert.equal(hpsb.skippedByFilter({ sources: ['news'] }, 'news'), false);
-    assert.equal(skippedByFilter({ sources: ['youtube'] }, 'tiktok'), true);
+    assert.equal(skippedByFilter(null, 'news'), false);
+    assert.equal(skippedByFilter({ sources: 'news' }, 'releases'), true);
+    assert.equal(skippedByFilter({ sources: 'news' }, 'news'), false);
+    assert.equal(skippedByFilter({ sources: 'youtube' }, 'tiktok'), true);
   });
-  it('ytPickTargets mirrors chronological order', () => {
-    const yt = [
-      { id: 'n3', date: '2026-10-03T00:00:00Z' },
-      { id: 'n1', date: '2026-10-01T00:00:00Z' },
-      { id: 'n2', date: '2026-10-02T00:00:00Z' },
-    ];
-    const got = ytPickTargets(yt, new Set(['n1', 'n2', 'n3']), { republish: 10 }).map(i => i.id);
-    assert.deepEqual(got, ['n1', 'n2', 'n3']);
+  it('keyOfEv is source:type:id', () => {
+    assert.equal(keyOfEv({ source: 'youtube', type: 'video', id: 'x' }), 'youtube:video:x');
   });
-  it('safeDate never throws on garbage', () => {
-    assert.ok(hpsb.safeDate('garbage') instanceof Date);
-    assert.ok(hpsb.safeDate('') instanceof Date);
-    assert.ok(hpsb.safeDate(null) instanceof Date);
+  it('dateMs never produces NaN on garbage', () => {
+    const { dateMs } = require('../src/modules/publisher/sources/fetch.js');
+    assert.equal(dateMs('garbage'), 0);
+    assert.equal(dateMs(''), 0);
+    assert.equal(dateMs(null), 0);
+    assert.ok(dateMs('2026-10-01T10:00:00Z') > 0);
   });
 });

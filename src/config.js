@@ -211,6 +211,9 @@ const config = {
 
   // Новый Publisher: маршрутизация и источники.
   publisher: {
+    live: {
+      checkMinutes: int('LIVE_CHECK_MINUTES', 2), // integer, минут (YouTube live-check; минимум 1)
+    },
     sources: {
       youtube: bool('PUBLISHER_YOUTUBE', true), // boolean
       twitch: bool('PUBLISHER_TWITCH', true), // boolean

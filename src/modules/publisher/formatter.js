@@ -53,11 +53,18 @@ function tiktok(ev) {
   return { embed: e, buttons: ev.url ? [{ label: '🎵 Open TikTok', url: ev.url }] : [] };
 }
 
-function twitchLive(ev, extraButtons = []) {
-  const e = base(0x9146ff, ev)
-    .setTitle('🔴 HPSB is LIVE')
-    .setDescription(`${linkedTitle(ev)}\n${str(ev.description || 'The stream is now live.', 500)}`.slice(0, 3500));
+function liveAnnounce(ev, extraButtons = []) {
+  const title = str(ev.title || 'Stream', 220);
+  const who = ev.author ? `**${str(ev.author, 100)}**` : '**HPSB**';
+  const e = base(0xff0000, ev)
+    .setTitle(`🔴 ${title}`)
+    .setDescription(`${who} is live now!\n${str(ev.description || '', 500)}`.slice(0, 3500));
   return { embed: e, buttons: extraButtons };
+}
+
+// Back-compat alias (was twitch-only before the multistream stage).
+function twitchLive(ev, extraButtons = []) {
+  return liveAnnounce(ev, extraButtons);
 }
 
 function release(ev) {
@@ -123,7 +130,9 @@ function format(ev, opts = {}) {
   const s = String(ev?.source || '').toLowerCase();
   const t = String(ev?.type || '').toLowerCase();
   let out;
-  if (s === 'twitch' && t === 'live') out = twitchLive(ev, opts.liveButtons || []);
+  // Live announcements from ANY source (twitch EventSub, youtube live check)
+  // share one look + the multistream buttons.
+  if (t === 'live') out = liveAnnounce(ev, opts.liveButtons || []);
   else if (s === 'hpsb' && t === 'release') out = release(ev);
   else if (s === 'hpsb' && t === 'event') out = event(ev);
   else if (s === 'hpsb') out = news(ev);
@@ -135,4 +144,4 @@ function format(ev, opts = {}) {
   return { embed: out.embed, components: rows };
 }
 
-module.exports = { format, reminder, youtube, instagram, tiktok, twitchLive, release, event, news };
+module.exports = { format, reminder, youtube, instagram, tiktok, twitchLive, liveAnnounce, release, event, news };

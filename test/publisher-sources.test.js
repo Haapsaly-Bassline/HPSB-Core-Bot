@@ -327,4 +327,79 @@ describe('publisher sources: runSync through pipeline', () => {
       await run;
     }
   });
+
+  it('youtube live: redirect to watch = live, channel page = offline', async () => {
+    const { checkYoutubeLive, watchIdFromUrl } = require('../src/modules/publisher/sources/youtube-live');
+    assert.equal(watchIdFromUrl('https://www.youtube.com/watch?v=VIDLIVE1234'), 'VIDLIVE1234');
+    assert.equal(watchIdFromUrl('https://www.youtube.com/channel/UCxxx/live'), '');
+    const liveHttp = {
+      get: async (url) => {
+        if (String(url).includes('/oembed')) return { data: { title: 'Big Stream', author_name: 'HPSB' } };
+        return { data: '', request: { res: { responseUrl: 'https://www.youtube.com/watch?v=VIDLIVE1234' } } };
+      },
+    };
+    const [on] = await checkYoutubeLive({ channels: [{ key: 'yt1' }], http: liveHttp });
+    assert.equal(on.live, true);
+    assert.equal(on.videoId, 'VIDLIVE1234');
+    assert.equal(on.title, 'Big Stream');
+    const offHttp = {
+      get: async () => ({ data: '', request: { res: { responseUrl: 'https://www.youtube.com/channel/yt1/live' } } }),
+    };
+    const [off] = await checkYoutubeLive({ channels: [{ key: 'yt1' }], http: offHttp });
+    assert.equal(off.live, false);
+  });
+
+  it('youtube live via Data API when key is set', async () => {
+    const { checkYoutubeLive } = require('../src/modules/publisher/sources/youtube-live');
+    const apiHttp = {
+      get: async () => ({ data: { items: [{ id: { videoId: 'APILIVE12345' }, snippet: { title: 'API Live', channelTitle: 'HPSB' } }] } }),
+    };
+    const [st] = await checkYoutubeLive({ channels: [{ key: 'yt1' }], apiKey: 'KEY', http: apiHttp });
+    assert.equal(st.live, true);
+    assert.equal(st.videoId, 'APILIVE12345');
+  });
+
+  it('pollLive announces youtube live and ends after 2 misses', async () => {
+    const sched = require('../src/modules/publisher/scheduler');
+    sched._clearLiveMisses();
+    const liveHttp = {
+      get: async (url) => {
+        if (String(url).includes('/oembed')) return { data: { title: 'Big Stream', author_name: 'HPSB' } };
+        return { data: '', request: { res: { responseUrl: 'https://www.youtube.com/watch?v=VIDLIVE1234' } } };
+      },
+    };
+    const offHttp = {
+      get: async () => ({ data: '', request: { res: { responseUrl: 'https://www.youtube.com/channel/yt1/live' } } }),
+    };
+    const online = [];
+    const offline = [];
+    const deps = (http) => ({
+      http,
+      onOnline: async (ref, ev) => { online.push({ ref, ev }); },
+      onOffline: async () => { offline.push(1); },
+    });
+    const pipe = { getLive: () => ({ youtube: null, twitch: null, discord: null }) };
+    await sched.pollLive(pipe, baseCfg, deps(liveHttp));
+    assert.equal(online.length, 1);
+    assert.equal(online[0].ev.source, 'youtube');
+    assert.equal(online[0].ev.type, 'live');
+    assert.equal(online[0].ref.videoId, 'VIDLIVE1234');
+    // Offline needs 2 consecutive misses while youtube side is live.
+    const livePipe = { getLive: () => ({ youtube: { live: true, videoId: 'VIDLIVE1234' }, twitch: null, discord: null }) };
+    await sched.pollLive(livePipe, baseCfg, deps(offHttp));
+    assert.equal(offline.length, 0);
+    await sched.pollLive(livePipe, baseCfg, deps(offHttp));
+    assert.equal(offline.length, 1);
+    sched._clearLiveMisses();
+  });
+
+  it('live formatter is shared for youtube and twitch', () => {
+    const { format } = require('../src/modules/publisher/formatter');
+    const btns = [{ label: '▶️ YouTube', url: 'https://youtu.be/x' }, { label: '🟣 Twitch', url: 'https://twitch.tv/x' }];
+    const yt = format({ source: 'youtube', type: 'live', id: 'v', title: 'Friday Set', author: 'HPSB', url: 'https://youtu.be/x' }, { liveButtons: btns }).embed.toJSON();
+    assert.ok(yt.title.includes('Friday Set') && yt.title.includes('🔴'));
+    assert.ok(yt.description.includes('is live now'));
+    const tw = format({ source: 'twitch', type: 'live', id: 's', title: 'Late Stream', author: 'HPSB', url: 'https://twitch.tv/x' }, { liveButtons: btns }).embed.toJSON();
+    assert.ok(tw.title.includes('Late Stream'));
+  });
 });
