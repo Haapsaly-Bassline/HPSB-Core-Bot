@@ -133,10 +133,15 @@ async function handleVoiceState(oldS, newS, client) {
       logger.info(`[priv] created ${room.id} for ${member.user.tag}`);
     } catch (e) {
       logger.warn('[priv] create failed', e.message);
-      try {
-        const u = await member.user;
-        await u.send?.(`❌ Could not create your private room on **${member.guild?.name || 'the server'}**: ${String(e.message || e).slice(0, 200)}`).catch(() => {});
-      } catch {}
+      // Throttled DM: a persistent config problem (category/perms) must not
+      // DM-spam every joiner on every rejoin.
+      const last = dmCooldown.get(member.id) || 0;
+      if (Date.now() - last > 10 * 60 * 1000) {
+        dmCooldown.set(member.id, Date.now());
+        try {
+          await member.user.send?.(`❌ Could not create your private room on **${member.guild?.name || 'the server'}**: ${String(e.message || e).slice(0, 200)}`).catch(() => {});
+        } catch {}
+      }
     }
     finally { creating.delete(member.id); }
     return;
@@ -145,22 +150,38 @@ async function handleVoiceState(oldS, newS, client) {
   // Left tracked room
   const leftId = oldS.channelId;
   if (!leftId || leftId === genId) return;
-  const d = state();
-  const rec = d.privates[leftId];
-  if (!rec) return;
+  const rec0 = state().privates[leftId];
+  if (!rec0) return;
   const ch = await client.channels.fetch(leftId).catch(() => null);
-  if (!ch) { delete d.privates[leftId]; save(d); return; }
+  if (!ch) {
+    await store.exclusive(async () => {
+      const d = state();
+      delete d.privates[leftId];
+      save(d);
+    }).catch(() => {});
+    return;
+  }
   const members = [...(ch.members?.values() || [])].filter(m => !m.user.bot);
   if (!members.length) {
     try { await ch.delete('Private empty'); } catch {}
-    delete d.privates[leftId]; save(d);
+    await store.exclusive(async () => {
+      const d = state();
+      delete d.privates[leftId];
+      save(d);
+    }).catch(() => {});
     logger.info(`[priv] deleted empty ${leftId}`);
     return;
   }
   // owner left, members remain -> transfer to first
-  if (rec.ownerId && !members.some(m => m.id === rec.ownerId)) {
-    rec.ownerId = members[0].id;
-    save(d);
+  if (rec0.ownerId && !members.some(m => m.id === rec0.ownerId)) {
+    await store.exclusive(async () => {
+      const d = state();
+      const rec = d.privates[leftId];
+      if (rec && rec.ownerId && !members.some(m => m.id === rec.ownerId)) {
+        rec.ownerId = members[0].id;
+        save(d);
+      }
+    }).catch(() => {});
     try {
       await ch.permissionOverwrites.edit(members[0].id, { Connect: true, ManageChannels: true, MoveMembers: true });
     } catch {}
@@ -168,6 +189,8 @@ async function handleVoiceState(oldS, newS, client) {
     ch.send(`➡️ Owner left -- room passed to ${members[0]}.`).catch(() => {});
   }
 }
+
+const dmCooldown = new Map(); // userId -> last failure-DM timestamp
 
 const creating = new Set(); // userId with room creation in flight (rejoin race guard)
 
@@ -304,15 +327,22 @@ async function handleInteraction(interaction, client) {
       if (!target) { await interaction.reply({ content: '❌ User left the server.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
       const ch = await client.channels.fetch(channelId).catch(() => null);
       if (!ch) { await interaction.reply({ content: '❌ Room not found.', flags: MessageFlags.Ephemeral }).catch(() => {}); return true; }
-      rec.ownerId = targetId;
+      // Permissions FIRST, state second: saving the new owner before Discord
+      // confirms leaves a powerless "owner" on failure.
       try {
         await ch.permissionOverwrites.edit(targetId, { Connect: true, ManageChannels: true, MoveMembers: true });
         const oldOwner = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
         if (oldOwner && oldOwner.id !== targetId) {
           await ch.permissionOverwrites.edit(oldOwner.id, { Connect: true, ManageChannels: false, MoveMembers: false }).catch(() => {});
         }
-      } catch {}
-      save(d);
+      } catch {
+        await interaction.reply({ content: '❌ Could not update permissions.', flags: MessageFlags.Ephemeral }).catch(() => {});
+        return true;
+      }
+      await store.exclusive(async () => {
+        const dd = state();
+        if (dd.privates[channelId]) { dd.privates[channelId].ownerId = targetId; save(dd); }
+      }).catch(() => {});
       await refreshPanel(client, channelId);
       await interaction.reply({ content: `➡️ New owner: <@${targetId}>`, flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
@@ -335,23 +365,27 @@ async function handleInteraction(interaction, client) {
 // store rows) linger forever.
 async function sweepOrphans(client) {
   if (!config.priv.generatorId) return;
-  let cleaned = 0;
+  // Collect first, then single exclusive write: holding the mutex across
+  // dozens of Discord fetches would serialize everything else for minutes.
+  const dead = [];
   try {
-    const d = state();
-    const ids = Object.keys(d.privates || {});
+    const ids = Object.keys(state().privates || {});
     for (const cid of ids) {
       const ch = await client.channels.fetch(cid).catch(() => null);
-      if (!ch) { delete d.privates[cid]; cleaned++; continue; }
+      if (!ch) { dead.push(cid); continue; }
       const humans = [...(ch.members?.values() || [])].filter((m) => !m.user.bot);
       if (!humans.length) {
         try { await ch.delete('Private empty (startup sweep)'); } catch {}
-        delete d.privates[cid];
-        cleaned++;
+        dead.push(cid);
       }
     }
-    if (cleaned) {
-      save(d);
-      logger.info(`[priv] sweep cleaned ${cleaned} orphan room(s)`);
+    if (dead.length) {
+      await store.exclusive(async () => {
+        const d = state();
+        for (const cid of dead) delete d.privates[cid];
+        save(d);
+      }).catch(() => {});
+      logger.info(`[priv] sweep cleaned ${dead.length} orphan room(s)`);
     }
   } catch (e) { logger.warn('[priv] sweep failed', e?.message || e); }
 }

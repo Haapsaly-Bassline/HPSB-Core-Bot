@@ -36,7 +36,11 @@ function createPipeline({ client, config, log = console, sender } = {}) {
     if (!channelId) {
       log.warn?.(`[publisher] no channel for target ${target}, dropping ${key}`);
       dedup.commit(key); // configured nowhere: keeping it pending would retry forever
-      await saveState({ seen: dedup.dumpSeen() });
+      try {
+        await saveState({ seen: dedup.dumpSeen() });
+      } catch (e) {
+        log.warn?.('[publisher] state save failed', e?.message || e);
+      }
       return;
     }
     const ping = pingFor(target, config);

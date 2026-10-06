@@ -298,4 +298,33 @@ describe('publisher sources: runSync through pipeline', () => {
       await run;
     }
   });
+
+  it('discord source override beats .env, reset restores', async () => {
+    const { setSourceOverride, resetSourceOverride, isSourceOn, effectiveSources } = require('../src/modules/publisher/source-state');
+    const p = createPipeline({ client: {}, config: baseCfg, log: { warn() {} }, sender: async () => ({ id: 'm' }) });
+    const run = p.start();
+    try {
+      // No override: cfg says on.
+      assert.equal(isSourceOn('youtube'), true);
+      await setSourceOverride('youtube', false);
+      assert.equal(isSourceOn('youtube'), false);
+      assert.equal(effectiveSources().youtube, false);
+      const r = await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp });
+      assert.equal(r.youtube.disabled, true);
+      // Override on beats cfg-level off.
+      const cfgOff = { ...baseCfg, publisher: { ...baseCfg.publisher, sources: { ...baseCfg.publisher.sources, youtube: false } } };
+      await setSourceOverride('youtube', true);
+      const r2 = await runSync(p, cfgOff, { sources: 'youtube', http: fakeHttp });
+      assert.ok(!r2.youtube.disabled, 'override on must beat cfg off');
+      assert.equal(r2.youtube.found, 2);
+      await resetSourceOverride('youtube');
+      assert.equal(isSourceOn('youtube'), true); // real .env PUBLISHER_YOUTUBE=on
+      await assert.rejects(setSourceOverride('nope', true), /unknown source/);
+    } finally {
+      const { resetSourceOverride: reset } = require('../src/modules/publisher/source-state');
+      await reset('youtube').catch(() => {});
+      p.stop();
+      await run;
+    }
+  });
 });

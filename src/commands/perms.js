@@ -30,6 +30,10 @@ module.exports = {
     .addChannelOption(o => o.setName('channel').setDescription('Voice channel to check (your current one by default)').setRequired(false)),
   async execute(interaction, client) {
     if (!await requireMod(interaction)) return;
+    if (!interaction.guild) {
+      await interaction.reply({ content: '❌ Run this on the server, not in DM.', flags: MessageFlags.Ephemeral });
+      return;
+    }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const me = await interaction.guild.members.fetch(client.user.id).catch(() => null);
     if (!me) { await interaction.editReply('❌ I cannot see myself on the server.'); return; }

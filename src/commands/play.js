@@ -37,13 +37,12 @@ module.exports = {
         const { fanCollectionEmbed } = require('../utils/embeds');
         const limit = interaction.options.getInteger('count') || 10;
         await interaction.editReply('⏳ Reading the collection…');
+        // No onProgress edits: fire-and-forget progress can land AFTER the
+        // final embed and overwrite it with a stale "Queueing…" message.
         const fanRes = await music.playFan(client, voiceChannel, query.trim(), {
           requester: interaction.user,
           textChannel: interaction.channel,
           limit,
-          onProgress: (done, total) => {
-            interaction.editReply(`⏳ Queueing: ${done}/${total}…`).catch(() => {});
-          },
         });
         const { stageWarning } = require('../modules/music/stage');
         const fanWarn = voiceChannel.type === 13 ? stageWarning(client, interaction.guildId) : '';

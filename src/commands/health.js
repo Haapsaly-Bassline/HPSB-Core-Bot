@@ -108,9 +108,13 @@ function checkStore() {
   try {
     const dir = path.join(__dirname, '..', '..', 'data');
     fs.accessSync(dir, fs.constants.W_OK);
-    const store = require('../utils/store');
-    const d = store.load();
-    store.save(d); // roundtrip: an unwritable store = lost dedup = reposts on restart
+    // Probe writability with a sidecar file: load()+save() roundtrip on the
+    // REAL store would race concurrent writers (lost update), and a bare
+    // load() never proves writes work.
+    const probe = path.join(dir, '.healthcheck.tmp');
+    fs.writeFileSync(probe, '1');
+    fs.unlinkSync(probe);
+    require('../utils/store').load();
     return ['✅ store (read/write)'];
   } catch (e) { return [`❌ store: ${e.message}`]; }
 }

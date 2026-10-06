@@ -58,6 +58,9 @@ async function render(client, guildId) {
   if (!s) return false;
   let snap = null;
   try { snap = music.npSnapshot(client, guildId); } catch { snap = null; }
+  // Session identity: a stale in-flight tick must not finalize a NEWER track's
+  // session (trackStart replaced it while we were awaiting).
+  if (sessions.get(guildId) !== s) return false;
   if (!snap) { await finalize(client, guildId, 'Queue finished'); return false; }
   try {
     const ch = await client.channels.fetch(s.channelId).catch(() => null);
@@ -115,12 +118,15 @@ async function trackStart(client, guildId, channel) {
 
 async function finalize(client, guildId, note) {
   const s = sessions.get(guildId);
-  stopTimer(guildId);
-  sessions.delete(guildId);
   if (!s) return;
   try {
     const ch = await client.channels.fetch(s.channelId).catch(() => null);
     const msg = ch?.isTextBased?.() ? await ch.messages.fetch(s.messageId).catch(() => null) : null;
+    // Session identity (checked AFTER awaits): a newer trackStart owns the
+    // session now -- touch neither its timer, message nor map entry.
+    if (sessions.get(guildId) !== s) return;
+    stopTimer(guildId);
+    sessions.delete(guildId);
     if (msg) {
       const e = EmbedBuilder.from(msg.embeds[0] || new EmbedBuilder().setTitle('Now Playing'));
       e.setFooter({ text: `${note || 'Stopped'} • Haapsaly Bassline` });

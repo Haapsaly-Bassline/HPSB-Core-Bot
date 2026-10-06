@@ -28,7 +28,8 @@ function verifySignature(secret, headers = {}, rawBody = '') {
 function normalizeOnline(event = {}, cfg = {}) {
   const streamId = String(event.id || '');
   if (!streamId) return null;
-  const url = `https://www.twitch.tv/${event.broadcaster_user_login || ''}` || cfg?.publisher?.twitchUrl || '';
+  const login = String(event.broadcaster_user_login || '').trim();
+  const url = login ? `https://www.twitch.tv/${login}` : (cfg?.publisher?.twitchUrl || '');
   return {
     source: 'twitch',
     type: 'live',

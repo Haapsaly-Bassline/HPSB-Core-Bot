@@ -25,6 +25,15 @@ async function logToStaff(client, text) {
 
 function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+// Applied mute length may differ from requested hours (1m floor, 28d ceiling)
+// -- the log shows what was actually applied, not the request.
+function fmtDur(hours) {
+  const ms = Math.min(Math.max(Number(hours) * 60 * 60 * 1000, 60 * 1000), 28 * 86400 * 1000);
+  if (ms < 3600 * 1000) return `mute ${Math.round(ms / 60000)}m`;
+  if (ms < 24 * 3600 * 1000) return `mute ${Math.round(ms / 3600000)}h`;
+  return `mute ${Math.round(ms / 86400000)}d`;
+}
+
 // Central staff exemption: bot owner, mod role holders, anyone with mod powers.
 // Used by trap, punish, flood, caps, mass-ping -- staff never eats automod.
 function isExempt(member, authorId) {
@@ -58,6 +67,7 @@ async function punish(client, message, reason, opts = {}) {
 
   // Honestly track if punishment worked -- log shouldn't lie
   let ok = true;
+  let errMsg = '';
   try {
     if (action === 'ban') {
       await member.ban({ reason: audit });
@@ -67,13 +77,21 @@ async function punish(client, message, reason, opts = {}) {
       // 24h message wipe + instant unban, so the spammer's recent messages
       // go too, not just the triggering one.
       let kicked = false;
+      let stuck = false;
       try {
         await member.ban({ reason: audit, deleteMessageSeconds: 86400 });
-        kicked = true;
-        try { await message.guild?.members?.unban(member.id, 'Honeypot softban (kick)'); } catch {}
+        try {
+          await message.guild?.members?.unban(member.id, 'Honeypot softban (kick)');
+          kicked = true;
+        } catch {
+          // Ban landed but unban failed (perms/hierarchy): the user is now
+          // PERMANENTLY banned, not kicked. Never report this as a kick.
+          stuck = true;
+        }
       } catch {
         try { await member.kick(audit); kicked = true; } catch {}
       }
+      if (stuck) throw new Error('softban STUCK -- user is banned, unban manually');
       if (!kicked) throw new Error('kick failed (need Kick or Ban Members + higher role)');
       try { await message.delete(); } catch {}
     } else {
@@ -83,12 +101,13 @@ async function punish(client, message, reason, opts = {}) {
     }
   } catch (e) {
     ok = false;
-    logger.warn('[honeypot] punish failed', member.id, e.message);
+    errMsg = String(e?.message || e).slice(0, 200);
+    logger.warn('[honeypot] punish failed', member.id, errMsg);
   }
-  const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick' : `mute ${hours}h`;
+  const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick' : `mute ${fmtDur(hours)}`;
   const { punishLogEmbed } = require('../../utils/embeds');
   if (!ok) {
-    await logToStaff(client, `❌ **Honeypot FAILED** (${what} failed -- check bot role/perms): ${member} (${member.id}) -- ${reason}`);
+    await logToStaff(client, `❌ **Honeypot FAILED** (${what} failed${errMsg ? `: ${errMsg}` : ''} -- check bot role/perms): ${member} (${member.id}) -- ${reason}`);
     return false;
   }
   await logToStaff(client, { embeds: [punishLogEmbed({
@@ -160,7 +179,7 @@ async function handleMessage(message, client) {
   }
 }
 
-module.exports = { handleMessage, handleTrapMessage, ensureTrapWarning, joinBeat };
+module.exports = { handleMessage, handleTrapMessage, ensureTrapWarning, joinBeat, isExempt };
 
 // Trap-only path for BOT authors: messageCreate ignores bots entirely, so raid
 // bots posting in the trap channel would never be punished. Automod proper
@@ -170,10 +189,10 @@ async function handleTrapMessage(message, client) {
     const { isEnabled } = require('../manager');
     if (!isEnabled('honeypot')) return false;
   } catch { return false; }
+  if (!message?.guild) return false;
   if (!config.honeypot.trapChannelId || message.channelId !== config.honeypot.trapChannelId) return false;
   if (message.author.id === client.user?.id) return false; // our own warning
-  await punish(client, message, 'message in honeypot trap (bot)', { trap: true });
-  return true;
+  return punish(client, message, 'message in honeypot trap (bot)', { trap: true });
 }
 
 // Keeps RF-style warning in public trap (banner on TOP as its own message,
@@ -188,15 +207,17 @@ async function ensureTrapWarning(client) {
   try {
     const { honeypotEmbed } = require('../../utils/embeds');
     const recent = await ch.messages.fetch({ limit: 10 }).catch(() => null);
-    const hasOurs = recent?.some(m =>
-      m.author.id === client.user.id &&
-      (m.content.includes('HPSB-HONEYPOT') || m.embeds?.[0]?.footer?.text?.includes('HPSB-HONEYPOT'))
-    );
-    if (hasOurs) return;
+    const mine = (recent ? [...recent.values()] : []).filter((m) => m.author.id === client.user?.id);
+    const hasEmbed = mine.some((m) =>
+      (m.content.includes('HPSB-HONEYPOT') || m.embeds?.[0]?.footer?.text?.includes('HPSB-HONEYPOT')));
+    if (hasEmbed) return;
     const action = config.honeypot.action;
-    const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick (softban)' : `mute ${config.honeypot.timeoutHours}h`;
+    const what = action === 'ban' ? 'ban' : action === 'kick' ? 'kick (softban)' : fmtDur(config.honeypot.timeoutHours);
     const banner = config.honeypot.bannerUrl || '';
-    if (/^https?:\/\/\S+$/i.test(banner)) {
+    // Banner is its own message (no marker): only send when neither the banner
+    // nor the warning is present, otherwise banners pile up on restarts.
+    const hasBanner = banner && mine.some((m) => m.content === banner);
+    if (/^https?:\/\/\S+$/i.test(banner) && !hasBanner) {
       await ch.send(banner).catch(() => {});
     }
     await ch.send({ embeds: [honeypotEmbed({ punishment: what })] });

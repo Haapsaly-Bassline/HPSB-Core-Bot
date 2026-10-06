@@ -7,7 +7,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const FAN_RE = /^https?:\/\/(?:www\.)?bandcamp\.com\/([A-Za-z0-9_-]+)\/?(?:[?#].*)?$/i;
 
 async function fetchFanPage(url) {
-  const r = await fetch(url, { headers: { 'User-Agent': UA } });
+  const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(20000) });
   if (!r.ok) throw new Error(`Fan page is unavailable: HTTP ${r.status}`);
   // Bandcamp returns JSON inside HTML with HTML entities -- decode for regex parsing
   return (await r.text())
@@ -28,6 +28,7 @@ async function fetchBatch(fanId, olderThanToken, count) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
     body: JSON.stringify({ fan_id: fanId, older_than_token: olderThanToken, count }),
+    signal: AbortSignal.timeout(20000),
   });
   if (!r.ok) throw new Error(`Bandcamp API: HTTP ${r.status}`);
   return r.json();
@@ -43,7 +44,8 @@ async function fetchCollection(fanUrl, { limit = 10 } = {}) {
 
   // last_token for first page sits in collection_data
   const tok = html.match(/"collection_data":\{"redownload_urls":\{\},"last_token":"([^"]+)"/);
-  let olderThan = tok ? tok[1].replace(/\\u0026/g, '&') : null;
+  const decodeToken = (t) => String(t || '').replace(/\\u0026/g, '&').replace(/\\u002F/g, '/');
+  let olderThan = tok ? decodeToken(tok[1]) : null;
 
   const items = [];
   const seen = new Set();
@@ -73,7 +75,7 @@ async function fetchCollection(fanUrl, { limit = 10 } = {}) {
       if (items.length >= limit) break;
     }
     if (!batch.more_available) break;
-    olderThan = batch.last_token;
+    olderThan = decodeToken(batch.last_token);
     if (!olderThan) break;
   }
   if (!items.length) throw new Error('The collection is empty or private');

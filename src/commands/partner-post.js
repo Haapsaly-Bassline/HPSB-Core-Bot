@@ -3,15 +3,16 @@
 // Publisher never auto-posts to #partners -- this command is the only writer.
 const {
   SlashCommandBuilder, PermissionFlagsBits, MessageFlags, ModalBuilder,
-  TextInputBuilder, TextInputStyle, EmbedBuilder, ActionRowBuilder, ChannelType,
+  TextInputBuilder, TextInputStyle, ActionRowBuilder, ChannelType,
+  AttachmentBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
+  MediaGalleryBuilder, MediaGalleryItemBuilder, TextDisplayBuilder, SeparatorBuilder,
 } = require('discord.js');
 const { requireMod, replyError } = require('../utils/mod');
 const { config } = require('../config');
-const { linkButtonRows } = require('../utils/embeds');
 
 const MODAL_ID = 'partner-post:modal';
 
-function parseLinks(raw) {
+function parseLinks(raw, max = 5) {
   const out = [];
   for (const line of String(raw || '').split('\n')) {
     const t = line.trim();
@@ -30,21 +31,92 @@ function parseLinks(raw) {
     }
     if (!/^https?:\/\/\S+$/i.test(url)) continue;
     out.push({ label: label.slice(0, 40) || 'Link', url });
-    if (out.length >= 4) break;
+    if (out.length >= max) break;
   }
   return out;
 }
 
-function buildPost({ name, tagline, image, links, started }) {
-  const e = new EmbedBuilder()
-    .setColor(0xeab308)
-    .setTitle(`${name} x HPSB (Partnership)`.slice(0, 250))
-    .setDescription(`${tagline}\n\n**Find us on:**`.slice(0, 3800))
-    .setImage(image)
-    .setTimestamp();
+// Reference look (RF): ONE Components-V2 container -- full-width media gallery
+// banner on top, bold title, tagline, divider, "Find us on:", link buttons,
+// divider, small footer. A classic embed can never do this (image capped
+// ~400px, no dividers, timestamped footer).
+function buildPost({ name, tagline, image, links, started, banner }) {
+  const title = `${name} x HPSB (Partnership)`.slice(0, 200);
+  const img = (banner && banner.ref)
+    || (/^https?:\/\/\S+$/i.test(String(image || '').trim()) ? String(image).trim() : '');
   const date = String(started || '').trim();
-  e.setFooter({ text: date ? `🤝 Partnership started on ${date.slice(0, 100)}` : '🤝 Partnership • Haapsaly Bassline' });
-  return { embed: e, components: linkButtonRows(links) };
+
+  const container = new ContainerBuilder();
+  if (img) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(img).setDescription(title.slice(0, 100)),
+      ),
+    );
+  }
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`## ${title}\n${String(tagline || '').slice(0, 1500)}`),
+  );
+  container.addSeparatorComponents(
+    new SeparatorBuilder().setDivider(true),
+  );
+  container.addTextDisplayComponents(
+    new TextInputSafe('**Find us on:**'),
+  );
+  const row = new ActionRowBuilder();
+  for (const l of (links || []).slice(0, 5)) {
+    if (!/^https?:\/\/\S+$/i.test(l.url || '')) continue;
+    row.addComponents(
+      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(String(l.label || 'Link').slice(0, 40)).setURL(String(l.url)),
+    );
+  }
+  if (row.components.length) container.addActionRowComponents(row);
+  container.addSeparatorComponents(
+    new SeparatorBuilder().setDivider(true),
+  );
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `-# 🤝 Partnership started on ${date ? date.slice(0, 100) : 'soon'}`,
+    ),
+  );
+
+  const files = banner && banner.file ? [banner.file] : [];
+  return {
+    data: { flags: [MessageFlags.IsComponentsV2], components: [container] },
+    files,
+  };
+}
+
+// Link buttons are sanitized here (never trust modal text near setURL).
+function TextInputSafe(text) {
+  return new TextDisplayBuilder().setContent(String(text || '').slice(0, 2000));
+}
+
+// Re-host the banner through Discord itself: signed/proxied URLs (VRChat
+// CloudFront links, expiring media URLs, hotlink-guarded hosts) often refuse
+// Discord's image proxy, so the embed shows no banner. A bot-uploaded
+// attachment always renders. Falls back to the plain URL on any failure.
+async function fetchBannerAttachment(url) {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 15000);
+    let res;
+    try {
+      res = await fetch(url, { signal: ctl.signal, redirect: 'follow' });
+    } finally {
+      clearTimeout(t);
+    }
+    if (!res.ok) return null;
+    const ct = String(res.headers.get('content-type') || '').toLowerCase();
+    if (!ct.startsWith('image/')) return null;
+    const len = Number(res.headers.get('content-length') || 0);
+    if (len > 8000000) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > 8000000) return null;
+    const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : ct.includes('webp') ? 'webp' : 'jpg';
+    const name = `banner.${ext}`;
+    return { file: new AttachmentBuilder(buf, { name }), ref: `attachment://${name}` };
+  } catch { return null; }
 }
 
 async function handleModal(interaction, client) {
@@ -74,14 +146,19 @@ async function handleModal(interaction, client) {
       await interaction.reply({ content: '❌ Partners channel not found / not text.', flags: MessageFlags.Ephemeral });
       return;
     }
-    const { embed, components } = buildPost({ name, tagline, image, links, started });
-    const payload = { embeds: [embed] };
-    if (components.length) payload.components = components;
+    // Ack the modal first: the banner download can take seconds, and modal
+    // tokens expire after ~3s (late reply = "interaction failed" on success).
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const banner = await fetchBannerAttachment(image);
+    const { data, files } = buildPost({ name, tagline, image, links, started, banner });
+    const payload = { ...data };
+    if (files.length) payload.files = files;
     const m = await ch.send(payload);
     try {
       if (ch.type === ChannelType.GuildAnnouncement) await m.crosspost().catch(() => {});
     } catch {}
-    await interaction.reply({ content: `✅ Posted in <#${channelId}>: ${m.url}`, flags: MessageFlags.Ephemeral });
+    const how = files.length ? 'banner re-uploaded (always displays)' : 'banner linked by URL (fallback)';
+    await interaction.editReply({ content: `✅ Posted in <#${channelId}>: ${m.url}\n_${how}_` });
   } catch (err) {
     await replyError(interaction, `❌ Post failed: ${String(err.message || err).slice(0, 200)}`);
   }
@@ -108,7 +185,7 @@ module.exports = {
       row('pp-name', 'Partner name', TextInputStyle.Short, { max: 80, placeholder: 'Hearkken' }),
       row('pp-tagline', 'Tagline (1-2 lines)', TextInputStyle.Paragraph, { max: 500, placeholder: 'Creating and recreating the best stages around the globe' }),
       row('pp-image', 'Banner image URL (https://…)', TextInputStyle.Short, { max: 400, placeholder: 'https://…' }),
-      row('pp-links', 'Links: one per line as  Label | https://…  (max 4)', TextInputStyle.Paragraph, { max: 500, placeholder: 'Roblox | https://…\nWebsite | https://…' }),
+      row('pp-links', 'Links, one per line: Label | URL (max 5)', TextInputStyle.Paragraph, { max: 500, placeholder: 'Roblox | https://…\nWebsite | https://…' }),
       row('pp-started', 'Partnership started on (date text)', TextInputStyle.Short, { max: 60, placeholder: 'january 23, 2026' }),
     );
     await interaction.showModal(modal);

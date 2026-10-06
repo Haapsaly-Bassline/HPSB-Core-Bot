@@ -22,9 +22,12 @@ function loadSessions() {
   sessions = new Map(Object.entries(data.modcall || {}));
 }
 function persistSessions() {
-  const data = store.load();
-  data.modcall = Object.fromEntries(sessions);
-  store.save(data);
+  const snap = new Map(sessions);
+  store.exclusive(async () => {
+    const data = store.load();
+    data.modcall = Object.fromEntries(snap);
+    store.save(data);
+  }).catch(() => {});
 }
 loadSessions();
 
@@ -108,8 +111,10 @@ async function handleInteraction(interaction, client) {
     const userId = interaction.customId.split(':').pop();
     const { hasModRole } = require('../../utils/mod');
     const isAdmin = config.adminIds.includes(interaction.user.id);
+    // Same staff set as the thread relay below: role, Manage or Moderate.
     const isMod = isAdmin || hasModRole(interaction.member)
-      || interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages);
+      || interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)
+      || interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers);
     if (!isMod) {
       await interaction.reply({ content: '❌ Moderation only.', flags: MessageFlags.Ephemeral });
       return true;

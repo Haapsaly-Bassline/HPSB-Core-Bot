@@ -25,8 +25,7 @@ module.exports = {
         let srcRows = [];
         try {
           const { sourceStatus } = require('../modules/publisher');
-          const { config } = require('../config');
-          srcRows = sourceStatus(config).map(s =>
+          srcRows = sourceStatus().map(s =>
             `  ${s.state === 'on' ? '🟢' : s.state === 'disabled' ? '⚪' : '⚠️'} ${s.emoji} ${s.label} — ${s.state === 'on' ? 'ON' : s.state === 'disabled' ? 'disabled' : 'unavailable (not configured)'}`);
         } catch {}
         const desc = [...rows, '', '📡 **Publisher sources**', ...srcRows].join('\n');

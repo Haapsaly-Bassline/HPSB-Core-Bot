@@ -7,14 +7,15 @@ const { requireMod, hasModRole, botMember } = require('../utils/mod');
 const { config } = require('../config');
 
 function needPermFor(action) {
-  if (action === 'ban') return PermissionFlagsBits.BanMembers;
-  if (action === 'kick') return PermissionFlagsBits.KickMembers;
-  return PermissionFlagsBits.ModerateMembers;
+  // kick = softban: Ban first (24h wipe + unban), plain Kick as fallback.
+  if (action === 'ban') return [PermissionFlagsBits.BanMembers];
+  if (action === 'kick') return [PermissionFlagsBits.BanMembers, PermissionFlagsBits.KickMembers];
+  return [PermissionFlagsBits.ModerateMembers];
 }
 
 function permName(action) {
   if (action === 'ban') return 'Ban Members';
-  if (action === 'kick') return 'Kick Members';
+  if (action === 'kick') return 'Ban Members (softban; Kick Members as fallback)';
   return 'Timeout Members';
 }
 
@@ -51,8 +52,15 @@ async function statusLines(interaction, client) {
     lines.push(`${has(PermissionFlagsBits.KickMembers) ? '✅' : '❌'} Bot perm: Kick Members`);
     lines.push(`${has(PermissionFlagsBits.BanMembers) ? '✅' : '❌'} Bot perm: Ban Members`);
     lines.push(`🤖 Bot top role: **${bot.roles?.highest?.name || '?'}** (pos ${bot.roles?.highest?.position ?? '?'}) -- must sit ABOVE punished users`);
-    const need = needPermFor(config.honeypot.action);
-    if (!has(need)) lines.push(`❌ Configured action needs \`${permName(config.honeypot.action)}\` -- bot lacks it, every punish FAILS`);
+    const needs = needPermFor(config.honeypot.action);
+    const missing = needs.filter((f) => !has(f));
+    if (!missing.length) {
+      lines.push(`✅ Action perms ok (\`${permName(config.honeypot.action)}\`)`);
+    } else if (config.honeypot.action === 'kick' && has(PermissionFlagsBits.KickMembers)) {
+      lines.push(`⚠️ No Ban Members: kick degrades to plain kick (no message wipe)`);
+    } else {
+      lines.push(`❌ Configured action needs \`${permName(config.honeypot.action)}\` -- every punish FAILS`);
+    }
   }
   lines.push(config.honeypot.bannerUrl ? '✅ Banner set (posted above warning)' : '⚪ Banner: not set');
   return lines;
@@ -66,26 +74,41 @@ async function testLines(interaction, client, user) {
   try { member = await guild.members.fetch(user.id); } catch {}
   if (!member) { lines.push('❌ User is not on this server -- trap only hits members'); return lines; }
 
-  // Mirror detector.punish() decision order.
+  // Mirror detector.punish() decision order -- via the REAL isExempt, so the
+  // dry-run can never drift from production behavior.
   if (user.bot) {
     lines.push('ℹ️ Bot account: trap DOES act on bots (humans: see exempt check below)');
   } else {
-    const { isExempt } = (() => { try { return require('../modules/honeypot/detector'); } catch { return {}; } })();
-    if (config.adminIds.includes(user.id)) lines.push('⚪ Would SKIP: bot admin (`ADMIN_DISCORD_IDS`)');
-    else if (member && hasModRole(member)) lines.push('⚪ Would SKIP: has mod role (`MOD_ROLE_ID`)');
-    else if (member?.permissions?.has?.(PermissionFlagsBits.ManageMessages)) lines.push('⚪ Would SKIP: has Manage Messages (staff)');
-    else if (member?.permissions?.has?.(PermissionFlagsBits.ModerateMembers)) lines.push('⚪ Would SKIP: has Timeout Members (staff)');
-    else if (typeof isExempt === 'function' && isExempt(member, user.id)) lines.push('⚪ Would SKIP: staff-exempt');
-    else lines.push('✅ Not exempt -- would be punished');
+    let exempt = false;
+    try {
+      exempt = require('../modules/honeypot/detector').isExempt(member, user.id);
+    } catch {}
+    if (exempt) {
+      let why = 'staff-exempt';
+      if (config.adminIds.includes(user.id)) why = 'bot admin (`ADMIN_DISCORD_IDS`)';
+      else if (member && hasModRole(member)) why = 'has mod role (`MOD_ROLE_ID`)';
+      else if (member?.permissions?.has?.(PermissionFlagsBits.ManageMessages)) why = 'has Manage Messages (staff)';
+      lines.push(`⚪ Would SKIP: ${why}`);
+    } else {
+      lines.push('✅ Not exempt -- would be punished');
+    }
   }
 
   const bot = await botMember(interaction).catch(() => null);
-  const need = needPermFor(config.honeypot.action);
+  const needs = needPermFor(config.honeypot.action);
   if (!bot) {
     lines.push('❌ Cannot resolve bot member');
   } else {
-    const has = (() => { try { return !!bot.permissions?.has?.(need); } catch { return false; } })();
-    lines.push(has ? `✅ Bot has \`${permName(config.honeypot.action)}\`` : `❌ Bot LACKS \`${permName(config.honeypot.action)}\` -- punish would FAIL`);
+    const has = (f) => { try { return !!bot.permissions?.has?.(f); } catch { return false; } };
+    const miss = needs.filter((f) => !has(f));
+    const label = permName(config.honeypot.action);
+    if (!miss.length) {
+      lines.push(`✅ Bot has \`${label}\``);
+    } else if (config.honeypot.action === 'kick' && has(PermissionFlagsBits.KickMembers)) {
+      lines.push(`⚠️ No Ban Members: softban degrades to plain kick (no message wipe)`);
+    } else {
+      lines.push(`❌ Bot LACKS \`${label}\` -- punish would FAIL`);
+    }
     const bPos = bot.roles?.highest?.position ?? -1;
     const tPos = member.roles?.highest?.position ?? 0;
     lines.push(bPos > tPos

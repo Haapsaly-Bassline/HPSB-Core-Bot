@@ -8,6 +8,7 @@ const SOURCE_CHOICES = [
   { name: 'Releases', value: 'releases' },
   { name: 'Events', value: 'events' },
   { name: 'Media (YT+TT+IG)', value: 'media' },
+  { name: 'Live (Twitch EventSub)', value: 'twitch' },
   { name: 'YouTube', value: 'youtube' },
   { name: 'TikTok', value: 'tiktok' },
   { name: 'Instagram', value: 'instagram' },
@@ -19,7 +20,8 @@ function line(emoji, name, r, mode) {
   if (r.disabled) return `${emoji} **${name}:** — disabled`;
   if (r.unavailable) return `${emoji} **${name}:** — unavailable (not configured)`;
   if (r.error) return `${emoji} **${name}:** error (${r.error})`;
-  const base = `${emoji} **${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}`;
+  const shownVia = r.via && r.via !== 'none' ? ` · via ${r.via}` : '';
+  const base = `${emoji} **${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}${shownVia}`;
   // Explain a confusing zero: everything found is already published --
   // use mode=republish (repost known) or mode=missing (repost what's gone).
   if (mode === 'new' && (r.found ?? 0) > 0 && !r.posted && !r.note) {
@@ -78,7 +80,7 @@ module.exports = {
       }
       let out;
       try {
-        out = await pub.runSync(pipeline, require('../config').config, {
+        out = await pub.runSync(pipeline, pub.effectiveConfig(), {
           sources: source, backfill, republish, missing, missingLimit, client,
         });
       } finally {
@@ -100,6 +102,7 @@ module.exports = {
           line('▶️', 'YouTube', out.youtube, mode),
           line('🎵', 'TikTok', out.tiktok, mode),
           line('📸', 'Instagram', out.instagram, mode),
+          line('🟣', 'Twitch', out.twitch, mode),
         ].join('\n'))
         .setFooter({ text: `${source !== 'all' ? `source=${source} • ` : ''}${mode !== 'new' ? `mode=${mode} • ` : ''}${backfill ? `backfill=${backfill} • ` : ''}oldest-first • Haapsaly Bassline` });
       await interaction.editReply({ embeds: [e] });

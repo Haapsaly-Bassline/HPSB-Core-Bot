@@ -92,7 +92,9 @@ class LavalinkEngine {
       logger.warn('[lavalink] trackStuck', track?.info?.title || '');
     }));
     this.manager.on('queueEnd', (this._hQueueEnd = (player) => {
-      // Queue ended -- kill NP and leave voice (no eternal idle bot).
+      // Queue ended -- kill NP, drop stale stage status, and leave voice
+      // (no eternal idle bot).
+      try { this.speakerStatus?.delete(player.guildId); } catch {}
       try { require('./np').finalize(this.client, player.guildId, 'Queue finished').catch(() => {}); } catch {}
       try { player.destroy().catch(() => {}); } catch {}
     }));
@@ -191,6 +193,10 @@ class LavalinkEngine {
 // query: URL or text; engine: 'youtube'|'soundcloud'|'spotify'|'arbitrary'|'deezer'|...
 // arbitrary (direct mp3/radio) passed to node as-is.
   async play(voiceChannel, query, { requester, metadata = {}, engine = 'youtube' } = {}) {
+    // Remember where we were: ensurePlayer MOVES the bot before the search,
+    // so on a failed lookup we move back instead of stranding live audio
+    // from guild A into channel B.
+    const prevVoice = this.getPlayer(voiceChannel.guild.id)?.voiceChannelId || null;
     const player = await this.ensurePlayer(voiceChannel, metadata.channel?.id);
     const q = engine === 'arbitrary' ? query : searchSource(engine, query);
     // IMPORTANT: source specified EXPLICITLY. Without it lavalink-client substitutes
@@ -202,9 +208,16 @@ class LavalinkEngine {
       return null;
     });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
-      // Don't strand an empty bot in voice on a failed lookup.
+      // Don't strand an empty bot in voice on a failed lookup. If we moved an
+      // already-playing player here, move it back where the audio belongs.
       try {
-        if (!player.queue?.current && !player.queue?.tracks?.length) await player.destroy().catch(() => {});
+        if (!player.queue?.current && !player.queue?.tracks?.length) {
+          if (prevVoice && prevVoice !== voiceChannel.id) {
+            await player.changeVoiceState({ voiceChannelId: prevVoice }).catch(() => {});
+          } else {
+            await player.destroy().catch(() => {});
+          }
+        }
       } catch {}
       throw new Error(`No results for "${String(query).slice(0, 120)}"`);
     }
@@ -228,6 +241,7 @@ class LavalinkEngine {
 // Add SINGLE URL to queue without auto-start externally (for batches: fan collections etc.).
 // Returns { loadType, count, title }. Resolve errors thrown outward.
   async enqueueUrl(voiceChannel, url, { requester, metadata = {} } = {}) {
+    const prevVoice = this.getPlayer(voiceChannel.guild.id)?.voiceChannelId || null;
     const player = await this.ensurePlayer(voiceChannel, metadata.channel?.id);
     const src = urlSource(String(url));
     const res = await player.search({ query: String(url), source: src }, requester).catch((e) => {
@@ -236,12 +250,18 @@ class LavalinkEngine {
     });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
       try {
-        if (!player.queue?.current && !player.queue?.tracks?.length) await player.destroy().catch(() => {});
+        if (!player.queue?.current && !player.queue?.tracks?.length) {
+          if (prevVoice && prevVoice !== voiceChannel.id) {
+            await player.changeVoiceState({ voiceChannelId: prevVoice }).catch(() => {});
+          } else {
+            await player.destroy().catch(() => {});
+          }
+        }
       } catch {}
       throw new Error(`No results for "${String(url).slice(0, 120)}"`);
     }
-    // setData -- only key/value; radioLabel of foreign stream not overwritten (keepRadioLabel)
-    this.setPlayerMeta(player, { requester }, true);
+    // setData -- only key/value; fan tracks are NOT radio: clear any stale label.
+    this.setPlayerMeta(player, { requester, radioLabel: null }, false);
     await player.queue.add(res.tracks);
     const title = res.loadType === 'playlist'
       ? (res.playlist?.name || res.playlist?.title || 'playlist')
@@ -276,6 +296,7 @@ class LavalinkEngine {
     const p = this.getPlayer(guildId);
     if (!p) return false;
     await p.destroy().catch(() => {});
+    this.speakerStatus?.delete(guildId);
     return true;
   }
   async pause(guildId, state = true) {
@@ -373,6 +394,9 @@ class LavalinkEngine {
       const prevArr = Array.isArray(p.queue.previous) ? p.queue.previous : null;
       const t = prevArr?.length ? prevArr[prevArr.length - 1] : null;
       if (!t) return false;
+      // Pop from history first: re-inserting without removing duplicates the
+      // entry, and the next /prev returns the same track again.
+      try { prevArr.pop(); } catch {}
       await p.queue.splice(0, 0, t);
       return await this.skip(guildId);
     } catch { return false; }

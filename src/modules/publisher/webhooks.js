@@ -38,6 +38,7 @@ async function persist() {
 
 // --- LIVE message create/update -------------------------------------------
 async function sendLiveMessage(ev) {
+  if (!ctx) return null;
   const { client, config, getLive } = ctx;
   const st = getLive();
   const channelId = resolveChannel('announcements', config);
@@ -58,6 +59,7 @@ async function sendLiveMessage(ev) {
 }
 
 async function editLiveMessage(ev, ended = false, refOverride = null) {
+  if (!ctx) return false;
   const { client, config, getLive } = ctx;
   const st = getLive();
   const ref = refOverride || st?.discord;
@@ -87,7 +89,9 @@ function withLiveLock(fn) {
 
 // Returns 'create' | 'update' | 'noop' | 'ended' handling + Discord I/O.
 async function handleLiveOnline(source, ref, ev) {
+  if (!ctx) return;
   return withLiveLock(async () => {
+    if (!ctx) return;
     const st = ctx.getLive();
     const action = liveMod.applyOnline(st, source, ref);
     if (action === 'noop') return;
@@ -102,7 +106,9 @@ async function handleLiveOnline(source, ref, ev) {
 }
 
 async function handleLiveOffline(source, ev) {
+  if (!ctx) return;
   return withLiveLock(async () => {
+    if (!ctx) return;
     const st = ctx.getLive();
     // Capture the message ref BEFORE applyOffline clears it on 'ended'.
     const ref = st?.discord?.messageId ? { ...st.discord } : null;
@@ -139,6 +145,29 @@ function ytVerify(req, res) {
 async function ytNotify(req, res) {
   res.status(200).send('ok'); // ack fast, process after
   try {
+    const { isSourceOn } = require('./source-state');
+    if (!isSourceOn('youtube')) {
+      logger.info('[publisher/youtube] push ignored (source disabled)');
+      return;
+    }
+    // Authenticated pushes (see hub.secret in subscribeYouTube): Google signs
+    // the raw XML with X-Hub-Signature: sha1=<hmac>. Unsigned accepts happen
+    // only when no secret is configured at all.
+    const secret = ctx.config?.webhook?.secret || '';
+    if (secret) {
+      const sig = String(req.headers['x-hub-signature'] || '');
+      // Raw XML body: the text parser ran BEFORE json, so req.body is the string
+      // and the raw bytes are not kept -- HMAC over the string form. Google
+      // signs bytes; string HMAC matches for UTF-8 XML without BOM.
+      const raw = typeof req.body === 'string' ? req.body : '';
+      const want = 'sha1=' + crypto.createHmac('sha1', secret).update(raw, 'utf8').digest('hex');
+      let okSig = false;
+      try { okSig = sig.length === want.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want)); } catch {}
+      if (!okSig) {
+        logger.warn('[publisher/youtube] forged push rejected (bad signature)');
+        return;
+      }
+    }
     const xml = typeof req.body === 'string' ? req.body : '';
     if (!xml.includes('<entry')) return;
     const feed = atomParser.parse(xml);
@@ -173,17 +202,23 @@ async function subscribeYouTube() {
     return;
   }
   const axios = require('axios');
+  const secret = cfg?.webhook?.secret || '';
   const run = async () => {
     for (const ytId of channels) {
       try {
+        const form = {
+          'hub.callback': `${base}/hook/youtube`,
+          'hub.mode': 'subscribe',
+          'hub.topic': `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${ytId}`,
+          'hub.verify': 'async',
+          'hub.lease_seconds': '432000',
+        };
+        // Authenticated pushes: hub.secret makes Google sign POSTs with
+        // X-Hub-Signature (HMAC-SHA1), verified in ytNotify. Without a secret
+        // anyone knowing callback+channel_id could forge entries.
+        if (secret) form['hub.secret'] = secret;
         await axios.post('https://pubsubhubbub.appspot.com/subscribe',
-          new URLSearchParams({
-            'hub.callback': `${base}/hook/youtube`,
-            'hub.mode': 'subscribe',
-            'hub.topic': `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${ytId}`,
-            'hub.verify': 'async',
-            'hub.lease_seconds': '432000',
-          }).toString(),
+          new URLSearchParams(form).toString(),
           { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 20000 });
         logger.info(`[publisher/youtube] PubSub subscribed ${ytId}`);
       } catch (e) { logger.warn(`[publisher/youtube] sub failed ${ytId}: ${e.message}`); }
@@ -213,7 +248,12 @@ async function twitchNotify(req, res) {
   }
   res.status(200).send('ok'); // ack fast
   try {
+    const { isSourceOn } = require('./source-state');
     const subType = req.body?.subscription?.type;
+    if (!isSourceOn('twitch') && (subType === 'stream.online' || subType === 'stream.offline')) {
+      logger.info('[publisher/twitch] event ignored (source disabled)');
+      return;
+    }
     const event = req.body?.event || {};
     if (subType === 'stream.online') {
       const ev = normalizeOnline(event, ctx.config);
@@ -250,6 +290,11 @@ function checkSecret(req, res) {
 // --- /hook/hpsb + /hook/instagram + legacy /hook/news --------------------------
 async function hpsbHook(req, res) {
   if (!checkSecret(req, res)) return;
+  try {
+    if (!require('./source-state').isSourceOn('hpsb')) {
+      return res.status(503).json({ ok: false, error: 'hpsb source disabled' });
+    }
+  } catch {}
   const b = req.body || {};
   const type = String(b.type || '').toLowerCase();
   if (!['release', 'event', 'news'].includes(type) || !b.id) {
@@ -273,20 +318,25 @@ async function hpsbHook(req, res) {
 }
 
 async function instagramHook(req, res) {
-  const need = ctx.config?.publisher?.instagram?.webhookSecret || ctx.config?.webhook?.secret || '';
-  if (need) {
+  const igSecret = ctx.config?.publisher?.instagram?.webhookSecret || '';
+  const globalSecret = ctx.config?.webhook?.secret || '';
+  // Accept EITHER secret: Meta handshake uses the IG one, legacy flows the
+  // global one. Requiring different secrets at different stages bricks setup.
+  if (igSecret || globalSecret) {
     const got = req.query['hub.verify_token'] || webhookToken(req);
-    // Meta handshake included: a subscribe challenge with a wrong/missing token
-    // must NOT be confirmed.
-    if (got !== need) {
+    if (got !== igSecret && got !== globalSecret) {
       return res.status(403).send('bad secret');
     }
   }
-  // Meta verification handshake.
+  // Meta verification handshake (secret already validated above).
   if (req.query['hub.mode'] === 'subscribe' && req.query['hub.challenge']) {
     return res.status(200).send(String(req.query['hub.challenge']));
   }
-  if (!checkSecret(req, res)) return;
+  try {
+    if (!require('./source-state').isSourceOn('instagram')) {
+      return res.status(503).json({ ok: false, error: 'instagram source disabled' });
+    }
+  } catch {}
   const bodies = Array.isArray(req.body?.entry) ? req.body.entry : [req.body || {}];
   let ingested = 0;
   for (const b of bodies) {
@@ -303,13 +353,20 @@ async function legacyNewsHook(req, res) {
   if (!checkSecret(req, res)) return;
   const { title, description, url, image, source } = req.body || {};
   if (!title || !description) return res.status(400).json({ ok: false, error: 'title+description required' });
-  // Stable id: same payload delivered twice must dedupe (never Date.now()).
   const stableId = String(
     req.body.videoId || req.body.media_id || req.body.id
     || url
     || `${String(source || 'legacy').toLowerCase()}:${String(title).slice(0, 120)}`,
   );
   const s = String(source || '').toLowerCase();
+  // Legacy route respects source toggles like the native ones (findings: it bypassed them).
+  const family = s.includes('youtube') ? 'youtube' : s.includes('instagram') ? 'instagram' : s.includes('tiktok') ? 'tiktok' : 'hpsb';
+  try {
+    if (!require('./source-state').isSourceOn(family)) {
+      return res.status(503).json({ ok: false, error: `${family} source disabled` });
+    }
+  } catch {}
+  // Stable id: same payload delivered twice must dedupe (never Date.now()).
   let ev;
   if (s.includes('youtube')) {
     ev = { source: 'youtube', type: 'video', id: stableId, author: '', title, description, url, image, publishedAt: new Date().toISOString(), target: 'media', metadata: {} };
@@ -332,8 +389,8 @@ function guardDisabled(req, res, next) {
   next();
 }
 
-function start(client, pipeline, config, liveApi) {
-  stop();
+async function start(client, pipeline, config, liveApi) {
+  await stop().catch(() => {});
   ctx = { client, pipeline, config, getLive: liveApi.get, setLive: liveApi.set };
   const { port, secret, channelId } = config?.webhook || {};
   const app = express();
@@ -371,18 +428,39 @@ function start(client, pipeline, config, liveApi) {
 
   subscribeYouTube().catch((e) => logger.warn('[publisher/youtube] subscribe init failed:', e.message));
   const { subscribe } = require('./sources/twitch');
-  subscribe(config).catch((e) => logger.warn('[publisher/twitch] subscribe init failed:', e.message));
+  try {
+    if (require('./source-state').isSourceOn('twitch')) {
+      subscribe(config).catch((e) => logger.warn('[publisher/twitch] subscribe init failed:', e.message));
+    } else {
+      logger.info('[publisher/twitch] EventSub skipped (source disabled)');
+    }
+  } catch (e) {
+    logger.warn('[publisher/twitch] source-state unreadable:', e?.message || e);
+  }
   logger.info('[publisher/webhook] routes: /hook/youtube /hook/twitch /hook/instagram /hook/hpsb /hook/news');
 }
 
 function stop() {
   if (subTimer) { clearInterval(subTimer); subTimer = null; }
-  if (httpServer) {
-    try { httpServer.close(); } catch {}
-    httpServer = null;
-    logger.info('[publisher/webhook] stopped');
-  }
   ctx = null;
+  if (httpServer) {
+    // Await the actual close: restarting (toggle /publisher) immediately
+    // re-listens the same port, and a half-closed socket = EADDRINUSE with
+    // webhooks silently OFF.
+    const srv = httpServer;
+    httpServer = null;
+    return new Promise((resolve) => {
+      try {
+        srv.close(() => {
+          logger.info('[publisher/webhook] stopped');
+          resolve();
+        });
+        setTimeout(resolve, 3000).unref?.();
+      } catch { resolve(); }
+    });
+  }
+  logger.info('[publisher/webhook] stopped');
+  return Promise.resolve();
 }
 
 module.exports = { start, stop, handleLiveOnline, handleLiveOffline };

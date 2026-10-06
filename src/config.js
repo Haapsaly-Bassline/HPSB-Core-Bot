@@ -325,6 +325,7 @@ const config = {
 
   // Webhook-приёмник: внешние сервисы шлют POST сюда.
   webhook: {
+    enabled: bool('WEBHOOK_ENABLED', true), // boolean, false = только polling, без HTTP-сервера
     port: int('WEBHOOK_PORT', 3100), // integer, порт (не 3001-3006)
     secret: secret('WEBHOOK_SECRET', ''), // secret
     channelId: id('WEBHOOK_NEWS_CHANNEL_ID', ''), // snowflake-id

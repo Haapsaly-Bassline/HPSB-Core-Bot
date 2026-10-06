@@ -77,6 +77,7 @@ if (fs.existsSync(eventsPath)) {
 
 client.modules = {};
 process.on('unhandledRejection', (e) => logger.error('[unhandled]', e?.stack || e));
+process.on('uncaughtException', (e) => logger.error('[uncaught]', e?.stack || e));
 
 client.login(config.token).catch((e) => {
   const msg = e?.message || String(e);

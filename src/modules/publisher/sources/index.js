@@ -12,16 +12,15 @@ const { fetchHpsb, dueReminders } = require('./hpsb');
 const { availability: twAvailability } = require('./twitch');
 const { scanChannel, isPresent } = require('./channel-scan');
 const { resolveChannel } = require('../router');
-const { isSourceOn } = require('../source-state');
+const { loadOverrides } = require('../source-state');
 
 function srcOn(cfg, key) {
-  // Runtime override wins; .env PUBLISHER_* is the fallback (same priority as
-  // the module manager: override > env > default on).
-  try {
-    return isSourceOn(key);
-  } catch {
-    return cfg?.publisher?.sources?.[key] !== false;
-  }
+  // Priority: persistent Discord override > passed config (.env) > default on.
+  // (isSourceOn() without cfg is the prod shortcut with the same order.)
+  let ov;
+  try { ov = loadOverrides()[key]; } catch { ov = undefined; }
+  if (ov === true || ov === false) return ov;
+  return cfg?.publisher?.sources?.[key] !== false;
 }
 
 function ytChannels(cfg) {
@@ -41,7 +40,7 @@ const SOURCES = [
     configured: (cfg) => !!(cfg?.hpsb?.releases?.channelId || cfg?.publisher?.announcementsChannelId),
     fetch: async (cfg, opts) => {
       const r = await fetchHpsb(cfg, opts);
-      return { events: r.releases, note: r.notes.releases };
+      return { events: r.releases, via: r.via.releases, note: r.notes.releases };
     },
   },
   {
@@ -50,7 +49,7 @@ const SOURCES = [
     configured: (cfg) => !!(cfg?.hpsb?.events?.channelId || cfg?.publisher?.announcementsChannelId),
     fetch: async (cfg, opts) => {
       const r = await fetchHpsb(cfg, opts);
-      return { events: r.events, note: r.notes.events };
+      return { events: r.events, via: r.via.events, note: r.notes.events };
     },
   },
   {
@@ -59,7 +58,7 @@ const SOURCES = [
     configured: (cfg) => !!(cfg?.hpsb?.posts?.channelId || cfg?.publisher?.announcementsChannelId),
     fetch: async (cfg, opts) => {
       const r = await fetchHpsb(cfg, opts);
-      return { events: r.news, note: r.notes.news };
+      return { events: r.news, via: r.via.news, note: r.notes.news };
     },
   },
   {
@@ -77,6 +76,14 @@ const SOURCES = [
     fetch: (cfg, opts) => fetchTikTok({ accounts: ttAccounts(cfg), http: opts?.http }),
   },
   {
+    key: 'twitch', label: 'Twitch', emoji: '🟣', family: 'live',
+    enabled: (cfg) => srcOn(cfg, 'twitch'),
+    configured: (cfg) => twAvailability(cfg).ok,
+    // EventSub push only: nothing to poll. The entry exists so the toggle,
+    // /modules status and /sync visibility cover Twitch like every source.
+    fetch: async () => ({ events: [], via: 'push', note: 'EventSub push only -- nothing to poll' }),
+  },
+  {
     key: 'instagram', label: 'Instagram', emoji: '📸', family: 'media',
     enabled: (cfg) => srcOn(cfg, 'instagram'),
     configured: (cfg) => igAvailability(cfg).ok,
@@ -90,12 +97,14 @@ const ALIASES = {
   all: null, // null = no filter
   hpsb: ['releases', 'events', 'news'],
   media: ['youtube', 'tiktok', 'instagram'],
+  live: ['twitch'],
   releases: ['releases'],
   events: ['events'],
   news: ['news'],
   youtube: ['youtube'],
   tiktok: ['tiktok'],
   instagram: ['instagram'],
+  twitch: ['twitch'],
 };
 
 function skippedByFilter(opts, key) {
@@ -140,8 +149,33 @@ function pickTargets(fetched, published, { backfill = 0, republish = 0 } = {}) {
 // First run (nothing published yet) only remembers -- no history spam --
 // unless backfill/republish explicitly requested. `baseline: true` forces the
 // remember-only pass (scheduler boot: never post on restart, ever).
+// Serialize force-mode runs (republish/backfill/missing): a second concurrent
+// force pass would re-post the same events (force bypasses the published
+// guard after the first run commits). Normal polls stay parallel-safe via
+// dedup reservations.
+let forceActive = false;
+
 async function runSync(pipeline, cfg, opts = {}) {
   const out = {};
+  const wantForce = (opts.republish || 0) > 0 || (opts.backfill || 0) > 0 || !!opts.missing;
+  if (wantForce) {
+    if (forceActive) {
+      for (const src of SOURCES) {
+        if (!skippedByFilter(opts, src.key)) out[src.key] = { found: 0, posted: 0, error: 'another force sync is already running' };
+        else out[src.key] = { found: 0, posted: 0, filtered: true };
+      }
+      return out;
+    }
+    forceActive = true;
+  }
+  try {
+    return await runSyncInner(pipeline, cfg, opts, out);
+  } finally {
+    if (wantForce) forceActive = false;
+  }
+}
+
+async function runSyncInner(pipeline, cfg, opts, out) {
   // Snapshot ONCE: first run after a fresh start remembers everything silently
   // (no history spam). Re-snapshotting per source would let source #2+ post
   // up to 5 old items each on the very first run.
@@ -153,10 +187,12 @@ async function runSync(pipeline, cfg, opts = {}) {
     if (!src.configured(cfg)) { out[src.key] = { found: 0, posted: 0, unavailable: true }; continue; }
     let fetched = [];
     let note = '';
+    let via = '';
     try {
       const res = (await src.fetch(cfg, opts)) || {};
       fetched = Array.isArray(res) ? res : (res.events || []);
       note = res.note || '';
+      via = res.via || '';
     } catch (e) {
       logger.warn(`[publisher/${src.key}] fetch failed: ${e.message}`);
       out[src.key] = { found: 0, posted: 0, error: String(e.message || e).slice(0, 120) };
@@ -169,7 +205,7 @@ async function runSync(pipeline, cfg, opts = {}) {
         const k = pipeline.dedup.reserve(ev);
         if (k) pipeline.dedup.commit(k);
       }
-      out[src.key] = { found: fetched.length, posted: 0, note };
+      out[src.key] = { found: fetched.length, posted: 0, via, note };
       continue;
     }
     // mode=missing: post what is NOT actually in the channel right now
@@ -191,12 +227,18 @@ async function runSync(pipeline, cfg, opts = {}) {
     let targets;
     let force = republish > 0 || backfill > 0;
     if (missingScan) {
-      const limit = Math.min(opts.missingLimit || 25, 25);
+      // Shared budget across the whole run: releases+events+news share ONE
+      // announcements channel, so per-source caps would spam up to 75 posts.
+      const remaining = Math.max(0, (opts._missingBudget ?? Math.min(opts.missingLimit || 25, 25)));
       targets = [...fetched]
         .sort((a, b) => (evTime(a) - evTime(b)))
         .filter((ev) => !isPresent(ev, missingScan))
-        .slice(0, limit);
+        .slice(0, remaining);
+      opts._missingBudget = remaining - targets.length;
       force = true; // seen-memory may claim these as posted -- channel is the truth
+    } else if (opts.missing && !opts.client) {
+      out[src.key] = { found: fetched.length, posted: 0, via, note, error: 'missing mode needs channel access (client)' };
+      continue;
     } else {
       targets = pickTargets(fetched, published, { backfill, republish });
     }
@@ -207,12 +249,14 @@ async function runSync(pipeline, cfg, opts = {}) {
       await pipeline.queue.onIdle();
       if (pipeline.dedup.published.has(r.key)) posted++;
     }
-    out[src.key] = { found: fetched.length, posted, note };
+    out[src.key] = { found: fetched.length, posted, via, note };
   }
   try {
     const { saveState } = require('../state');
     await saveState({ seen: pipeline.dedup.dumpSeen() });
-  } catch {}
+  } catch (e) {
+    logger.warn('[publisher] runSync state save failed:', e?.message || e);
+  }
   return out;
 }
 

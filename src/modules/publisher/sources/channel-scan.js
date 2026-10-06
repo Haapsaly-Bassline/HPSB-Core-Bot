@@ -11,12 +11,12 @@ function messageText(m) {
     if (d.url) parts.push(d.url);
     if (d.title) parts.push(d.title);
     if (d.description) parts.push(d.description);
-    for (const row of m.components || []) {
-      for (const b of row.components || []) {
-        if (b.url) parts.push(b.url);
-      }
+  }
+  // Buttons live on the message, not on each embed -- scan once.
+  for (const row of m.components || []) {
+    for (const b of row.components || []) {
+      if (b.url) parts.push(b.url);
     }
-    void d;
   }
   return parts.join('\n');
 }
@@ -51,11 +51,14 @@ function normUrl(u) {
 }
 
 // True when the event is verifiably already posted in the scanned channel.
+// URL match is exact; id-substring match only counts for long ids (short
+// numeric/slug ids collide with random message text and would wrongly skip
+// a restore).
 function isPresent(ev, scan) {
   if (!ev) return false;
   if (ev.url && scan.urls.has(normUrl(ev.url))) return true;
   const id = String(ev.id || '');
-  if (id && scan.blob.includes(id)) return true;
+  if (id.length >= 8 && scan.blob.includes(id)) return true;
   return false;
 }
 

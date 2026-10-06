@@ -42,6 +42,10 @@ function createQueue() {
   function stop() {
     running = false;
     stopped = true;
+    // Wake up onIdle() waiters: no more work will ever complete.
+    const rs = idleResolvers;
+    idleResolvers = [];
+    for (const r of rs) { try { r(); } catch {} }
   }
 
   function push(job) {

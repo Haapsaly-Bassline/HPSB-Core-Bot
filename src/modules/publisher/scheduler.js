@@ -10,6 +10,16 @@ const { saveState } = require('./state');
 let hpsbTimer = null;
 let mediaTimer = null;
 let running = false;
+let hpsbBusy = false;
+let mediaBusy = false;
+
+function srcEnabled(cfg, key) {
+  try {
+    return require('./source-state').isSourceOn(key);
+  } catch {
+    return cfg?.publisher?.sources?.[key] !== false;
+  }
+}
 
 function minutes(v, def, min) {
   const n = Number(v);
@@ -17,20 +27,24 @@ function minutes(v, def, min) {
 }
 
 async function runHpsb(pipeline, cfg, opts = {}) {
+  if (hpsbBusy) { logger.warn('[publisher/hpsb] previous pass still active, skipping'); return; }
+  hpsbBusy = true;
   try {
     const res = await runSync(pipeline, cfg, { sources: 'hpsb', ...opts });
     for (const [k, r] of Object.entries(res)) {
       if (r.posted) logger.info(`[publisher/hpsb] poll ${k}: found ${r.found}, posted ${r.posted}`);
       else if (r.note) logger.info(`[publisher/hpsb] poll ${k}: found ${r.found} (${r.note.slice(0, 160)})`);
+      else if (opts.baseline && r.found) logger.info(`[publisher/hpsb] baseline ${k}: remembered ${r.found}, posted 0`);
     }
   } catch (e) { logger.warn('[publisher/hpsb] poll failed:', e.message); }
+  finally { hpsbBusy = false; }
   if (!opts.baseline) {
     await runReminders(pipeline, cfg).catch((e) => logger.warn('[publisher/hpsb] reminders failed:', e.message));
   }
 }
 
 async function runReminders(pipeline, cfg) {
-  if (cfg?.publisher?.sources?.hpsb === false) return;
+  if (!srcEnabled(cfg, 'hpsb')) return;
   const channelId = resolveChannel('announcements', cfg);
   if (!channelId) return;
   const { fetchEvents } = require('./sources/hpsb');
@@ -67,20 +81,26 @@ async function runReminders(pipeline, cfg) {
 }
 
 async function runMedia(pipeline, cfg, opts = {}) {
+  if (mediaBusy) { logger.warn('[publisher/media] previous pass still active, skipping'); return; }
+  mediaBusy = true;
   try {
     const res = await runSync(pipeline, cfg, { sources: 'media', ...opts });
     for (const [k, r] of Object.entries(res)) {
       if (r.posted) logger.info(`[publisher/${k}] poll: found ${r.found}, posted ${r.posted}`);
       else if (r.note) logger.info(`[publisher/${k}] poll: found ${r.found} (${r.note.slice(0, 160)})`);
+      else if (opts.baseline && r.found) logger.info(`[publisher/${k}] baseline: remembered ${r.found}, posted 0`);
     }
   } catch (e) { logger.warn('[publisher/media] poll failed:', e.message); }
+  finally { mediaBusy = false; }
 }
 
 function start(pipeline, cfg) {
   stop();
   running = true;
-  const hpsbOn = cfg?.publisher?.sources?.hpsb !== false;
-  const mediaOn = cfg?.publisher?.sources?.youtube !== false || cfg?.publisher?.sources?.tiktok !== false;
+  hpsbBusy = false;
+  mediaBusy = false;
+  const hpsbOn = srcEnabled(cfg, 'hpsb');
+  const mediaOn = srcEnabled(cfg, 'youtube') || srcEnabled(cfg, 'tiktok');
 
   if (hpsbOn) {
     const mins = minutes(cfg?.hpsb?.pollMinutes, 5, 1);

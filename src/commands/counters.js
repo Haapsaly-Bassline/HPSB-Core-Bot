@@ -215,12 +215,19 @@ module.exports = {
       const data = store.load();
       data.statsChannels = data.statsChannels || {};
       // One channel = one counter: two counters renaming the same channel
-      // fight every tick (and spam rate limits).
+      // fight every tick (and spam rate limits). Check BOTH store links and
+      // .env bindings (the counter merges both at runtime).
+      const boundElsewhere = [];
       for (const [t, v] of Object.entries(data.statsChannels)) {
-        if (t !== type && asArray(v).includes(ch.id)) {
-          await interaction.editReply(`❌ <#${ch.id}> is already linked to **${t}** -- unlink it first.`);
-          return;
-        }
+        if (t !== type && asArray(v).includes(ch.id)) boundElsewhere.push(t);
+      }
+      for (const [t, v] of Object.entries(config.stats || {})) {
+        if (t === 't' || t === 'intervalMin') continue;
+        if (t !== type && asArray(v).includes(ch.id)) boundElsewhere.push(`${t} (.env)`);
+      }
+      if (boundElsewhere.length) {
+        await interaction.editReply(`❌ <#${ch.id}> is already used by **${boundElsewhere.join(', ')}** -- unlink it first.`);
+        return;
       }
       const cur = asArray(data.statsChannels[type]);
       if (cur.includes(ch.id)) {
