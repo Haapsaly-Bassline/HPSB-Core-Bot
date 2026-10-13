@@ -349,14 +349,39 @@ describe('publisher sources: runSync through pipeline', () => {
     assert.equal(off.live, false);
   });
 
-  it('youtube live via Data API when key is set', async () => {
+  it('youtube live: redirect is primary even with key (zero quota)', async () => {
     const { checkYoutubeLive } = require('../src/modules/publisher/sources/youtube-live');
-    const apiHttp = {
-      get: async () => ({ data: { items: [{ id: { videoId: 'APILIVE12345' }, snippet: { title: 'API Live', channelTitle: 'HPSB' } }] } }),
+    let searchCalls = 0;
+    const http = {
+      get: async (url) => {
+        if (String(url).includes('/oembed')) return { data: { title: 'Big Stream', author_name: 'HPSB' } };
+        if (String(url).includes('googleapis')) { searchCalls++; return { data: { items: [] } }; }
+        return { data: '', request: { res: { responseUrl: 'https://www.youtube.com/watch?v=VIDLIVE1234' } } };
+      },
     };
-    const [st] = await checkYoutubeLive({ channels: [{ key: 'yt1' }], apiKey: 'KEY', http: apiHttp });
+    const [st] = await checkYoutubeLive({ channels: [{ key: 'yt1' }], apiKey: 'KEY', http });
+    assert.equal(st.live, true);
+    assert.equal(st.videoId, 'VIDLIVE1234');
+    assert.equal(searchCalls, 0);
+  });
+
+  it('youtube live: API is fallback only on redirect transport failure', async () => {
+    const { checkYoutubeLive } = require('../src/modules/publisher/sources/youtube-live');
+    const http = {
+      get: async (url) => {
+        if (String(url).includes('googleapis')) {
+          return { data: { items: [{ id: { videoId: 'APILIVE12345' }, snippet: { title: 'API Live', channelTitle: 'HPSB' } }] } };
+        }
+        throw new Error('net down');
+      },
+    };
+    const [st] = await checkYoutubeLive({ channels: [{ key: 'yt1' }], apiKey: 'KEY', http });
     assert.equal(st.live, true);
     assert.equal(st.videoId, 'APILIVE12345');
+    // No key + dead redirect = offline with error, no crash.
+    const [off] = await checkYoutubeLive({ channels: [{ key: 'yt1' }], http });
+    assert.equal(off.live, false);
+    assert.ok(off.error);
   });
 
   it('pollLive announces youtube live and ends after 2 misses', async () => {

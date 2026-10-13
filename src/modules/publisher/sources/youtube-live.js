@@ -58,16 +58,31 @@ async function viaRedirect(ytId, http) {
 }
 
 // Check every configured channel. Never throws (per-channel errors -> offline).
+// QUOTA DISCIPLINE: search.list costs 100 units/call (the daily Search quota
+// burns in hours if polled). So the free redirect check is ALWAYS primary;
+// the API is only a fallback when the redirect transport itself fails --
+// "offline" is a valid answer, not a reason to spend quota.
 async function checkYoutubeLive({ channels = [], apiKey, http } = {}) {
   const out = [];
   for (const ch of channels) {
     const ytId = ch?.key;
     if (!ytId) continue;
     try {
-      out.push(apiKey ? await viaApi(ytId, apiKey, http) : await viaRedirect(ytId, http));
+      // Redirect says live OR offline -- both are answers, zero quota spent.
+      out.push(await viaRedirect(ytId, http));
     } catch (e) {
-      logger.warn(`[publisher/youtube-live] ${ytId}: ${e.message}`);
-      out.push({ channelId: ytId, live: false, error: String(e.message || e).slice(0, 100) });
+      // Only a TRANSPORT failure justifies spending API quota.
+      logger.warn(`[publisher/youtube-live] redirect failed for ${ytId}: ${e.message}`);
+      if (!apiKey) {
+        out.push({ channelId: ytId, live: false, error: String(e.message || e).slice(0, 100) });
+        continue;
+      }
+      try {
+        out.push(await viaApi(ytId, apiKey, http));
+      } catch (e2) {
+        logger.warn(`[publisher/youtube-live] ${ytId}: ${e2.message}`);
+        out.push({ channelId: ytId, live: false, error: String(e2.message || e2).slice(0, 100) });
+      }
     }
   }
   return out;
