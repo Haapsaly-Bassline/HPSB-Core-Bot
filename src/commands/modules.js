@@ -2,7 +2,7 @@ const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags, EmbedBuilder } =
 const { requirePower, replyError } = require('../utils/mod');
 
 const ACTIONS = ['status', 'enable', 'disable', 'restart', 'reset'];
-const MODULES = ['music', 'publisher', 'automod', 'honeypot', 'modcall', 'stats', 'private'];
+const MODULES = ['music', 'publisher', 'automod', 'honeypot', 'modcall', 'stats', 'private', 'backup'];
 
 module.exports = {
   data: new SlashCommandBuilder()

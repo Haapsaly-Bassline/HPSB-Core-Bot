@@ -56,8 +56,16 @@ async function statusLines(interaction, client) {
     const missing = needs.filter((f) => !has(f));
     if (!missing.length) {
       lines.push(`✅ Action perms ok (\`${permName(config.honeypot.action)}\`)`);
-    } else if (config.honeypot.action === 'kick' && has(PermissionFlagsBits.KickMembers)) {
-      lines.push(`⚠️ No Ban Members: kick degrades to plain kick (no message wipe)`);
+    } else if (config.honeypot.action === 'kick') {
+      // punish() succeeds with EITHER side: Ban = softban with wipe,
+      // Kick alone = plain kick fallback. Only neither = total failure.
+      if (has(PermissionFlagsBits.BanMembers)) {
+        lines.push(`✅ Action perms ok (softban via Ban Members; plain Kick unavailable without Kick Members)`);
+      } else if (has(PermissionFlagsBits.KickMembers)) {
+        lines.push(`⚠️ No Ban Members: kick degrades to plain kick (no message wipe)`);
+      } else {
+        lines.push(`❌ Needs Ban Members or Kick Members -- every kick FAILS`);
+      }
     } else {
       lines.push(`❌ Configured action needs \`${permName(config.honeypot.action)}\` -- every punish FAILS`);
     }
@@ -84,10 +92,14 @@ async function testLines(interaction, client, user) {
       exempt = require('../modules/honeypot/detector').isExempt(member, user.id);
     } catch {}
     if (exempt) {
+      const hp = (f) => { try { return !!member?.permissions?.has?.(f); } catch { return false; } };
       let why = 'staff-exempt';
       if (config.adminIds.includes(user.id)) why = 'bot admin (`ADMIN_DISCORD_IDS`)';
       else if (member && hasModRole(member)) why = 'has mod role (`MOD_ROLE_ID`)';
-      else if (member?.permissions?.has?.(PermissionFlagsBits.ManageMessages)) why = 'has Manage Messages (staff)';
+      else if (hp(PermissionFlagsBits.ManageMessages)) why = 'has Manage Messages (staff)';
+      else if (hp(PermissionFlagsBits.ModerateMembers)) why = 'has Timeout Members (staff)';
+      else if (hp(PermissionFlagsBits.KickMembers)) why = 'has Kick Members (staff)';
+      else if (hp(PermissionFlagsBits.BanMembers)) why = 'has Ban Members (staff)';
       lines.push(`⚪ Would SKIP: ${why}`);
     } else {
       lines.push('✅ Not exempt -- would be punished');
@@ -104,6 +116,8 @@ async function testLines(interaction, client, user) {
     const label = permName(config.honeypot.action);
     if (!miss.length) {
       lines.push(`✅ Bot has \`${label}\``);
+    } else if (config.honeypot.action === 'kick' && has(PermissionFlagsBits.BanMembers)) {
+      lines.push(`✅ Bot has Ban Members (softban works; plain Kick unavailable)`);
     } else if (config.honeypot.action === 'kick' && has(PermissionFlagsBits.KickMembers)) {
       lines.push(`⚠️ No Ban Members: softban degrades to plain kick (no message wipe)`);
     } else {

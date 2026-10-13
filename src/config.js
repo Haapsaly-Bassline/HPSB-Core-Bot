@@ -257,6 +257,7 @@ const config = {
       channelId: id('RELEASES_CHANNEL_ID', '') || id('SITE_NEWS_CHANNEL_ID', ''), // snowflake-id
       baseUrl: url('RELEASES_BASE_URL', 'https://release.hpsbassline.club', true),
       pageBase: url('RELEASES_PAGE_BASE', 'https://hpsbassline.club/releases', true),
+      threads: bool('RELEASE_THREADS', true), // boolean: discussion thread under each release
     },
     events: {
       feedUrl: url('EVENTS_FEED_URL', 'https://www.hpsbassline.club/api/feed/events.xml'),
@@ -317,6 +318,12 @@ const config = {
 
   // Автокросспост анонсов подписчикам. list<snowflake-id>.
   autopublish: list('AUTOPUBLISH_CHANNEL_IDS'),
+
+  // Бэкапы стора (data/backups). Модуль backup в менеджере.
+  backup: {
+    minutes: int('STORE_BACKUP_MINUTES', 360), // integer, минут (минимум 60)
+    keep: int('STORE_BACKUP_KEEP', 10), // integer, сколько снапшотов держать
+  },
 
   // Legacy single-feed (совместимость).
   siteApi: {

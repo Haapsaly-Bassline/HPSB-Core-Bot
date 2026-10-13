@@ -141,7 +141,11 @@ function format(ev, opts = {}) {
   else if (s === 'tiktok') out = tiktok(ev);
   else out = news(ev);
   const rows = linkButtonRows((out.buttons || []).slice(0, 8));
-  return { embed: out.embed, components: rows };
+  // Media posts get a 🔖 Save button (appended by the pipeline worker):
+  // readers DM themselves the link. No per-post storage needed -- the handler
+  // reads the URL back out of the message.
+  const saveable = ['youtube', 'instagram', 'tiktok'].includes(s);
+  return { embed: out.embed, components: rows, saveable };
 }
 
 module.exports = { format, reminder, youtube, instagram, tiktok, twitchLive, liveAnnounce, release, event, news };

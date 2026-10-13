@@ -208,15 +208,14 @@ class LavalinkEngine {
       return null;
     });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
-      // Don't strand an empty bot in voice on a failed lookup. If we moved an
-      // already-playing player here, move it back where the audio belongs.
+      // Failed lookup must not relocate live audio: if we moved an already
+      // playing player here, move it back (brief gap beats stranding guild A
+      // hearing nothing while the bot idles in B). Empty fresh players die.
       try {
-        if (!player.queue?.current && !player.queue?.tracks?.length) {
-          if (prevVoice && prevVoice !== voiceChannel.id) {
-            await player.changeVoiceState({ voiceChannelId: prevVoice }).catch(() => {});
-          } else {
-            await player.destroy().catch(() => {});
-          }
+        if (prevVoice && prevVoice !== voiceChannel.id) {
+          await player.changeVoiceState({ voiceChannelId: prevVoice }).catch(() => {});
+        } else if (!player.queue?.current && !player.queue?.tracks?.length) {
+          await player.destroy().catch(() => {});
         }
       } catch {}
       throw new Error(`No results for "${String(query).slice(0, 120)}"`);
@@ -250,12 +249,10 @@ class LavalinkEngine {
     });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
       try {
-        if (!player.queue?.current && !player.queue?.tracks?.length) {
-          if (prevVoice && prevVoice !== voiceChannel.id) {
-            await player.changeVoiceState({ voiceChannelId: prevVoice }).catch(() => {});
-          } else {
-            await player.destroy().catch(() => {});
-          }
+        if (prevVoice && prevVoice !== voiceChannel.id) {
+          await player.changeVoiceState({ voiceChannelId: prevVoice }).catch(() => {});
+        } else if (!player.queue?.current && !player.queue?.tracks?.length) {
+          await player.destroy().catch(() => {});
         }
       } catch {}
       throw new Error(`No results for "${String(url).slice(0, 120)}"`);

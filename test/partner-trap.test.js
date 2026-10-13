@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseLinks, buildPost } = require('../src/commands/partner-post');
+const { parseLinks, buildPost, isPublicIp } = require('../src/commands/partner-post');
 const play = require('../src/commands/play');
 
 describe('partner-post modal helpers', () => {
@@ -17,6 +17,16 @@ describe('partner-post modal helpers', () => {
     ].join('\n'));
     assert.deepEqual(got.map((l) => l.label), ['Roblox', 'Website', 'Instagram', 'Youtube', 'Discord']);
     assert.deepEqual(parseLinks(''), []);
+    assert.deepEqual(parseLinks('X | https://e.com/' + 'a'.repeat(600)), [], 'button URLs cap at 512');
+    assert.deepEqual(parseLinks('X | http://e.com/y'), [], 'https-only');
+  });
+  it('banner IP blocklist: loopback/private/link-local rejected', () => {
+    for (const ip of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.1', '169.254.169.254', '224.0.0.1', '::1', 'fe80::1', 'fc00::1', 'not-an-ip', '']) {
+      assert.equal(isPublicIp(ip), false, ip);
+    }
+    assert.equal(isPublicIp('172.15.0.1'), true);
+    assert.equal(isPublicIp('172.32.0.1'), true);
+    assert.equal(isPublicIp('8.8.8.8'), true);
   });
   it('modal builds within Discord limits (labels <= 45)', async () => {
     const cmd = require('../src/commands/partner-post');
@@ -99,8 +109,10 @@ describe('partner-post modal helpers', () => {
     const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
     const realFetch = globalThis.fetch;
     globalThis.fetch = async () => ({
-      ok: true,
+      ok: true, status: 200,
       headers: { get: (h) => (h === 'content-type' ? 'image/png' : h === 'content-length' ? String(pixel.length) : null) },
+      async *[Symbol.asyncIterator]() { yield pixel; },
+      body: (async function* () { yield pixel; })(),
       arrayBuffer: async () => pixel,
     });
     const values = { 'pp-name': 'Water Wolf', 'pp-tagline': 'Friendly VR hangout', 'pp-image': 'https://example.com/banner.png', 'pp-links': 'Website | https://example.com', 'pp-started': 'january 1, 2026' };

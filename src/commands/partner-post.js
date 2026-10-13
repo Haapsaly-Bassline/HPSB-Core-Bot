@@ -29,7 +29,8 @@ function parseLinks(raw, max = 5) {
       url = m[1];
       label = t.replace(url, '').trim() || url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
     }
-    if (!/^https?:\/\/\S+$/i.test(url)) continue;
+    // Discord button URLs cap at 512 chars; https-only (http never embeds).
+    if (!/^https:\/\/\S+$/i.test(url) || url.length > 512) continue;
     out.push({ label: label.slice(0, 40) || 'Link', url });
     if (out.length >= max) break;
   }
@@ -43,7 +44,7 @@ function parseLinks(raw, max = 5) {
 function buildPost({ name, tagline, image, links, started, banner }) {
   const title = `${name} x HPSB (Partnership)`.slice(0, 200);
   const img = (banner && banner.ref)
-    || (/^https?:\/\/\S+$/i.test(String(image || '').trim()) ? String(image).trim() : '');
+    || (/^https:\/\/\S+$/i.test(String(image || '').trim()) ? String(image).trim() : '');
   const date = String(started || '').trim();
 
   const container = new ContainerBuilder();
@@ -65,9 +66,10 @@ function buildPost({ name, tagline, image, links, started, banner }) {
   );
   const row = new ActionRowBuilder();
   for (const l of (links || []).slice(0, 5)) {
-    if (!/^https?:\/\/\S+$/i.test(l.url || '')) continue;
+    const u = String(l.url || '');
+    if (!/^https:\/\/\S+$/i.test(u) || u.length > 512) continue;
     row.addComponents(
-      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(String(l.label || 'Link').slice(0, 40)).setURL(String(l.url)),
+      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(String(l.label || 'Link').slice(0, 40)).setURL(u),
     );
   }
   if (row.components.length) container.addActionRowComponents(row);
@@ -96,13 +98,58 @@ function TextInputSafe(text) {
 // CloudFront links, expiring media URLs, hotlink-guarded hosts) often refuse
 // Discord's image proxy, so the embed shows no banner. A bot-uploaded
 // attachment always renders. Falls back to the plain URL on any failure.
+const dns = require('node:dns').promises;
+
+function isPublicIp(ip) {
+  // Block loopback / private / link-local / CGNAT: mods must not turn the bot
+  // into an intranet/metadata scanner (169.254.169.254 etc.).
+  if (!ip || typeof ip !== 'string') return false;
+  if (ip.includes(':')) {
+    const low = ip.toLowerCase();
+    if (low === '::1' || low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd')) return false;
+    return true;
+  }
+  const p = ip.split('.').map(Number);
+  if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = p;
+  if (a === 10 || a === 127) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 169 && b === 254) return false;
+  if (a >= 224) return false;
+  return true;
+}
+
+async function bannerHostOk(url) {
+  let host = '';
+  try { host = new URL(url).hostname; } catch { return false; }
+  try {
+    const addrs = new Set();
+    for (const r of await dns.resolve4(host).catch(() => [])) addrs.add(r);
+    for (const r of await dns.resolve6(host).catch(() => [])) addrs.add(r);
+    if (!addrs.size) return false; // unresolvable -- don't probe blindly
+    for (const ip of addrs) {
+      if (!isPublicIp(ip)) return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
 async function fetchBannerAttachment(url) {
   try {
+    if (!await bannerHostOk(url)) return null;
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 15000);
     let res;
     try {
-      res = await fetch(url, { signal: ctl.signal, redirect: 'follow' });
+      // manual redirect: re-check every hop against the IP blocklist.
+      let next = url;
+      for (let i = 0; i < 3; i++) {
+        res = await fetch(next, { signal: ctl.signal, redirect: 'manual' });
+        if (res.status < 300 || res.status >= 400 || i === 2) break;
+        next = res.headers.get('location');
+        if (!next || !await bannerHostOk(next)) { clearTimeout(t); return null; }
+      }
     } finally {
       clearTimeout(t);
     }
@@ -111,8 +158,17 @@ async function fetchBannerAttachment(url) {
     if (!ct.startsWith('image/')) return null;
     const len = Number(res.headers.get('content-length') || 0);
     if (len > 8000000) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (!buf.length || buf.length > 8000000) return null;
+    // Stream-capped read: a lying/missing content-length (chunked, infinite
+    // stream) must not OOM the process via arrayBuffer().
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of res.body) {
+      total += chunk.length;
+      if (total > 8000000) return null;
+      chunks.push(chunk);
+    }
+    const buf = Buffer.concat(chunks);
+    if (!buf.length) return null;
     const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : ct.includes('webp') ? 'webp' : 'jpg';
     const name = `banner.${ext}`;
     return { file: new AttachmentBuilder(buf, { name }), ref: `attachment://${name}` };
@@ -131,7 +187,9 @@ async function handleModal(interaction, client) {
   const image = interaction.fields.getTextInputValue('pp-image').trim();
   const linksRaw = interaction.fields.getTextInputValue('pp-links');
   const started = interaction.fields.getTextInputValue('pp-started').trim();
-  if (!/^https?:\/\/\S+$/i.test(image)) {
+  // https-only (Discord doesn't embed http images anyway, and plain http
+  // widens the SSRF surface for the re-host download below).
+  if (!/^https:\/\/\S+$/i.test(image)) {
     await interaction.reply({ content: '❌ Banner must be an `https://` image URL.', flags: MessageFlags.Ephemeral });
     return;
   }
@@ -140,15 +198,15 @@ async function handleModal(interaction, client) {
     await interaction.reply({ content: '❌ Add at least one link line: `Label | https://…`.', flags: MessageFlags.Ephemeral });
     return;
   }
+  // Ack FIRST: every network call below (channel fetch, banner download) can
+  // outlive the ~3s modal token ("interaction failed" on success otherwise).
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   try {
     const ch = await client.channels.fetch(channelId).catch(() => null);
     if (!ch?.isTextBased()) {
-      await interaction.reply({ content: '❌ Partners channel not found / not text.', flags: MessageFlags.Ephemeral });
+      await interaction.editReply({ content: '❌ Partners channel not found / not text.' });
       return;
     }
-    // Ack the modal first: the banner download can take seconds, and modal
-    // tokens expire after ~3s (late reply = "interaction failed" on success).
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const banner = await fetchBannerAttachment(image);
     const { data, files } = buildPost({ name, tagline, image, links, started, banner });
     const payload = { ...data };
@@ -159,8 +217,10 @@ async function handleModal(interaction, client) {
     } catch {}
     const how = files.length ? 'banner re-uploaded (always displays)' : 'banner linked by URL (fallback)';
     await interaction.editReply({ content: `✅ Posted in <#${channelId}>: ${m.url}\n_${how}_` });
+    return true;
   } catch (err) {
     await replyError(interaction, `❌ Post failed: ${String(err.message || err).slice(0, 200)}`);
+    return true;
   }
 }
 
@@ -193,4 +253,5 @@ module.exports = {
   handleModal,
   parseLinks,
   buildPost,
+  isPublicIp,
 };

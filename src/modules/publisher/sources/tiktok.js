@@ -57,6 +57,7 @@ async function fetchTikTok({ accounts = [], http } = {}) {
   return {
     events: out.sort((a, b) => (dateMs(a.publishedAt) - dateMs(b.publishedAt))),
     note: problems.join('; '),
+    via: 'tikwm',
   };
 }
 

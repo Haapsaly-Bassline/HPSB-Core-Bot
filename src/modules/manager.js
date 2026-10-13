@@ -99,8 +99,9 @@ async function stopPublisher() {
 }
 
 async function startHoneypot(client) {
-  const { ensureTrapWarning } = require('./honeypot/detector');
+  const { ensureTrapWarning, schedulePendingNotices } = require('./honeypot/detector');
   await ensureTrapWarning(client);
+  await schedulePendingNotices(client).catch(() => {});
   logger.info('[module] honeypot started');
 }
 
@@ -137,6 +138,33 @@ async function startPrivate(client) {
   logger.info('[module] private started');
 }
 
+let backupTimer = null;
+
+async function startBackup() {
+  const path = require('node:path');
+  const { config } = require('../config');
+  const { doBackup } = require('../utils/backup');
+  const storeFile = process.env.HPSB_STORE_FILE || path.join(__dirname, '..', '..', 'data', 'store.json');
+  const dir = path.join(path.dirname(storeFile), 'backups');
+  const mins = Math.max(60, Number(config.backup?.minutes) || 360);
+  const keep = Math.max(2, Number(config.backup?.keep) || 10);
+  const run = () => {
+    const r = doBackup(storeFile, dir, keep);
+    if (r.ok) logger.info(`[backup] snapshot ${r.file} (kept ${r.kept})`);
+    else logger.warn(`[backup] skipped: ${r.reason}`);
+  };
+  run(); // boot snapshot before anything mutates the store
+  if (backupTimer) clearInterval(backupTimer);
+  backupTimer = setInterval(run, mins * 60 * 1000);
+  backupTimer.unref?.();
+  logger.info(`[module] backup started (every ${mins}m, keep ${keep})`);
+}
+
+async function stopBackup() {
+  if (backupTimer) { clearInterval(backupTimer); backupTimer = null; }
+  logger.info('[module] backup stopped');
+}
+
 function defaultManifests() {
   return [
     { name: 'music', label: 'Music', dependsOn: [], start: startMusic, stop: stopMusic },
@@ -146,6 +174,7 @@ function defaultManifests() {
     { name: 'modcall', label: 'ModCall', dependsOn: [], start: startModcall },
     { name: 'stats', label: 'Stats', dependsOn: [], start: startStats, stop: stopStats },
     { name: 'private', label: 'Private Rooms', dependsOn: [], start: startPrivate },
+    { name: 'backup', label: 'Backups', dependsOn: [], start: startBackup, stop: stopBackup },
   ];
 }
 

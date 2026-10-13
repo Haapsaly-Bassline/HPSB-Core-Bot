@@ -21,6 +21,7 @@ const { saveState } = require('./state');
 const atomParser = new XMLParser({ ignoreAttributes: false });
 
 let httpServer = null;
+let httpListening = false;
 let subTimer = null;
 let ctx = null; // { client, pipeline, config, getLive, setLive }
 
@@ -105,14 +106,14 @@ async function handleLiveOnline(source, ref, ev) {
   });
 }
 
-async function handleLiveOffline(source, ev) {
+async function handleLiveOffline(source, ev, channelId = null) {
   if (!ctx) return;
   return withLiveLock(async () => {
     if (!ctx) return;
     const st = ctx.getLive();
     // Capture the message ref BEFORE applyOffline clears it on 'ended'.
     const ref = st?.discord?.messageId ? { ...st.discord } : null;
-    const action = liveMod.applyOffline(st, source);
+    const action = liveMod.applyOffline(st, source, channelId);
     if (action === 'noop') return;
     if (action === 'ended') {
       await editLiveMessage(ev || { source, type: 'live', title: 'Stream' }, true, ref);
@@ -385,13 +386,20 @@ async function legacyNewsHook(req, res) {
 
 // --- server -------------------------------------------------------------------
 function guardDisabled(req, res, next) {
+  if (!ctx) return res.status(503).json({ ok: false, error: 'publisher not running' });
   if (!publisherEnabled()) return res.status(503).json({ ok: false, error: 'publisher disabled' });
   next();
 }
 
+// Context without HTTP: live Discord I/O (send/edit LIVE messages) works even
+// when WEBHOOK_ENABLED=off -- the scheduler's pollLive needs it, no port needed.
+function initCtx(client, pipeline, config, liveApi) {
+  ctx = { client, pipeline, config, getLive: liveApi.get, setLive: liveApi.set };
+}
+
 async function start(client, pipeline, config, liveApi) {
   await stop().catch(() => {});
-  ctx = { client, pipeline, config, getLive: liveApi.get, setLive: liveApi.set };
+  initCtx(client, pipeline, config, liveApi);
   const { port, secret, channelId } = config?.webhook || {};
   const app = express();
 
@@ -404,7 +412,7 @@ async function start(client, pipeline, config, liveApi) {
   app.get('/health', (_req, res) => res.json({ ok: true, publisher: publisherEnabled() }));
 
   app.use('/hook/youtube', express.text({ type: '*/*', limit: '512kb' }));
-  app.get('/hook/youtube', ytVerify);
+  app.get('/hook/youtube', guardDisabled, ytVerify);
   app.post('/hook/youtube', guardDisabled, ytNotify);
 
   app.post('/hook/twitch', guardDisabled, twitchNotify);
@@ -418,6 +426,8 @@ async function start(client, pipeline, config, liveApi) {
   httpServer = app.listen(port || 3100, () => logger.info(`[publisher/webhook] listening :${port || 3100}`));
   // Never process.exit() from a module: a busy port (stale second instance)
   // must not kill the whole bot -- log loudly so it gets noticed instead.
+  // NOTE: listen errors are async; a failed bind leaves webhooks silent while
+  // polling continues. /health reports the listener state.
   httpServer.on('error', (e) => {
     if (e?.code === 'EADDRINUSE') {
       logger.error(`[publisher/webhook] port ${port} busy -- another bot instance is already running. Webhooks OFF, polling continues.`);
@@ -425,6 +435,7 @@ async function start(client, pipeline, config, liveApi) {
       logger.error('[publisher/webhook] listen failed:', e?.message || e);
     }
   });
+  httpServer.on('listening', () => { httpListening = true; });
 
   subscribeYouTube().catch((e) => logger.warn('[publisher/youtube] subscribe init failed:', e.message));
   const { subscribe } = require('./sources/twitch');
@@ -442,25 +453,32 @@ async function start(client, pipeline, config, liveApi) {
 
 function stop() {
   if (subTimer) { clearInterval(subTimer); subTimer = null; }
-  ctx = null;
   if (httpServer) {
-    // Await the actual close: restarting (toggle /publisher) immediately
-    // re-listens the same port, and a half-closed socket = EADDRINUSE with
-    // webhooks silently OFF.
+    // ctx stays alive until the socket actually closes: in-flight webhook
+    // handlers dereference it after awaits, and nulling early = TypeError
+    // mid-request (Express 4 won't catch it).
     const srv = httpServer;
     httpServer = null;
+    httpListening = false;
     return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        ctx = null;
+        logger.info('[publisher/webhook] stopped');
+        resolve();
+      };
       try {
-        srv.close(() => {
-          logger.info('[publisher/webhook] stopped');
-          resolve();
-        });
-        setTimeout(resolve, 3000).unref?.();
-      } catch { resolve(); }
+        srv.close(finish);
+        setTimeout(finish, 10000).unref?.();
+      } catch { finish(); }
     });
   }
+  ctx = null;
+  httpListening = false;
   logger.info('[publisher/webhook] stopped');
   return Promise.resolve();
 }
 
-module.exports = { start, stop, handleLiveOnline, handleLiveOffline };
+module.exports = { start, stop, initCtx, isListening: () => httpListening, handleLiveOnline, handleLiveOffline };

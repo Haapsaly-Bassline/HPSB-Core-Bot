@@ -6,8 +6,6 @@ const STATIONS = {
   predictor: { name: 'Hardcore Predictor FM', url: 'https://azura.hpsbassline.club/listen/hardcore_predictorfm/radio.mp3' },
 };
 
-const DIRECT_RE = /\.(mp3|ogg|oga|wav|m4a|flac|aac|opus|m3u8|pls)(\?|$)|azura\.hpsbassline\.club\/listen|\/listen\//i;
-
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('radio')

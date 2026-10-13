@@ -88,8 +88,14 @@ function checkEnv() {
     const missing = keys.filter(k => !process.env[k]);
     // Only these are truly required (config.validate warns on the same set).
     // Everything else either has a compiled-in default or means "feature off".
+    // CLIENT_ID accepts the DISCORD_CLIENT_ID fallback (config + deploy do too).
     const required = new Set(['DISCORD_TOKEN', 'CLIENT_ID', 'GUILD_ID']);
-    const need = missing.filter(k => required.has(k));
+    const need = missing.filter((k) => {
+      if (!required.has(k)) return false;
+      // CLIENT_ID accepts the DISCORD_CLIENT_ID fallback (config + deploy do too).
+      if (k === 'CLIENT_ID' && process.env.DISCORD_CLIENT_ID) return false;
+      return true;
+    });
     if (!need.length) return ['✅ .env complete'];
     return [`❌ .env missing: ${need.join(', ')}`];
   } catch { return ['⚪ .env.example not readable']; }

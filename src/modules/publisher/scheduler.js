@@ -14,6 +14,22 @@ let running = false;
 let hpsbBusy = false;
 let mediaBusy = false;
 let liveBusy = false;
+const inflight = new Set(); // in-flight passes (stop() awaits them via drain())
+
+function track(p) {
+  inflight.add(p);
+  p.catch(() => {}).finally(() => inflight.delete(p));
+  return p;
+}
+
+async function drain() {
+  const pending = [...inflight];
+  if (!pending.length) return;
+  await Promise.race([
+    Promise.allSettled(pending),
+    new Promise((r) => setTimeout(r, 10000)),
+  ]);
+}
 
 function srcEnabled(cfg, key) {
   try {
@@ -112,7 +128,7 @@ async function pollLive(pipeline, cfg, deps = {}) {
     const states = await checkYoutubeLive({ channels, apiKey: cfg?.reposter?.youtubeApiKey, http: deps.http });
     const wh = () => require('./webhooks');
     const onOnline = deps.onOnline || ((ref, ev) => wh().handleLiveOnline('youtube', ref, ev));
-    const onOffline = deps.onOffline || ((ev) => wh().handleLiveOffline('youtube', ev));
+    const onOffline = deps.onOffline || ((channelId) => wh().handleLiveOffline('youtube', undefined, channelId));
     const liveNow = (() => { try { return pipeline.getLive?.()?.youtube || null; } catch { return null; } })();
     for (const st of states) {
       if (st.live && st.videoId) {
@@ -126,14 +142,18 @@ async function pollLive(pipeline, cfg, deps = {}) {
           target: 'announcements', metadata: { channelId: st.channelId },
         };
         logger.info(`[publisher/live] youtube live: ${st.videoId}`);
-        await onOnline({ videoId: st.videoId, url: st.url }, ev);
+        await onOnline({ videoId: st.videoId, url: st.url, channelId: st.channelId }, ev);
       } else {
         if (!liveNow?.live) { liveMisses.delete(st.channelId); continue; }
+        // Only the channel owning the live slot may end it.
+        if (liveNow.youtube?.channelId && st.channelId && liveNow.youtube.channelId !== st.channelId) {
+          continue;
+        }
         const n = (liveMisses.get(st.channelId) || 0) + 1;
         if (n < 2) { liveMisses.set(st.channelId, n); continue; }
         liveMisses.delete(st.channelId);
         logger.info('[publisher/live] youtube ended');
-        await onOffline();
+        await onOffline(st.channelId);
       }
     }
   } catch (e) {
@@ -159,10 +179,10 @@ function start(pipeline, cfg) {
     const mins = minutes(cfg?.hpsb?.pollMinutes, 5, 1);
     // Boot baseline: remember everything WITHOUT posting (a restart must never
     // re-post history; catch-up after downtime = /sync backfill/republish).
-    runHpsb(pipeline, cfg, { baseline: true })
+    track(runHpsb(pipeline, cfg, { baseline: true })
       .then(() => logger.info('[publisher/hpsb] boot baseline remembered'))
-      .catch(() => {});
-    hpsbTimer = setInterval(() => { if (running) runHpsb(pipeline, cfg).catch(() => {}); }, mins * 60 * 1000);
+      .catch(() => {}));
+    hpsbTimer = setInterval(() => { if (running) track(runHpsb(pipeline, cfg).catch(() => {})); }, mins * 60 * 1000);
     hpsbTimer.unref?.();
     logger.info(`[publisher/hpsb] polling every ${mins}m`);
   } else {
@@ -171,10 +191,10 @@ function start(pipeline, cfg) {
 
   if (mediaOn) {
     const mins = minutes(cfg?.reposter?.pollMinutes, 10, 2);
-    runMedia(pipeline, cfg, { baseline: true })
+    track(runMedia(pipeline, cfg, { baseline: true })
       .then(() => logger.info('[publisher/media] boot baseline remembered'))
-      .catch(() => {});
-    mediaTimer = setInterval(() => { if (running) runMedia(pipeline, cfg).catch(() => {}); }, mins * 60 * 1000);
+      .catch(() => {}));
+    mediaTimer = setInterval(() => { if (running) track(runMedia(pipeline, cfg).catch(() => {})); }, mins * 60 * 1000);
     mediaTimer.unref?.();
     logger.info(`[publisher/media] polling every ${mins}m`);
   } else {
@@ -183,8 +203,8 @@ function start(pipeline, cfg) {
 
   if (liveOn) {
     const mins = minutes(cfg?.publisher?.live?.checkMinutes, 2, 1);
-    pollLive(pipeline, cfg).catch(() => {});
-    liveTimer = setInterval(() => { if (running) pollLive(pipeline, cfg).catch(() => {}); }, mins * 60 * 1000);
+    track(pollLive(pipeline, cfg).catch(() => {}));
+    liveTimer = setInterval(() => { if (running) track(pollLive(pipeline, cfg).catch(() => {})); }, mins * 60 * 1000);
     liveTimer.unref?.();
     logger.info(`[publisher/live] youtube live check every ${mins}m`);
   } else {
@@ -199,7 +219,11 @@ function stop() {
   if (hpsbTimer) { clearInterval(hpsbTimer); hpsbTimer = null; }
   if (mediaTimer) { clearInterval(mediaTimer); mediaTimer = null; }
   if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  hpsbBusy = false;
+  mediaBusy = false;
+  liveBusy = false;
+  liveMisses.clear();
   logger.info('[publisher] scheduler stopped');
 }
 
-module.exports = { start, stop, runHpsb, runMedia, runReminders, pollLive, _clearLiveMisses };
+module.exports = { start, stop, drain, runHpsb, runMedia, runReminders, pollLive, _clearLiveMisses };

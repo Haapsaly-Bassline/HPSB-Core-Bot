@@ -126,7 +126,8 @@ Details:
 
 ### /sync modes
 
-`/sync source:<...> mode:<...>` (default: `source=all, mode=missing`):
+`/sync source:<...> mode:<...>` (default: `source=all, mode=missing`) with live
+progress edits during long restores:
 
 - `new` — only items unseen in memory (cap 5/source). `found N, posted 0` with
   the hint means "all already published".
@@ -134,7 +135,7 @@ Details:
 - `missing` — reconcile against **actual channel history** (last 100 messages)
   and post what's gone (default limit 25). For wiped/recreated channels. Refuses
   to run blind when history is unreadable.
-- `backfill N` — newest N regardless of seen.
+- `backfill N` — newest N regardless of seen (cap 5).
 
 ## Features
 
@@ -158,6 +159,11 @@ Details:
   title, links, start date) into `#partners`. Banner is re-uploaded as an
   attachment (signed/proxied URLs often fail Discord's image proxy). Only manual
   writer.
+- **Showcase & misc:** `/top` (server overview + biggest roles), 🔖 Save button
+  on media posts (DMs you the link, stateless), honeypot timeout-end DMs
+  ("you can chat again", persisted across restarts), `backup` module snapshots
+  `data/store.json` to `data/backups/` (`STORE_BACKUP_MINUTES/KEEP`), auto-threads
+  under HPSB releases (`RELEASE_THREADS`).
 - **Ops:** `/health` (channels, APIs, music, modules, store read/write),
   `/modules`, `/publisher`, `/sync`, `/publish`, `/version`.
 
@@ -190,7 +196,7 @@ Details:
 
 ## Project layout
 
-- `src/commands/` — slash commands (41): music, moderation, publisher (`sync`,
+- `src/commands/` — slash commands (42): music, moderation, publisher (`sync`,
   `publisher`, `modules`, `publish`, `partner-post`, `honeypot`, `counters`),
   info.
 - `src/events/` — `ready` (Module Manager boot), `interactionCreate` (commands,

@@ -18,13 +18,20 @@ module.exports = {
         const handled = await np.handleButton(interaction, client);
         if (handled) return;
       }
-      // Partner post modal -> dedicated handler on the command module
+      // Partner post modal -> dedicated handler on the command module.
+      // handleModal returns true when fully handled (never false/undefined).
       if (interaction.isModalSubmit() && interaction.customId === 'partner-post:modal') {
         const cmd = client.commands.get('partner-post');
         if (cmd?.handleModal) {
-          const handled = await cmd.handleModal(interaction, client);
-          if (handled !== false) return;
+          await cmd.handleModal(interaction, client);
+          return;
         }
+      }
+      // Media 🔖 Save button (stateless: URL is read back out of the message)
+      if (interaction.isButton() && interaction.customId === 'pub:save') {
+        const { handleSaveButton } = require('../modules/publisher/save');
+        await handleSaveButton(interaction);
+        return;
       }
       // Roles audit fix buttons
       if (interaction.isButton() && interaction.customId.startsWith('roles:fix:')) {

@@ -52,8 +52,13 @@ async function startPublisher(client) {
   pipeline.start();
   scheduler.start(pipeline, eff);
   if (eff.webhook?.enabled !== false) {
-    webhooks.start(client, pipeline, eff, { get: getLive, set: setLive });
+    await webhooks.start(client, pipeline, eff, { get: getLive, set: setLive }).catch((e) => {
+      logger.warn('[publisher] webhook start failed (polling continues):', e?.message || e);
+    });
   } else {
+    // Live Discord I/O without HTTP: pollLive announces YouTube live through
+    // the same handlers, no port needed.
+    webhooks.initCtx(client, pipeline, eff, { get: getLive, set: setLive });
     logger.info('[publisher] webhooks disabled (WEBHOOK_ENABLED=off) -- polling only, no EventSub/PubSub');
   }
   logger.info('[publisher] started (pipeline + scheduler + webhooks)');
@@ -61,14 +66,15 @@ async function startPublisher(client) {
 
 async function stopPublisher() {
   scheduler.stop();
+  try { await scheduler.drain(); } catch {}
   try { await webhooks.stop(); } catch {}
   if (pipeline) {
     try { pipeline.stop(); } catch {}
     try {
-      // Drain: an in-flight worker may commit AFTER the snapshot otherwise,
-      // losing the key and reposting it after restart.
+      // Drain: wait for the single in-flight send (if any) so its commit lands
+      // in the snapshot below -- otherwise the key is lost and reposts.
       await Promise.race([
-        pipeline.queue.onIdle(),
+        pipeline.queue.drained(),
         new Promise((r) => setTimeout(r, 5000)),
       ]);
       await saveState({ seen: pipeline.dedup.dumpSeen(), live: getLive() || {} });

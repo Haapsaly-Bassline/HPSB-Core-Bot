@@ -70,18 +70,32 @@ module.exports = {
       if (!pipeline) {
         // Publisher module stopped: run sync on an ad-hoc pipeline (sender
         // goes straight to Discord, nothing persists beyond dedup in memory).
-        const { config } = require('../config');
+        // Effective config (not raw): Discord source overrides apply here too.
+        const eff = pub.effectiveConfig();
         const { createPipeline } = require('../modules/publisher/pipeline');
         const { loadState } = require('../modules/publisher/state');
-        pipeline = createPipeline({ client, config, log: console });
+        pipeline = createPipeline({ client, config: eff, log: console });
         pipeline.dedup.loadSeen(loadState().seen);
         ownedRun = pipeline.start();
         owned = true;
       }
+      // Progress edits: a 25-post restore outlives silence; throttle to an
+      // edit per 3 posts / 5s so we don't spam the API either.
+      let lastProg = 0;
+      let progCount = 0;
+      const onProgress = async ({ key, posted, found }) => {
+        progCount++;
+        const now = Date.now();
+        if (posted % 3 !== 0 && now - lastProg < 5000) return;
+        lastProg = now;
+        const e = new EmbedBuilder().setColor(0x7c3aed).setTitle('🔄 Syncing…').setTimestamp()
+          .setDescription(`Posting **${key}**… ${posted}/${found}\n(${progCount} total so far)`);
+        await interaction.editReply({ embeds: [e] }).catch(() => {});
+      };
       let out;
       try {
         out = await pub.runSync(pipeline, pub.effectiveConfig(), {
-          sources: source, backfill, republish, missing, missingLimit, client,
+          sources: source, backfill, republish, missing, missingLimit, client, onProgress,
         });
       } finally {
         if (owned) {

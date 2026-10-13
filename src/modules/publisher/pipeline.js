@@ -49,12 +49,20 @@ function createPipeline({ client, config, log = console, sender } = {}) {
       : [];
     let payload;
     try {
-      const { embed, components } = ev?.metadata?.reminderTier
-        ? reminder(ev, ev.metadata.reminderTier)
+      const built = ev?.metadata?.reminderTier
+        ? { ...reminder(ev, ev.metadata.reminderTier), saveable: false }
         : format(ev, { liveButtons });
-      payload = { embeds: [embed] };
+      payload = { embeds: [built.embed] };
       if (ping) payload.content = ping;
-      if (components?.length) payload.components = components;
+      const rows = [...(built.components || [])];
+      // 🔖 Save button on media posts (max 5 rows total per Discord limits).
+      if (built.saveable && rows.length < 5) {
+        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+        rows.push(new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('pub:save').setLabel('🔖 Save').setStyle(ButtonStyle.Secondary),
+        ));
+      }
+      if (rows.length) payload.components = rows;
     } catch (e) {
       // Bad event data (e.g. unusable url/image) must not wedge the key in pending.
       dedup.release(key);
@@ -62,7 +70,16 @@ function createPipeline({ client, config, log = console, sender } = {}) {
       return;
     }
     try {
-      await sendToDiscord(channelId, payload);
+      const m = await sendToDiscord(channelId, payload);
+      // Auto-thread under releases: each release gets its own discussion.
+      // Announcement channels support threads; anything else is best-effort.
+      try {
+        if (ev?.source === 'hpsb' && ev?.type === 'release'
+          && config?.hpsb?.releases?.threads !== false
+          && m && typeof m.startThread === 'function') {
+          await m.startThread({ name: `💬 ${String(ev.title || 'Release').slice(0, 90)}`, autoArchiveDuration: 1440 }).catch(() => {});
+        }
+      } catch {}
       dedup.commit(key);
     } catch (e) {
       dedup.release(key);
@@ -98,7 +115,16 @@ function createPipeline({ client, config, log = console, sender } = {}) {
     ingest, worker, queue, dedup, keyOf,
     setLive, getLive,
     start: (lopts) => queue.start((job) => worker(job, lopts)),
-    stop: () => queue.stop(),
+    stop: () => {
+      queue.stop();
+      // Hand back unprocessed jobs: keys must neither wedge in pending nor be
+      // committed without posting -- next boot re-fetches and posts them.
+      try {
+        for (const job of queue.takeAll()) {
+          if (job?.key) dedup.release(job.key);
+        }
+      } catch {}
+    },
   };
 }
 

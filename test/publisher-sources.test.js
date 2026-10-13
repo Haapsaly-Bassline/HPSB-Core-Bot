@@ -427,4 +427,70 @@ describe('publisher sources: runSync through pipeline', () => {
     const tw = format({ source: 'twitch', type: 'live', id: 's', title: 'Late Stream', author: 'HPSB', url: 'https://twitch.tv/x' }, { liveButtons: btns }).embed.toJSON();
     assert.ok(tw.title.includes('Late Stream'));
   });
+
+  it('live state: same id is noop, offline is channel-scoped', () => {
+    const live = require('../src/modules/publisher/live');
+    const st = live.blank();
+    assert.equal(live.applyOnline(st, 'youtube', { videoId: 'v1', url: 'u', channelId: 'cA' }), 'create');
+    st.discord = { channelId: 'c', messageId: 'm' };
+    assert.equal(live.applyOnline(st, 'youtube', { videoId: 'v1', url: 'u', channelId: 'cA' }), 'noop');
+    assert.equal(live.applyOnline(st, 'youtube', { videoId: 'v2', url: 'u2', channelId: 'cA' }), 'update');
+    // Channel B going offline must not end channel A's stream.
+    assert.equal(live.applyOffline(st, 'youtube', 'cB'), 'noop');
+    assert.equal(live.isLive(st), true);
+    assert.equal(live.applyOffline(st, 'youtube', 'cA'), 'ended');
+  });
+
+  it('concurrent force syncs: second gets busy-out, no double post', async () => {
+    const sent = [];
+    const p = createPipeline({
+      client: {}, config: baseCfg, log: { warn() {} },
+      sender: async () => { sent.push(1); await new Promise((r) => setTimeout(r, 50)); return { id: 'm' }; },
+    });
+    const run = p.start();
+    try {
+      await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp });
+      const [a, b] = await Promise.all([
+        runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp, republish: 5 }),
+        runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp, republish: 5 }),
+      ]);
+      const posted = [a.youtube.posted, b.youtube.posted].sort();
+      // Exactly one ran (posted 2); the other was turned away with an error.
+      assert.deepEqual(posted, [0, 2]);
+      const errs = [a.youtube.error, b.youtube.error].filter(Boolean);
+      assert.equal(errs.length, 1);
+      assert.equal(sent.length, 2);
+    } finally {
+      p.stop();
+      await run;
+    }
+  });
+
+  it('missing budget is shared across sources in one run', async () => {
+    const sent = [];
+    const p = createPipeline({
+      client: {}, config: baseCfg, log: { warn() {} },
+      sender: async () => { sent.push(1); return { id: 'm' }; },
+    });
+    const run = p.start();
+    try {
+      await runSync(p, baseCfg, { sources: 'youtube', http: fakeHttp });
+      const history = [];
+      const fakeClient = {
+        channels: { fetch: async () => ({ isTextBased: () => true, messages: { fetch: async () => history } }) },
+      };
+      // Separate runs get separate budgets: a pre-seeded _missingBudget caps
+      // this run (as if sibling sources already spent the shared budget).
+      const mkOpts = (extra) => ({ sources: 'youtube', http: fakeHttp, missing: true, missingLimit: 25, client: fakeClient, ...extra });
+      const r1 = await runSync(p, baseCfg, mkOpts({ _missingBudget: 1 }));
+      assert.equal(r1.youtube.found, 2);
+      assert.equal(r1.youtube.posted, 1);
+      const r2 = await runSync(p, baseCfg, mkOpts());
+      assert.equal(r2.youtube.posted, 2);
+      assert.equal(sent.length, 3);
+    } finally {
+      p.stop();
+      await run;
+    }
+  });
 });

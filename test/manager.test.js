@@ -62,7 +62,7 @@ describe('module manager', () => {
   it('default registry has all modules, no deps cycles', () => {
     const list = defaultManifests();
     const names = list.map(m => m.name).sort();
-    assert.deepEqual(names, ['automod', 'honeypot', 'modcall', 'music', 'private', 'publisher', 'stats']);
+    assert.deepEqual(names, ['automod', 'backup', 'honeypot', 'modcall', 'music', 'private', 'publisher', 'stats']);
     for (const m of list) {
       assert.ok(typeof m.start === 'function', m.name);
       for (const d of m.dependsOn || []) assert.ok(names.includes(d), `${m.name} dep ${d}`);

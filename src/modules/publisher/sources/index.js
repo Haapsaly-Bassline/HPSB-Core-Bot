@@ -39,7 +39,8 @@ const SOURCES = [
     enabled: (cfg) => srcOn(cfg, 'hpsb'),
     configured: (cfg) => !!(cfg?.hpsb?.releases?.channelId || cfg?.publisher?.announcementsChannelId),
     fetch: async (cfg, opts) => {
-      const r = await fetchHpsb(cfg, opts);
+      if (!opts._hpsb) opts._hpsb = fetchHpsb(cfg, opts);
+      const r = await opts._hpsb;
       return { events: r.releases, via: r.via.releases, note: r.notes.releases };
     },
   },
@@ -48,7 +49,8 @@ const SOURCES = [
     enabled: (cfg) => srcOn(cfg, 'hpsb'),
     configured: (cfg) => !!(cfg?.hpsb?.events?.channelId || cfg?.publisher?.announcementsChannelId),
     fetch: async (cfg, opts) => {
-      const r = await fetchHpsb(cfg, opts);
+      if (!opts._hpsb) opts._hpsb = fetchHpsb(cfg, opts);
+      const r = await opts._hpsb;
       return { events: r.events, via: r.via.events, note: r.notes.events };
     },
   },
@@ -57,7 +59,8 @@ const SOURCES = [
     enabled: (cfg) => srcOn(cfg, 'hpsb'),
     configured: (cfg) => !!(cfg?.hpsb?.posts?.channelId || cfg?.publisher?.announcementsChannelId),
     fetch: async (cfg, opts) => {
-      const r = await fetchHpsb(cfg, opts);
+      if (!opts._hpsb) opts._hpsb = fetchHpsb(cfg, opts);
+      const r = await opts._hpsb;
       return { events: r.news, via: r.via.news, note: r.notes.news };
     },
   },
@@ -67,13 +70,14 @@ const SOURCES = [
     configured: (cfg) => ytChannels(cfg).length > 0,
     fetch: (cfg, opts) => fetchYouTube({
       apiKey: cfg?.reposter?.youtubeApiKey, channels: ytChannels(cfg), http: opts?.http,
-    }),
+    }).then((r) => ({ events: r.events, via: r.via || 'poll', note: r.note })),
   },
   {
     key: 'tiktok', label: 'TikTok', emoji: '🎵', family: 'media',
     enabled: (cfg) => srcOn(cfg, 'tiktok'),
     configured: (cfg) => ttAccounts(cfg).length > 0,
-    fetch: (cfg, opts) => fetchTikTok({ accounts: ttAccounts(cfg), http: opts?.http }),
+    fetch: (cfg, opts) => fetchTikTok({ accounts: ttAccounts(cfg), http: opts?.http })
+      .then((r) => ({ events: r.events, via: r.via || 'poll', note: r.note })),
   },
   {
     key: 'twitch', label: 'Twitch', emoji: '🟣', family: 'live',
@@ -88,7 +92,7 @@ const SOURCES = [
     enabled: (cfg) => srcOn(cfg, 'instagram'),
     configured: (cfg) => igAvailability(cfg).ok,
     // No polling provider configured: webhook/API-first (see webhooks.js).
-    fetch: async () => ({ events: [], note: '' }),
+    fetch: async () => ({ events: [], via: 'push', note: '' }),
   },
 ];
 
@@ -247,7 +251,10 @@ async function runSyncInner(pipeline, cfg, opts, out) {
       const r = await pipeline.ingest(ev, { force });
       if (!r.ok) continue;
       await pipeline.queue.onIdle();
-      if (pipeline.dedup.published.has(r.key)) posted++;
+      if (pipeline.dedup.published.has(r.key)) {
+        posted++;
+        try { await opts.onProgress?.({ key: src.key, posted, found: fetched.length }); } catch {}
+      }
     }
     out[src.key] = { found: fetched.length, posted, via, note };
   }

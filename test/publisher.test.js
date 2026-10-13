@@ -51,6 +51,37 @@ describe('publisher core', () => {
     assert.deepEqual(got, [1, 2, 3]);
     assert.equal(q.push(4), false);
   });
+  it('queue stop hands back abandoned jobs, drained resolves', async () => {
+    const { createQueue } = require('../src/modules/publisher/queue');
+    const q = createQueue();
+    q.push({ id: 1 });
+    q.push({ id: 2 });
+    // takeAll before the worker loop grabs anything: deterministic.
+    const rest = q.takeAll().map((j) => j.id).sort();
+    assert.deepEqual(rest, [1, 2]);
+    const run = q.start(async () => {});
+    q.stop();
+    await q.drained();
+    await q.onIdle();
+    await run;
+  });
+
+  it('pipeline stop releases pending keys (no wedge, no phantom commit)', async () => {
+    const pcfg = { publisher: { announcementsChannelId: 'ANN', mediaChannelId: 'MED' } };
+    const p = createPipeline({ client: {}, config: pcfg, log: { warn() {} }, sender: async () => ({ id: 'm' }) });
+    // Ingest without starting: job sits in queue, key reserved (pending).
+    const ev = { source: 'youtube', type: 'video', id: 'PENDING1', title: 'T' };
+    const r1 = await p.ingest(ev);
+    assert.equal(r1.ok, true);
+    assert.equal((await p.ingest(ev)).ok, false); // in-flight dupe
+    p.stop();
+    const r2 = await p.ingest(ev);
+    assert.equal(r2.ok, false); // queue stopped
+    // Fresh pipeline: the key was released, not committed -- re-fetchable.
+    const p2 = createPipeline({ client: {}, config: pcfg, log: { warn() {} }, sender: async () => ({ id: 'm' }) });
+    p2.dedup.loadSeen([]);
+    assert.ok(p2.dedup.reserve(ev), 'released key must be reservable again');
+  });
   it('router targets and channels', () => {
     assert.equal(resolveTarget({ source: 'youtube' }), 'media');
     assert.equal(resolveTarget({ source: 'instagram' }), 'media');

@@ -89,18 +89,18 @@ async function fetchLatestYouTube(ytId, { apiKey, http } = {}) {
   if (apiKey) {
     try {
       const items = await fetchViaApi(ytId, apiKey, http);
-      if (items.length) return items;
+      if (items.length) return { items, via: 'api' };
       stageErrors.push('api: empty');
     } catch (e) { logger.warn(`[publisher/youtube] api fallback: ${e.message}`); stageErrors.push(`api: ${e.message}`); }
   }
   try {
     const items = await fetchViaRss(ytId, http);
-    if (items.length) return items;
+    if (items.length) return { items, via: 'rss' };
     stageErrors.push('rss: empty');
   } catch (e) { logger.warn(`[publisher/youtube] rss blocked (${e.message}), trying scrape`); stageErrors.push(`rss: ${e.message}`); }
   try {
     const scraped = await fetchViaScrape(ytId, http);
-    if (scraped.length) return scraped;
+    if (scraped.length) return { items: scraped, via: 'scrape' };
     stageErrors.push('scrape: empty');
   } catch (e) {
     logger.warn(`[publisher/youtube] scrape failed: ${e.message}`);
@@ -127,11 +127,13 @@ async function enrichTitles(items, http) {
 async function fetchYouTube({ apiKey, channels = [], http } = {}) {
   const out = [];
   const problems = [];
+  const used = new Set();
   for (const ch of channels) {
     const ytId = ch?.key;
     if (!ytId) continue;
     try {
-      const items = await fetchLatestYouTube(ytId, { apiKey, http });
+      const { items, via } = await fetchLatestYouTube(ytId, { apiKey, http });
+      if (via) used.add(via);
       if (!items.length) { problems.push(`${ytId}: empty (api/rss/scrape gave nothing)`); continue; }
       const rich = await enrichTitles(items, http);
       // Dated oldest-first; undated (scrape fallback) keep feed-relative order
@@ -151,7 +153,8 @@ async function fetchYouTube({ apiKey, channels = [], http } = {}) {
       problems.push(`${ytId}: ${String(e.message || e).slice(0, 80)}`);
     }
   }
-  return { events: out, note: problems.join('; ') };
+  const via = used.size === 1 ? [...used][0] : (used.size ? 'mixed' : '');
+  return { events: out, note: problems.join('; '), via };
 }
 
 module.exports = { fetchLatestYouTube, fetchYouTube, normalize, truncate };

@@ -43,6 +43,11 @@ async function wipeApp({ token, clientId, guildId, label }) {
 }
 
 (async () => {
+  // Validate BEFORE touching anything: an unknown arg must never wipe first.
+  if (mode !== 'deploy' && mode !== 'wipe') {
+    console.error(`Unknown mode "${mode}" -- use: deploy (default) | wipe`);
+    process.exit(1);
+  }
   const { rest } = await wipeApp({ token: TOKEN, clientId: CLIENT_ID, guildId: GUILD_ID, label: 'current' });
 
   if (mode === 'wipe') {
@@ -51,10 +56,6 @@ async function wipeApp({ token, clientId, guildId, label }) {
     return;
   }
 
-  if (mode !== 'deploy') {
-    console.error(`Unknown mode "${mode}" -- use: deploy (default) | wipe`);
-    process.exit(1);
-  }
   const body = await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands },

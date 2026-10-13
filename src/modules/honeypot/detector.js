@@ -28,10 +28,13 @@ function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 // Applied mute length may differ from requested hours (1m floor, 28d ceiling)
 // -- the log shows what was actually applied, not the request.
 function fmtDur(hours) {
-  const ms = Math.min(Math.max(Number(hours) * 60 * 60 * 1000, 60 * 1000), 28 * 86400 * 1000);
-  if (ms < 3600 * 1000) return `mute ${Math.round(ms / 60000)}m`;
-  if (ms < 24 * 3600 * 1000) return `mute ${Math.round(ms / 3600000)}h`;
-  return `mute ${Math.round(ms / 86400000)}d`;
+  const n = Number(hours);
+  const ms = Number.isFinite(n)
+    ? Math.min(Math.max(n * 60 * 60 * 1000, 60 * 1000), 28 * 86400 * 1000)
+    : 60 * 1000;
+  if (ms < 3600 * 1000) return `${Math.max(1, Math.round(ms / 60000))}m`;
+  if (ms < 24 * 3600 * 1000) return `${Math.round(ms / 3600000)}h`;
+  return `${Math.round(ms / 86400000)}d`;
 }
 
 // Central staff exemption: bot owner, mod role holders, anyone with mod powers.
@@ -98,6 +101,11 @@ async function punish(client, message, reason, opts = {}) {
       const ms = Math.min(Math.max(hours * 60 * 60 * 1000, 60 * 1000), 28 * 86400 * 1000); // 1m..28d
       await member.timeout(ms, audit);
       try { await message.delete(); } catch {}
+      // Notify when the mute lifts (persisted: survives restarts).
+      try {
+        const gid = message.guildId || message.guild?.id;
+        if (gid) scheduleUnmuteNotice(client, gid, member.id, ms).catch(() => {});
+      } catch {}
     }
   } catch (e) {
     ok = false;
@@ -180,6 +188,93 @@ async function handleMessage(message, client) {
 }
 
 module.exports = { handleMessage, handleTrapMessage, ensureTrapWarning, joinBeat, isExempt };
+
+// --- Unmute-expiry DMs: "you can chat again" instead of silent unmute --------
+// Pending notices persist in store (survive restarts); timers are rebuilt on
+// boot, overdue ones are delivered immediately.
+const noticeTimers = new Map(); // userId -> timeout
+const MAX_TIMER_MS = 24 * 3600 * 1000; // setTimeout ceiling-ish: re-arm daily
+
+function loadNotices() {
+  try {
+    const store = require('../../utils/store');
+    const d = store.load();
+    if (!d.honeypotNotices || typeof d.honeypotNotices !== 'object') d.honeypotNotices = {};
+    return d.honeypotNotices;
+  } catch { return {}; }
+}
+
+async function dropNotice(userId) {
+  try {
+    const store = require('../../utils/store');
+    await store.exclusive(async () => {
+      const d = store.load();
+      if (d.honeypotNotices) delete d.honeypotNotices[userId];
+      store.save(d);
+    });
+  } catch {}
+}
+
+async function sendUnmuteDm(client, guildId, userId) {
+  await dropNotice(userId);
+  try {
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    const u = await client.users.fetch(userId).catch(() => null);
+    if (!u) return;
+    await u.send(`🔈 Your timeout on **${guild?.name || 'the server'}** has expired — you can chat again. Chill out this time 🙂`);
+  } catch {}
+}
+
+function armNoticeTimer(client, guildId, userId, delayMs) {
+  if (noticeTimers.has(userId)) { clearTimeout(noticeTimers.get(userId)); noticeTimers.delete(userId); }
+  if (!(delayMs > 0)) return;
+  // Beyond one day: re-arm daily instead of (possibly overflowing) one shot.
+  const step = Math.min(delayMs, MAX_TIMER_MS);
+  const t = setTimeout(async () => {
+    noticeTimers.delete(userId);
+    const pending = loadNotices()[userId];
+    if (!pending) return;
+    if (pending.at > Date.now()) {
+      armNoticeTimer(client, pending.guildId || guildId, userId, pending.at - Date.now());
+      return;
+    }
+    await sendUnmuteDm(client, pending.guildId || guildId, userId);
+  }, step);
+  t.unref?.();
+  noticeTimers.set(userId, t);
+}
+
+async function scheduleUnmuteNotice(client, guildId, userId, delayMs) {
+  if (!(delayMs > 0) || !userId) return;
+  const at = Date.now() + delayMs;
+  try {
+    const store = require('../../utils/store');
+    await store.exclusive(async () => {
+      const d = store.load();
+      if (!d.honeypotNotices || typeof d.honeypotNotices !== 'object') d.honeypotNotices = {};
+      d.honeypotNotices[userId] = { guildId, at };
+      store.save(d);
+    });
+  } catch {}
+  armNoticeTimer(client, guildId, userId, delayMs);
+}
+
+// Boot sweep: deliver overdue notices, re-arm the rest. Called on module start.
+async function schedulePendingNotices(client) {
+  let map = {};
+  try { map = loadNotices(); } catch { return; }
+  for (const [userId, rec] of Object.entries(map)) {
+    const left = (rec?.at || 0) - Date.now();
+    if (left <= 0) {
+      await sendUnmuteDm(client, rec?.guildId, userId);
+    } else {
+      armNoticeTimer(client, rec?.guildId, userId, left);
+    }
+  }
+}
+
+module.exports.scheduleUnmuteNotice = scheduleUnmuteNotice;
+module.exports.schedulePendingNotices = schedulePendingNotices;
 
 // Trap-only path for BOT authors: messageCreate ignores bots entirely, so raid
 // bots posting in the trap channel would never be punished. Automod proper
