@@ -1,21 +1,21 @@
-# HPSB Core Bot — Haapsaly Bassline
+# HPSB Core Bot - Haapsaly Bassline
 
 Multipurpose Discord bot: Lavalink music engine (Jockie-style) + unified
 Publisher (YouTube / HPSB feeds live; Twitch / Instagram / TikTok code-ready) +
 honeypot/automod + ModCall tickets + stats + private rooms. Written from scratch
 for HPSB (inspired by Jockie/Carl, no copied code).
 
-> **Deployment status (this server, live `.env`)** — what is actually ON here:
+> **Deployment status (this server, live `.env`)** - what is actually ON here:
 >
 > | Subsystem | State here | Why |
 > |---|---|---|
 > | Music (Lavalink) | 🟢 on | `MODULE_MUSIC=on` |
 > | Publisher core + HPSB feeds | 🟢 on | releases/events/news poll every 5m |
 > | YouTube videos + live check | 🟢 on | `YOUTUBE_MAP` set, `YT_API_KEY` set (Data API, no scraping) |
-> | TikTok | ⚪ off | `PUBLISHER_TIKTOK=off` — no accounts yet (`TIKTOK_MAP` empty) |
+> | TikTok | ⚪ off | `PUBLISHER_TIKTOK=off` - no accounts yet (`TIKTOK_MAP` empty) |
 > | Twitch live | ⚪ unavailable | no `TWITCH_*` credentials (code-ready: EventSub) |
 > | Instagram | ⚪ unavailable | no `INSTAGRAM_ACCESS_TOKEN` (code-ready: webhook/API) |
-> | Webhook server (`:3100`) | ⚪ off | `WEBHOOK_ENABLED=off` — **polling only**: no PubSub pushes, no EventSub, no `/hook/*` from outside |
+> | Webhook server (`:3100`) | ⚪ off | `WEBHOOK_ENABLED=off` - **polling only**: no PubSub pushes, no EventSub, no `/hook/*` from outside |
 > | Honeypot trap (`timeout`) | 🟢 on | `/honeypot status` to verify perms/hierarchy |
 > | Automod / ModCall / Stats / Private | 🟢 on | Stats counters need `/counters setup` (no counter channels linked yet) |
 > | Spotify playback | ⚪ off | Spotify app has no Premium (engine rejects Spotify queries with a clear message) |
@@ -66,7 +66,7 @@ for HPSB (inspired by Jockie/Carl, no copied code).
 ### Module Manager
 
 Every subsystem is a manifest (`name, label, dependsOn, start, stop`) managed from
-`src/modules/manager.js`. `ready.js` calls `startAll()` — no manual per-module
+`src/modules/manager.js`. `ready.js` calls `startAll()` - no manual per-module
 boots. One failing module never takes down the rest; repeated starts are no-ops
 (no duplicate timers).
 
@@ -110,32 +110,32 @@ Details:
   `TWITCH_URL` fallbacks. Offline fires after 2 consecutive misses (no flapping).
 - **Dedup**: key `source:type:id`, `pending → published | released`. Nothing is
   marked published before Discord confirms; failures retry. A boot **baseline**
-  pass remembers everything without posting — a restart never re-posts history.
+  pass remembers everything without posting - a restart never re-posts history.
 - **Polling is fallback**: push (PubSub/EventSub/webhooks) is primary when the
   webhook server is on; here it is **off**, so everything runs on pollers.
   Disabled sources get no timers, no subscriptions, no fetches.
 - **Per-source runtime toggles**: `PUBLISHER_*` in `.env` are defaults;
   `/publisher enable|disable|reset <source>` overrides them live (module restarts
-  internally to rebuild timers — never the whole bot).
+  internally to rebuild timers - never the whole bot).
 - **Webhooks** (one Express server, `WEBHOOK_PORT`, currently **off** via
   `WEBHOOK_ENABLED=off`): `/health`, `/hook/youtube`, `/hook/twitch`,
   `/hook/instagram`, `/hook/hpsb`, `/hook/news` (legacy compat). Publisher
   disabled → `503`; disabled source → ignored/`503`. See
   `src/modules/publisher/webhooks.js`. Turn `WEBHOOK_ENABLED=on` + restart to
-  re-enable pushes (PubSub HMAC, EventSub) — required for instant Twitch live.
+  re-enable pushes (PubSub HMAC, EventSub) - required for instant Twitch live.
 
 ### /sync modes
 
 `/sync source:<...> mode:<...>` (default: `source=all, mode=missing`) with live
 progress edits during long restores:
 
-- `new` — only items unseen in memory (cap 5/source). `found N, posted 0` with
+- `new` - only items unseen in memory (cap 5/source). `found N, posted 0` with
   the hint means "all already published".
-- `republish` — re-post known items oldest-first (`count`, 1–25, default 10).
-- `missing` — reconcile against **actual channel history** (last 100 messages)
+- `republish` - re-post known items oldest-first (`count`, 1–25, default 10).
+- `missing` - reconcile against **actual channel history** (last 100 messages)
   and post what's gone (default limit 25). For wiped/recreated channels. Refuses
   to run blind when history is unreadable.
-- `backfill N` — newest N regardless of seen (cap 5).
+- `backfill N` - newest N regardless of seen (cap 5).
 
 ## Features
 
@@ -153,7 +153,7 @@ progress edits during long restores:
   `/honeypot status|test` diagnoses config, perms, role hierarchy (dry-run).
 - **ModCall:** button → modal → staff ticket thread with two-way DM relay.
 - **Stats:** Member-Count-style voice counters (`/counters setup|list|link`;
-  nothing linked yet — run `setup`).
+  nothing linked yet - run `setup`).
 - **Private rooms:** join generator → own room + control panel, orphan sweep.
 - **Partners:** `/partner-post` modal → Components-V2 card (wide banner gallery,
   title, links, start date) into `#partners`. Banner is re-uploaded as an
@@ -180,13 +180,13 @@ progress edits during long restores:
 
 1. `cp .env.example .env` and fill it (Discord token, guild/channel/role IDs).
    Every variable is typed (`string/secret/snowflake-id/boolean/integer/list/map/
-   url/template`) — see the header of `.env.example`; same structure in `src/config.js`.
+   url/template`) - see the header of `.env.example`; same structure in `src/config.js`.
 2. Lavalink (see `lavalink/README.md` for details):
    - download `Lavalink.jar` v4 into `lavalink/`;
    - `cp lavalink/application.example.yml lavalink/application.yml` and fill passwords/tokens;
    - keep `LAVALINK_PASSWORD` in sync between `application.yml` and bot `.env`.
 3. `npm install` (if it complains about install-scripts: approve `opencode` + `ffmpeg-static`, then `npm rebuild`).
-4. `node src/deploy-commands.js` — guild slash commands (also wipes stale globals;
+4. `node src/deploy-commands.js` - guild slash commands (also wipes stale globals;
    `wipe` = clean slate).
 5. Start Lavalink: `java "-Djava.net.preferIPv4Stack=true" -jar Lavalink.jar` (quotes matter on PowerShell), wait for `ready to accept connections`.
 6. `npm start` (background: PM2 / scheduler; logs in `data/bot.log`).
@@ -196,23 +196,23 @@ progress edits during long restores:
 
 ## Project layout
 
-- `src/commands/` — slash commands (42): music, moderation, publisher (`sync`,
+- `src/commands/` - slash commands (42): music, moderation, publisher (`sync`,
   `publisher`, `modules`, `publish`, `partner-post`, `honeypot`, `counters`),
   info.
-- `src/events/` — `ready` (Module Manager boot), `interactionCreate` (commands,
+- `src/events/` - `ready` (Module Manager boot), `interactionCreate` (commands,
   buttons, modals), `voiceStateUpdate`, moderation/member events.
-- `src/modules/manager.js` — lifecycle, runtime overrides.
-- `src/modules/publisher/` — `index` (wiring), `pipeline`, `dedup`, `queue`,
+- `src/modules/manager.js` - lifecycle, runtime overrides.
+- `src/modules/publisher/` - `index` (wiring), `pipeline`, `dedup`, `queue`,
   `router`, `formatter`, `live`, `state`, `scheduler`, `webhooks`,
   `source-state` (source overrides), `sources/` (fetch/normalize per platform,
   `channel-scan` for missing-mode).
-- `src/modules/music/` — `engine-lavalink.js`, `service.js` (single entry),
+- `src/modules/music/` - `engine-lavalink.js`, `service.js` (single entry),
   `resolvers.js`, `np.js`, `stage.js`, `bandcamp-fan.js` (provider used by `/play`).
-- `src/modules/` — `honeypot`, `modcall`, `stats`, `private`.
-- `src/utils/` — embeds, music fmt, mod gates, selfcheck, logger, store
+- `src/modules/` - `honeypot`, `modcall`, `stats`, `private`.
+- `src/utils/` - embeds, music fmt, mod gates, selfcheck, logger, store
   (atomic JSON + in-process mutex).
-- `lavalink/` — `application.example.yml`, plugins, README.
-- `test/` — `node --test` suites (unit + pipeline with mocked Discord; real
+- `lavalink/` - `application.example.yml`, plugins, README.
+- `test/` - `node --test` suites (unit + pipeline with mocked Discord; real
   APIs never touched).
 
 ## Secrets discipline
