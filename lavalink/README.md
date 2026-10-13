@@ -37,6 +37,8 @@ all fetching/transcoding lives in the Java process, the bot only controls it.
    ```
 5. Bot `.env`: `MUSIC_ENGINE=lavalink`, `LAVALINK_HOST=127.0.0.1`,
    `LAVALINK_PORT=2333`, `LAVALINK_PASSWORD=...` (same as step 2).
+   Moving Lavalink to a Docker server instead? See `docker/README.md`
+   (same node/versions/cookies, only `LAVALINK_HOST` changes in bot `.env`).
 
 `preferIPv4Stack`: some ISPs have hanging IPv6 (timeout instead of refusal) and,
 unlike Node, Java has no Happy Eyeballs — without the flag, occasional requests

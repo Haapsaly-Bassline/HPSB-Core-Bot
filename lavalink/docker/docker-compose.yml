@@ -1,0 +1,42 @@
+# HPSB Lavalink on a Docker server.
+# Bring-up: copy application.yml + cookies.txt next to this file (see README),
+# then:  docker compose up -d --build
+# Logs:   docker compose logs -f
+# Update yt-dlp Codecs/plugins: docker compose build --no-cache && docker compose up -d
+services:
+  # PO-token minter for yt-dlp (bgutil). Official prebuilt image, internal
+  # network only (no published ports). Rebuilt/pulled fresh together with
+  # lavalink so plugin and server versions stay matched.
+  pot:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: hpsb-pot
+    restart: unless-stopped
+  lavalink:
+    build: .
+    image: hpsb-lavalink:4
+    container_name: hpsb-lavalink
+    restart: unless-stopped
+    depends_on:
+      - pot
+    # Same JVM flag as the Windows host (hanging IPv6 kills requests otherwise).
+    # Via JAVA_TOOL_OPTIONS so it works regardless of the image ENTRYPOINT form
+    # (a `command:` override would break if ENTRYPOINT already contains the jar).
+    environment:
+      JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true"
+      # Pin Java temp/locale noise down; uncomment to debug plugins:
+      # JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true -Dfile.encoding=UTF8"
+      TZ: "Europe/Tallinn"
+    ports:
+      # Publish ONLY to trusted nets in production (bot IP). Example:
+      #   - "127.0.0.1:2333:2333"          # same-host bot, or reverse proxy
+      #   - "10.0.0.5:2333:2333"           # bind a private IP, firewall the rest
+      - "2333:2333"
+    volumes:
+      # Working config WITH secrets (gitignored, never commit).
+      - ./application.yml:/opt/Lavalink/application.yml:ro
+      # NOTE: no cookies mount anymore -- YT auth is via PO tokens (pot
+      # service). If YouTube ever flags the IP and POT stops being enough,
+      # re-add a cookies mount + --cookies args (see README day-2 ops).
+      # Pinned plugin jars (copied once from lavalink/plugins/*.jar).
+      # If the dir is empty, Lavalink downloads them per application.yml pins.
+      - ./plugins:/opt/Lavalink/plugins

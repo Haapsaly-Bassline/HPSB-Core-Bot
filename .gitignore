@@ -13,6 +13,9 @@ src/config.js
 # Lavalink: only application.example.yml + README.md go to repo.
 # Working application.yml (passwords/tokens) stays local, never in git.
 lavalink/application.yml
+lavalink/docker/application.yml
+lavalink/docker/cookies.txt
+lavalink/docker/plugins/*.jar
 lavalink/*.jar
 lavalink/plugins/
 # YouTube account cookies (account access!): local only, never in git.
