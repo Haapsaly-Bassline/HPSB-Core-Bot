@@ -27,7 +27,7 @@ module.exports = {
         .setTimestamp();
 
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('modcall:open').setLabel('Message moderation').setStyle(ButtonStyle.Primary).setEmoji('📩'),
+        new ButtonBuilder().setCustomId('modcall:open').setLabel('Message moderation').setStyle(ButtonStyle.Primary),
       );
 
       await channel.send({ embeds: [embed], components: [row] });

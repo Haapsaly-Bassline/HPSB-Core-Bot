@@ -66,31 +66,27 @@ function panelEmbed(ownerId) {
 }
 
 function panelRows(locked) {
+  // Text labels only (no color emoji) -- matches the reference look.
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(BTN_LOCK)
-        .setEmoji(locked ? '🔓' : '🔒')
         .setLabel(locked ? 'Unlock' : 'Lock')
         .setStyle(locked ? ButtonStyle.Success : ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(BTN_RENAME)
-        .setEmoji('✏️')
         .setLabel('Rename')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(BTN_LIMIT)
-        .setEmoji('👥')
         .setLabel('Limit')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(BTN_GIVE)
-        .setEmoji('➡️')
         .setLabel('Transfer')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(BTN_KICK)
-        .setEmoji('👢')
         .setLabel('Kick')
         .setStyle(ButtonStyle.Danger),
     ),

@@ -1,7 +1,11 @@
 // Channel reconciliation: what is ACTUALLY in the Discord channel right now.
 // Seen-memory says "posted", but channels get recreated/wiped -- after that the
 // only truth is channel history. Used by /sync mode=missing.
+const { withTimeout } = require('../../../utils/timeout');
 const URL_RE = /https?:\/\/[^\s<>()]+/gi;
+
+const SCAN_FETCH_TIMEOUT_MS = 15000;
+const SCAN_MSGS_TIMEOUT_MS = 30000;
 
 function messageText(m) {
   const parts = [];
@@ -29,9 +33,15 @@ async function scanChannel(client, channelId, limit = 100) {
   let blob = '';
   try {
     if (!channelId) return { urls, blob, ok: false };
-    const ch = await client.channels.fetch(channelId).catch(() => null);
+    // Timeout-guarded: a stalled Discord API call here used to wedge the
+    // whole /sync loop forever (one post out, then silence, zero errors).
+    const ch = await withTimeout(
+      client.channels.fetch(channelId).catch(() => null),
+      SCAN_FETCH_TIMEOUT_MS, 'scan channel fetch').catch(() => null);
     if (!ch?.isTextBased()) return { urls, blob, ok: false };
-    const msgs = await ch.messages.fetch({ limit: Math.min(Math.max(limit, 1), 100) }).catch(() => null);
+    const msgs = await withTimeout(
+      ch.messages.fetch({ limit: Math.min(Math.max(limit, 1), 100) }),
+      SCAN_MSGS_TIMEOUT_MS, 'scan history fetch').catch(() => null);
     if (!msgs) return { urls, blob, ok: false };
     const list = typeof msgs.values === 'function' ? [...msgs.values()] : msgs;
     for (const m of list) {
@@ -62,4 +72,33 @@ function isPresent(ev, scan) {
   return false;
 }
 
-module.exports = { scanChannel, isPresent, messageText };
+// Fetch one tracked message: hit (exists) | gone (deleted: 404/10008) |
+// unknown (no access, timeout, no channel -- caller must NOT treat as gone,
+// otherwise a permission outage mass-deletes tracking AND reposts).
+async function fetchTrackedMessage(client, chCache, mapping) {
+  try {
+    if (!mapping?.messageId) return { status: 'unknown' };
+    let ch;
+    if (chCache.has(mapping.channelId)) {
+      ch = chCache.get(mapping.channelId);
+    } else {
+      ch = await withTimeout(
+        client.channels.fetch(mapping.channelId).catch(() => null),
+        15000, 'channel fetch');
+      chCache.set(mapping.channelId, ch || false);
+    }
+    if (!ch || ch === false || !ch.isTextBased?.()) return { status: 'unknown' };
+    try {
+      const msg = await withTimeout(
+        ch.messages.fetch(mapping.messageId), 15000, 'message fetch');
+      return msg ? { status: 'hit', msg } : { status: 'unknown' };
+    } catch (e) {
+      if (e?.code === 10008) return { status: 'gone' };
+      return { status: 'unknown' };
+    }
+  } catch {
+    return { status: 'unknown' };
+  }
+}
+
+module.exports = { scanChannel, isPresent, messageText, fetchTrackedMessage };

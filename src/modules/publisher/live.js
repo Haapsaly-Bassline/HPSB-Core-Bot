@@ -55,8 +55,8 @@ function liveButtons(st, cfg) {
   const ok = (u) => /^https?:\/\/\S+$/i.test(String(u || ''));
   const yUrl = st.youtube?.url || cfg?.youtubeLiveUrl || '';
   const tUrl = st.twitch?.url || cfg?.twitchUrl || '';
-  if (ok(yUrl)) out.push({ label: '▶️ YouTube', url: String(yUrl) });
-  if (ok(tUrl)) out.push({ label: '🟣 Twitch', url: String(tUrl) });
+  if (ok(yUrl)) out.push({ label: 'YouTube', url: String(yUrl) });
+  if (ok(tUrl)) out.push({ label: 'Twitch', url: String(tUrl) });
   return out;
 }
 

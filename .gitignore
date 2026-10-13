@@ -4,6 +4,7 @@ node_modules/
 .env.local
 .env.*.local
 data/*.json
+data/backups/
 data/bot.log
 data/bot.err.log
 !data/.gitkeep
@@ -20,6 +21,7 @@ lavalink/cookies.txt
 # Test/debug files
 test_*.js
 *_test.js
+dbg-*.js
 *.log
 .DS_Store
 Thumbs.db

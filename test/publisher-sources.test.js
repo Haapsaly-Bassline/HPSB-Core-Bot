@@ -299,6 +299,121 @@ describe('publisher sources: runSync through pipeline', () => {
     }
   });
 
+  it('missing mode: tracked+changed edits in place, same skips, deleted reposts', async () => {
+    const edited = [];
+    const sent = [];
+    const liveMsg = { id: 'msg-live', edit: async (p) => { edited.push(p); return {}; } };
+    const fakeClient = {
+      channels: {
+        fetch: async () => ({
+          isTextBased: () => true,
+          messages: {
+            fetch: async (arg) => {
+              if (typeof arg === 'string') {
+                if (arg === 'msg-live') return liveMsg;
+                const err = new Error('Unknown Message');
+                err.code = 10008;
+                throw err; // msg-gone was deleted
+              }
+              return []; // history scan: empty channel
+            },
+          },
+        }),
+      },
+    };
+    const p = createPipeline({
+      client: {}, config: baseCfg, log: { warn() {} },
+      sender: async (ch, payload) => { sent.push(payload); return { id: 'msg-new' }; },
+    });
+    const run = p.start();
+    try {
+      // Seed tracking: OLD (stale hash) still in channel; the feed version
+      // differs -> must EDIT in place, not repost.
+      p.posted['youtube:video:VIDOLD12345'] = { channelId: 'MED', messageId: 'msg-live', hash: 'stale-hash' };
+      p.dedup.commit('youtube:video:VIDOLD12345');
+      const r = await runSync(p, baseCfg, {
+        sources: 'youtube', http: fakeHttp, missing: true, missingLimit: 25, client: fakeClient,
+      });
+      assert.equal(r.youtube.found, 2);
+      assert.equal(edited.length, 1, 'changed post edited, not reposted');
+      assert.equal(r.youtube.updated, 1);
+      // VIDNEW12345 untracked + absent from empty history -> posted new.
+      assert.equal(sent.length, 1);
+      assert.equal(r.youtube.posted, 1);
+      // Mapping hash refreshed to the edited content (no longer stale).
+      assert.ok(p.posted['youtube:video:VIDOLD12345'].hash
+        && p.posted['youtube:video:VIDOLD12345'].hash !== 'stale-hash');
+    } finally {
+      p.stop();
+      await run;
+    }
+  });
+
+  it('missing mode: tracked+gone reposts as new and prunes mapping', async () => {
+    const sent = [];
+    const goneHttp = {
+      get: async () => ({ data: '<feed><entry><yt:videoId>VIDGONE12345</yt:videoId><title>Gone vid</title><published>2026-10-04T10:00:00Z</published></entry></feed>' }),
+    };
+    const fakeClient = {
+      channels: {
+        fetch: async () => ({
+          isTextBased: () => true,
+          messages: {
+            fetch: async (arg) => {
+              if (typeof arg === 'string') {
+                const err = new Error('Unknown Message');
+                err.code = 10008;
+                throw err;
+              }
+              return [];
+            },
+          },
+        }),
+      },
+    };
+    const p = createPipeline({
+      client: {}, config: baseCfg, log: { warn() {} },
+      sender: async (ch, payload) => { sent.push(payload); return { id: 'msg-reborn' }; },
+    });
+    const run = p.start();
+    try {
+      p.posted['youtube:video:VIDGONE12345'] = { channelId: 'MED', messageId: 'msg-gone', hash: 'old' };
+      p.dedup.commit('youtube:video:VIDGONE12345');
+      const r = await runSync(p, baseCfg, {
+        sources: 'youtube', http: goneHttp, missing: true, missingLimit: 25, client: fakeClient,
+      });
+      assert.equal(r.youtube.found, 1);
+      assert.equal(sent.length, 1, 'deleted post reposted as new');
+      assert.equal(r.youtube.posted, 1);
+      assert.equal(p.posted['youtube:video:VIDGONE12345'].messageId, 'msg-reborn', 'mapping points at the new message');
+    } finally {
+      p.stop();
+      await run;
+    }
+  });
+
+  it('pruneTrackedMessage drops only matching entries', async () => {
+    const { saveState, loadState, pruneTrackedMessage } = require('../src/modules/publisher/state');
+    await saveState({ seen: [], posts: {
+      a: { channelId: 'C', messageId: 'm1', hash: 'h' },
+      b: { channelId: 'C', messageId: 'm2', hash: 'h' },
+    } });
+    assert.equal(await pruneTrackedMessage('m1'), true);
+    assert.deepEqual(Object.keys(loadState().posts), ['b']);
+    assert.equal(await pruneTrackedMessage('nope'), false);
+    assert.equal(await pruneTrackedMessage(''), false);
+    await saveState({ seen: [], posts: {} });
+  });
+
+  it('withTimeout rejects hung promises, passes fast ones', async () => {
+    const { withTimeout, sleep } = require('../src/utils/timeout');
+    assert.equal(await withTimeout(Promise.resolve(42), 500, 'fast'), 42);
+    await assert.rejects(withTimeout(new Promise(() => {}), 30, 'hung'), /hung timed out/);
+    const t0 = Date.now();
+    await sleep(20);
+    assert.ok(Date.now() - t0 >= 15);
+  });
+
   it('discord source override beats .env, reset restores', async () => {
     const { setSourceOverride, resetSourceOverride, isSourceOn, effectiveSources } = require('../src/modules/publisher/source-state');
     const p = createPipeline({ client: {}, config: baseCfg, log: { warn() {} }, sender: async () => ({ id: 'm' }) });
@@ -420,12 +535,44 @@ describe('publisher sources: runSync through pipeline', () => {
 
   it('live formatter is shared for youtube and twitch', () => {
     const { format } = require('../src/modules/publisher/formatter');
-    const btns = [{ label: '▶️ YouTube', url: 'https://youtu.be/x' }, { label: '🟣 Twitch', url: 'https://twitch.tv/x' }];
+    const btns = [{ label: 'YouTube', url: 'https://youtu.be/x' }, { label: 'Twitch', url: 'https://twitch.tv/x' }];
     const yt = format({ source: 'youtube', type: 'live', id: 'v', title: 'Friday Set', author: 'HPSB', url: 'https://youtu.be/x' }, { liveButtons: btns }).embed.toJSON();
     assert.ok(yt.title.includes('Friday Set') && yt.title.includes('🔴'));
     assert.ok(yt.description.includes('is live now'));
     const tw = format({ source: 'twitch', type: 'live', id: 's', title: 'Late Stream', author: 'HPSB', url: 'https://twitch.tv/x' }, { liveButtons: btns }).embed.toJSON();
     assert.ok(tw.title.includes('Late Stream'));
+  });
+
+  it('buttons are monochrome unicode, no color emoji', () => {
+    // No emoji-presentation sequences in any button (labels or icon slots):
+    // pictographs (1F300-1FAFF) or VS16 forcers. Geometric/text glyphs
+    // (play/pause/skip/shuffle/loop/star) pass by design.
+    const emojiRe = /[\u{1F300}-\u{1FAFF}\uFE0F]/u;
+    const { buildRow } = require('../src/modules/music/np');
+    for (const b of buildRow({ paused: false, repeatMode: 0 }).components) {
+      const j = b.toJSON();
+      // Labels only: setEmoji() rejects non-emoji glyphs (COMPONENT_INVALID_EMOJI).
+      assert.ok(!j.emoji, `np button must not use emoji slot: ${JSON.stringify(j.emoji)}`);
+      assert.ok(!emojiRe.test(j.label || ''), `np button label: ${j.label}`);
+    }
+    const { format } = require('../src/modules/publisher/formatter');
+    const { liveButtons } = require('../src/modules/publisher/live');
+    for (const ev of [
+      { source: 'youtube', type: 'video', id: 'v', title: 'T' },
+      { source: 'instagram', type: 'post', id: 'i', title: 'T' },
+      { source: 'tiktok', type: 'video', id: 't', title: 'T' },
+    ]) {
+      const { components } = format(ev);
+      for (const row of components) {
+        for (const bb of row.components || []) {
+          const bj = typeof bb.toJSON === 'function' ? bb.toJSON() : bb;
+          assert.ok(!emojiRe.test(bj.label || ''), `media button label: ${bj.label}`);
+        }
+      }
+    }
+    for (const l of liveButtons({ youtube: { url: 'https://youtu.be/x' }, twitch: { url: 'https://twitch.tv/x' } }, {})) {
+      assert.ok(!emojiRe.test(l.label), `live button label: ${l.label}`);
+    }
   });
 
   it('live state: same id is noop, offline is channel-scoped', () => {
@@ -485,9 +632,11 @@ describe('publisher sources: runSync through pipeline', () => {
       const r1 = await runSync(p, baseCfg, mkOpts({ _missingBudget: 1 }));
       assert.equal(r1.youtube.found, 2);
       assert.equal(r1.youtube.posted, 1);
+      // Fresh budget restores the full allowance -- but the already-posted
+      // video is now tracked+unchanged, so only the other one goes out.
       const r2 = await runSync(p, baseCfg, mkOpts());
-      assert.equal(r2.youtube.posted, 2);
-      assert.equal(sent.length, 3);
+      assert.equal(r2.youtube.posted, 1);
+      assert.equal(sent.length, 2);
     } finally {
       p.stop();
       await run;

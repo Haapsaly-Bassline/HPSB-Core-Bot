@@ -33,17 +33,19 @@ function buildEmbed(snap) {
 }
 
 function loopButton(mode) {
-  if (mode === 1) return new ButtonBuilder().setCustomId('np:loop').setEmoji('🔂').setStyle(ButtonStyle.Success);
-  if (mode === 2) return new ButtonBuilder().setCustomId('np:loop').setEmoji('🔁').setStyle(ButtonStyle.Primary);
-  return new ButtonBuilder().setCustomId('np:loop').setEmoji('🔁').setStyle(ButtonStyle.Secondary);
+  // Text glyphs go in the LABEL: Discord validates setEmoji() as real emoji
+  // (COMPONENT_INVALID_EMOJI otherwise). Row color carries the state.
+  if (mode === 1) return new ButtonBuilder().setCustomId('np:loop').setLabel('↻').setStyle(ButtonStyle.Success);
+  if (mode === 2) return new ButtonBuilder().setCustomId('np:loop').setLabel('↻').setStyle(ButtonStyle.Primary);
+  return new ButtonBuilder().setCustomId('np:loop').setLabel('↻').setStyle(ButtonStyle.Secondary);
 }
 
 function buildRow(snap) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('np:shuffle').setEmoji('🔀').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('np:prev').setEmoji('⏮').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('np:pause').setEmoji(snap.paused ? '▶️' : '⏸').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('np:next').setEmoji('⏭').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('np:shuffle').setLabel('⇄').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('np:prev').setLabel('◀◀').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('np:pause').setLabel(snap.paused ? '▶' : '❚❚').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('np:next').setLabel('▶▶').setStyle(ButtonStyle.Secondary),
     loopButton(snap.repeatMode),
   );
 }
@@ -168,4 +170,4 @@ async function handleButton(interaction, client) {
   return true;
 }
 
-module.exports = { trackStart, render, finalize, handleButton, buildEmbed };
+module.exports = { trackStart, render, finalize, handleButton, buildEmbed, buildRow };

@@ -16,6 +16,13 @@ function inGrace(client) {
 module.exports = {
   name: Events.MessageDelete,
   async execute(message, client) {
+    // Prune publisher tracking FIRST (before the bot-author early return:
+    // publisher posts are BY the bot, and their deletions must drop the
+    // tracked messageId so the DB never piles up garbage).
+    try {
+      const { pruneTrackedMessage } = require('../modules/publisher/state');
+      if (message?.id) await pruneTrackedMessage(message.id).catch(() => {});
+    } catch {}
     try {
       if (inGrace(client)) return;
       if (message.author?.bot) return;

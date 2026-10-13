@@ -172,7 +172,7 @@ describe('publisher core', () => {
   });
   it('state blank/load shape', async () => {
     const b = blank();
-    assert.deepEqual(Object.keys(b).sort(), ['live', 'reminders', 'seen']);
+    assert.deepEqual(Object.keys(b).sort(), ['live', 'posts', 'reminders', 'seen']);
     // Earlier tests in this file persist seen keys to the real store --
     // reset the publisher slice so this asserts shape, not test order.
     const { saveState } = require('../src/modules/publisher/state');

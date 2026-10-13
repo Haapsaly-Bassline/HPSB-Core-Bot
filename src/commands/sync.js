@@ -21,7 +21,8 @@ function line(emoji, name, r, mode) {
   if (r.unavailable) return `${emoji} **${name}:** — unavailable (not configured)`;
   if (r.error) return `${emoji} **${name}:** error (${r.error})`;
   const shownVia = r.via && r.via !== 'none' ? ` · via ${r.via}` : '';
-  const base = `${emoji} **${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}${shownVia}`;
+  const shownUpd = r.updated ? `, updated ${r.updated}` : '';
+  const base = `${emoji} **${name}:** found ${r.found ?? 0}, posted ${r.posted ?? 0}${shownUpd}${shownVia}`;
   // Explain a confusing zero: everything found is already published --
   // use mode=republish (repost known) or mode=missing (repost what's gone).
   if (mode === 'new' && (r.found ?? 0) > 0 && !r.posted && !r.note) {
@@ -75,14 +76,18 @@ module.exports = {
         const { createPipeline } = require('../modules/publisher/pipeline');
         const { loadState } = require('../modules/publisher/state');
         pipeline = createPipeline({ client, config: eff, log: console });
-        pipeline.dedup.loadSeen(loadState().seen);
+        const adhocState = loadState();
+        pipeline.dedup.loadSeen(adhocState.seen);
+        Object.assign(pipeline.posted, adhocState.posts || {});
         ownedRun = pipeline.start();
         owned = true;
       }
       // Progress edits: a 25-post restore outlives silence; throttle to an
-      // edit per 3 posts / 5s so we don't spam the API either.
+      // edit per 3 posts / 5s so we don't spam the API either. Timeout-guarded:
+      // a hanging edit must never stall the sync loop itself.
       let lastProg = 0;
       let progCount = 0;
+      const { withTimeout: withEditTimeout } = require('../utils/timeout');
       const onProgress = async ({ key, posted, found }) => {
         progCount++;
         const now = Date.now();
@@ -90,7 +95,7 @@ module.exports = {
         lastProg = now;
         const e = new EmbedBuilder().setColor(0x7c3aed).setTitle('🔄 Syncing…').setTimestamp()
           .setDescription(`Posting **${key}**… ${posted}/${found}\n(${progCount} total so far)`);
-        await interaction.editReply({ embeds: [e] }).catch(() => {});
+        await withEditTimeout(interaction.editReply({ embeds: [e] }), 15000, 'progress edit').catch(() => {});
       };
       let out;
       try {
@@ -119,7 +124,9 @@ module.exports = {
           line('🟣', 'Twitch', out.twitch, mode),
         ].join('\n'))
         .setFooter({ text: `${source !== 'all' ? `source=${source} • ` : ''}${mode !== 'new' ? `mode=${mode} • ` : ''}${backfill ? `backfill=${backfill} • ` : ''}oldest-first • Haapsaly Bassline` });
-      await interaction.editReply({ embeds: [e] });
+      // Timeout-guarded like everything else: a stalled final edit must not
+      // wedge the command after all posts already went out.
+      await withEditTimeout(interaction.editReply({ embeds: [e] }), 15000, 'final sync reply').catch(() => {});
     } catch (err) {
       await replyError(interaction, `❌ Sync error: ${String(err.message || err).slice(0, 300)}`);
     }

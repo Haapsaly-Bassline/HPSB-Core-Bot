@@ -10,9 +10,10 @@ const { fetchTikTok } = require('./tiktok');
 const { availability: igAvailability } = require('./instagram');
 const { fetchHpsb, dueReminders } = require('./hpsb');
 const { availability: twAvailability } = require('./twitch');
-const { scanChannel, isPresent } = require('./channel-scan');
+const { scanChannel, isPresent, fetchTrackedMessage } = require('./channel-scan');
 const { resolveChannel } = require('../router');
 const { loadOverrides } = require('../source-state');
+const { withTimeout, sleep } = require('../../../utils/timeout');
 
 function srcOn(cfg, key) {
   // Priority: persistent Discord override > passed config (.env) > default on.
@@ -230,16 +231,56 @@ async function runSyncInner(pipeline, cfg, opts, out) {
     const published = new Set(pipeline.dedup.dumpSeen());
     let targets;
     let force = republish > 0 || backfill > 0;
+    let updated = 0;
     if (missingScan) {
+      // Reconcile against tracked Discord messages (mode=missing):
+      // tracked+exists -> EDIT in place when changed (no spam);
+      // tracked+deleted -> prune mapping, repost within budget;
+      // untracked+absent from history -> post within budget.
       // Shared budget across the whole run: releases+events+news share ONE
       // announcements channel, so per-source caps would spam up to 75 posts.
-      const remaining = Math.max(0, (opts._missingBudget ?? Math.min(opts.missingLimit || 25, 25)));
-      targets = [...fetched]
-        .sort((a, b) => (evTime(a) - evTime(b)))
-        .filter((ev) => !isPresent(ev, missingScan))
-        .slice(0, remaining);
-      opts._missingBudget = remaining - targets.length;
+      let budget = Math.max(0, (opts._missingBudget ?? Math.min(opts.missingLimit || 25, 25)));
+      const chCache = new Map();
+      targets = [];
+      let updated = 0;
+      for (const ev of [...fetched].sort((a, b) => (evTime(a) - evTime(b)))) {
+        if (ev.type === 'live') continue; // live is state-driven, not feed-driven
+        const key = keyOfEv(ev);
+        const mapping = pipeline.posted?.[key];
+        if (mapping?.messageId) {
+          const got = await fetchTrackedMessage(opts.client, chCache, mapping);
+          if (got.status === 'gone') {
+            delete pipeline.posted[key]; // pruned: message deleted, DB stays clean
+            // falls through to repost below (budget permitting)
+          } else if (got.status === 'hit') {
+            let built = null;
+            try { built = pipeline.buildPayload(ev); } catch { continue; }
+            if (!built.payload || !built.channelId) continue;
+            if (built.hash && mapping.hash && built.hash === mapping.hash) continue; // unchanged
+            try {
+              await withTimeout(got.msg.edit({
+                embeds: built.payload.embeds || [],
+                components: built.payload.components || [],
+                content: built.payload.content || undefined,
+              }), 30000, 'discord edit');
+              pipeline.posted[key] = { channelId: mapping.channelId, messageId: got.msg.id || mapping.messageId, hash: built.hash || '' };
+              updated++;
+            } catch {
+              // Edit failed (perms/rate limit): keep mapping, retry next sync.
+            }
+            continue;
+          } else {
+            continue; // unknown: no access/timeout -- never assume deleted
+          }
+        }
+        if (isPresent(ev, missingScan)) continue;
+        if (budget <= 0) continue;
+        targets.push(ev);
+        budget--;
+      }
+      opts._missingBudget = budget;
       force = true; // seen-memory may claim these as posted -- channel is the truth
+      out._updated = (out._updated || 0) + updated;
     } else if (opts.missing && !opts.client) {
       out[src.key] = { found: fetched.length, posted: 0, via, note, error: 'missing mode needs channel access (client)' };
       continue;
@@ -250,17 +291,29 @@ async function runSyncInner(pipeline, cfg, opts, out) {
     for (const ev of targets) {
       const r = await pipeline.ingest(ev, { force });
       if (!r.ok) continue;
-      await pipeline.queue.onIdle();
+      try {
+        await withTimeout(pipeline.queue.onIdle(), 60000, 'queue idle');
+      } catch (e) {
+        log.warn?.(`[publisher/${src.key}] stall waiting for send, moving on:`, e?.message || e);
+        continue; // the job may still finish later; dedup stays correct
+      }
       if (pipeline.dedup.published.has(r.key)) {
         posted++;
         try { await opts.onProgress?.({ key: src.key, posted, found: fetched.length }); } catch {}
       }
+      // Pacing: back-to-back sends trip channel rate limits (429 storms look
+      // exactly like "posted one then stuck").
+      await sleep(1200);
     }
-    out[src.key] = { found: fetched.length, posted, via, note };
+    const upd = out._updated || 0;
+    delete out._updated;
+    out[src.key] = { found: fetched.length, posted, updated: upd, via, note };
   }
   try {
     const { saveState } = require('../state');
-    await saveState({ seen: pipeline.dedup.dumpSeen() });
+    // Persist posts mapping too: reconcile edits/prunes live in pipeline.posted
+    // and would otherwise be lost (merge keeps stale stored posts, not ours).
+    await saveState({ seen: pipeline.dedup.dumpSeen(), posts: { ...(pipeline.posted || {}) } });
   } catch (e) {
     logger.warn('[publisher] runSync state save failed:', e?.message || e);
   }

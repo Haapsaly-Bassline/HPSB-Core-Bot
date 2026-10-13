@@ -34,7 +34,7 @@ function youtube(ev) {
   const e = base(0xff0000, ev)
     .setTitle(`▶️ YouTube`)
     .setDescription(`${linkedTitle(ev)}\n${ev.author ? `by **${str(ev.author, 100)}**` : ''}`.slice(0, 3500));
-  return { embed: e, buttons: ev.url ? [{ label: '▶️ Watch on YouTube', url: ev.url }] : [] };
+  return { embed: e, buttons: ev.url ? [{ label: 'Watch on YouTube', url: ev.url }] : [] };
 }
 
 function instagram(ev) {
@@ -42,7 +42,7 @@ function instagram(ev) {
   const e = base(0xe1306c, ev)
     .setTitle('📸 Instagram')
     .setDescription(`${linkedTitle(ev)}\n${user ? `by **${user}**` : ''}`.slice(0, 3500));
-  return { embed: e, buttons: ev.url ? [{ label: '📸 Open Instagram', url: ev.url }] : [] };
+  return { embed: e, buttons: ev.url ? [{ label: 'Open Instagram', url: ev.url }] : [] };
 }
 
 function tiktok(ev) {
@@ -50,7 +50,7 @@ function tiktok(ev) {
   const e = base(0x1a1a1a, ev)
     .setTitle('🎵 TikTok')
     .setDescription(`${linkedTitle(ev)}\n${user ? `by **${user}**` : ''}`.slice(0, 3500));
-  return { embed: e, buttons: ev.url ? [{ label: '🎵 Open TikTok', url: ev.url }] : [] };
+  return { embed: e, buttons: ev.url ? [{ label: 'Open TikTok', url: ev.url }] : [] };
 }
 
 function liveAnnounce(ev, extraButtons = []) {
