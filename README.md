@@ -143,8 +143,7 @@ progress edits during long restores:
   Bandcamp fan profile + `count`; no separate fan command), `/radio`, `/queue`,
   `/nowplaying` (live ticking embed with buttons), `/skip [count]`, `/prev`,
   `/join`, `/loop`, `/shuffle`, `/remove`, `/move`, `/seek`, `/volume`, `/clear`,
-  `/pause` (toggle), `/stop`, `/onair`. Sources: YouTube, SoundCloud, Bandcamp,
-  Vimeo, Deezer/Apple/Tidal/Qobuz (LavaSrc, need tokens), HTTP radio/files.
+  `/pause` (toggle), `/stop`, `/onair`. Sources: YouTube, SoundCloud, Bandcamp, HTTP radio/files.
   Spotify is OFF (no Premium on the app). Stage auto-speaker included.
 - **Automod & honeypot:** flood/caps/links/invites/badwords, trap channel (first
   message = `timeout|kick|ban`; kick = softban with 24h wipe), anti-raid join
