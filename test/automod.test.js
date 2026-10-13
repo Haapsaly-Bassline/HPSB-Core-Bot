@@ -1,7 +1,17 @@
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it, beforeEach, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { handleMessage } = require('../src/modules/honeypot/detector');
 const { config } = require('../src/config');
+
+// Isolated store: punish() records unmute notices via store -- must never
+// touch the real data/store.json (locally or on CI).
+const TMP = 'data/store.automod.test.tmp.json';
+require('../src/utils/store')._useFile(TMP);
+after(() => {
+  require('../src/utils/store')._useFile(null);
+  if (fs.existsSync(TMP)) fs.unlinkSync(TMP);
+});
 
 config.automod.badwords = ['ass'];
 config.automod.floodCount = 100;

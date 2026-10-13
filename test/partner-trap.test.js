@@ -1,7 +1,16 @@
-const { describe, it } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { parseLinks, buildPost, isPublicIp } = require('../src/commands/partner-post');
 const play = require('../src/commands/play');
+
+// Isolated store: trap punish() records unmute notices -- never the real DB.
+const TMP = 'data/store.partner-trap.test.tmp.json';
+require('../src/utils/store')._useFile(TMP);
+after(() => {
+  require('../src/utils/store')._useFile(null);
+  if (fs.existsSync(TMP)) fs.unlinkSync(TMP);
+});
 
 describe('partner-post modal helpers', () => {
   it('parseLinks accepts pipe lines, skips garbage, caps at 5', () => {
@@ -273,9 +282,11 @@ describe('honeypot kick = softban (reference behavior)', () => {
     const oldTrap = config.honeypot.trapChannelId;
     const oldAdmins = config.adminIds;
     const oldAction = config.honeypot.action;
+    const oldLog = config.honeypot.logChannelId;
     config.honeypot.trapChannelId = 'TRAP-STUCK';
     config.adminIds = [];
     config.honeypot.action = 'kick';
+    config.honeypot.logChannelId = 'LOGCHAN'; // .env-independent: logToStaff needs a channel id
     let ok = true;
     try {
       ok = await det.handleMessage({ ...msg, channelId: 'TRAP-STUCK' }, client);
@@ -283,6 +294,7 @@ describe('honeypot kick = softban (reference behavior)', () => {
       config.honeypot.trapChannelId = oldTrap;
       config.adminIds = oldAdmins;
       config.honeypot.action = oldAction;
+      config.honeypot.logChannelId = oldLog;
     }
     assert.equal(ok, undefined); // handleMessage returns nothing; punish result is in logs
     assert.equal(calls.ban, 1);
@@ -342,20 +354,37 @@ describe('honeypot trap acts on bots', () => {
   });
 
   it('punishes a bot posting in the trap channel', async () => {
-    if (!config.honeypot.trapChannelId) return; // no trap configured locally
+    // Forced path (.env-independent): trap + log channel set temporarily.
+    const oldTrap = config.honeypot.trapChannelId;
+    const oldLog = config.honeypot.logChannelId;
+    const oldAction = config.honeypot.action;
+    config.honeypot.trapChannelId = 'TRAP-BOT';
+    config.honeypot.logChannelId = 'LOGCHAN';
+    config.honeypot.action = 'timeout';
     const logs = [];
-    const { msg, deleted } = mockMsg('raid-bot-1', true, config.honeypot.trapChannelId);
-    const ok = await det.handleTrapMessage(msg, mockClient(logs));
-    assert.equal(ok, true);
-    assert.equal(deleted.v, true);
-    assert.ok(logs.length > 0);
+    try {
+      const { msg, deleted } = mockMsg('raid-bot-1', true, 'TRAP-BOT');
+      const ok = await det.handleTrapMessage(msg, mockClient(logs));
+      assert.equal(ok, true);
+      assert.equal(deleted.v, true);
+      assert.ok(logs.length > 0);
+    } finally {
+      config.honeypot.trapChannelId = oldTrap;
+      config.honeypot.logChannelId = oldLog;
+      config.honeypot.action = oldAction;
+    }
   });
 
   it('never punishes itself', async () => {
-    if (!config.honeypot.trapChannelId) return;
+    const oldTrap = config.honeypot.trapChannelId;
+    config.honeypot.trapChannelId = 'TRAP-SELF';
     const logs = [];
-    const { msg } = mockMsg('self-bot', true, config.honeypot.trapChannelId);
-    assert.equal(await det.handleTrapMessage(msg, mockClient(logs)), false);
-    assert.equal(logs.length, 0);
+    try {
+      const { msg } = mockMsg('self-bot', true, 'TRAP-SELF');
+      assert.equal(await det.handleTrapMessage(msg, mockClient(logs)), false);
+      assert.equal(logs.length, 0);
+    } finally {
+      config.honeypot.trapChannelId = oldTrap;
+    }
   });
 });
