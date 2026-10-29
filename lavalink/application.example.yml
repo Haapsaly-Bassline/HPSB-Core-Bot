@@ -19,7 +19,8 @@ lavalink:
       youtube: false                # MUST be false: built-in source is deprecated and intercepts
                                     # ytsearch: from plugin (400 from YouTube). Plugin is below, separate.
       bandcamp: true
-      soundcloud: true
+      # Built-in SoundCloud source broke after a 2026 streaming-URL change; use Soundy below.
+      soundcloud: false
       twitch: false
       vimeo: false                      # OFF 2026-10-04: not working (source dead)
       nico: false
@@ -35,7 +36,6 @@ lavalink:
     youtubePlaylistLoadLimit: 6
     playerUpdateInterval: 5
     youtubeSearchEnabled: true               # TEST 2026-10-04: trying to restore YouTube
-    soundcloudSearchEnabled: true
     httpSearchEnabled: false
     localSearchEnabled: false
   plugins:
@@ -45,6 +45,10 @@ lavalink:
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       repository: "https://maven.lavalink.dev/releases"
       snapshot: false
+    # SoundCloud replacement: community fix for the current built-in source failure.
+    # Upstream issue reports Soundy 1.1.0 working as of 2026-10-18; verify on this host after restart.
+    - dependency: "com.github.Lochis.soundy:plugin:1.1.0"
+      repository: "https://jitpack.io"
     # Other music integrations via LavaSrc (Spotify / Apple / Deezer / Tidal / Qobuz ...).
     # IMPORTANT: source enabled (sources.*: true) ONLY with real token.
     # PASTE_* placeholder in enabled source CRASHES START (verified on Apple Music).
