@@ -39,10 +39,11 @@ function compactError(error) {
 function resolveFailure(query, source, result, thrown) {
   const loadType = String(result?.loadType || 'no-response');
   const detailObject = result?.exception || result?.data?.exception || result?.data || null;
-  const detail = compactError(thrown) || compactError(detailObject?.message || detailObject?.cause || detailObject) || compactError(result?.message);
+  const explicitDetail = detailObject?.message || detailObject?.cause || result?.message;
+  const detail = compactError(thrown) || compactError(explicitDetail);
   const reason = (detail || (loadType === 'empty'
     ? 'source returned no tracks'
-    : `Lavalink returned loadType="${loadType}"`)).slice(0, 240);
+    : compactError(detailObject) || `Lavalink returned loadType="${loadType}"`)).slice(0, 240);
   logger.warn('[lavalink] resolve failed', JSON.stringify({
     source,
     loadType,
