@@ -39,15 +39,20 @@ function compactError(error) {
 function resolveFailure(query, source, result, thrown) {
   const loadType = String(result?.loadType || 'no-response');
   const detailObject = result?.exception || result?.data?.exception || result?.data || null;
-  const explicitDetail = detailObject?.message || detailObject?.cause || result?.message;
-  const detail = compactError(thrown) || compactError(explicitDetail);
-  const reason = (detail || (loadType === 'empty'
-    ? 'source returned no tracks'
-    : compactError(detailObject) || `Lavalink returned loadType="${loadType}"`)).slice(0, 240);
+  // The source error message is often generic. Prefer cause and its stack trace.
+  const cause = compactError(detailObject?.cause);
+  const stack = compactError(detailObject?.causeStackTrace || detailObject?.stackTrace || detailObject?.trace);
+  const message = compactError(detailObject?.message || result?.message);
+  const thrownMessage = compactError(thrown);
+  const reason = (thrownMessage || cause || message || compactError(detailObject) ||
+    (loadType === 'empty' ? 'source returned no tracks' : `Lavalink returned loadType="${loadType}"`)).slice(0, 360);
   logger.warn('[lavalink] resolve failed', JSON.stringify({
     source,
     loadType,
     query: String(query || '').slice(0, 180),
+    message: message.slice(0, 240) || undefined,
+    cause: cause.slice(0, 500) || undefined,
+    causeStackTrace: stack.split(/\r?\n/).slice(0, 8).join('\n').slice(0, 1200) || undefined,
     reason,
   }));
   return new Error(`No results for "${String(query || '').slice(0, 100)}" (${reason})`);
