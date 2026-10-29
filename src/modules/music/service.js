@@ -3,6 +3,7 @@
 const { resolveSearchQuery } = require('./resolvers');
 const { fmtMs } = require('../../utils/music');
 const { config } = require('../../config');
+const { logger } = require('../../utils/logger');
 
 // Null when the engine isn't up (client.music set in ready.js after login).
 // One-liner actions below tolerate null and answer false/null so commands show
