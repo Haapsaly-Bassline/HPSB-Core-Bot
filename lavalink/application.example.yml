@@ -47,8 +47,9 @@ lavalink:
       snapshot: false
     # SoundCloud replacement: community fix for the current built-in source failure.
     # Upstream issue reports Soundy 1.1.0 working as of 2026-10-18; verify on this host after restart.
-    - dependency: "com.github.Lochis.soundy:plugin:1.1.0"
-      repository: "https://jitpack.io"
+    - dependency: "com.waris4ly.soundy:plugin:1.1.0"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
     # Other music integrations via LavaSrc (Spotify / Apple / Deezer / Tidal / Qobuz ...).
     # IMPORTANT: source enabled (sources.*: true) ONLY with real token.
     # PASTE_* placeholder in enabled source CRASHES START (verified on Apple Music).
@@ -59,6 +60,8 @@ lavalink:
     # bot doesn't use lyrics. Don't add back without verifying URL on maven.
 
 plugins:
+  soundy:
+    enabled: true
   youtube:
     # SCHEMA 2026-10-04: search/metadata via plugin; DIRECT LINKS via ytdlp with burner cookies
     # (allowDirect* disabled: plugin passes URLs, ytdlp picks them up -- otherwise all links

@@ -53,12 +53,12 @@ unlike Node, Java has no Happy Eyeballs — without the flag, occasional request
 
 ## SoundCloud compatibility (2026-10-29)
 
-SoundCloud changed its streaming URLs and the built-in Lavaplayer source began failing both track lookups and playback. The upstream Lavaplayer issue documents a community workaround: disable the built-in source and load Soundy 1.1.0 from JitPack (reported working on 2026-10-18): https://github.com/lavalink-devs/lavaplayer/issues/189
+SoundCloud changed its streaming URLs and the built-in Lavaplayer source began failing both track lookups and playback. The upstream Lavaplayer issue documents a community workaround: disable the built-in source and load Soundy 1.1.0 from the Lavalink Maven repository (current plugin documentation): https://github.com/lavalink-devs/lavaplayer/issues/189
 
 The template now includes this configuration. If this is an existing installation, `git pull` will **not** update your ignored local `application.yml`; apply the same changes manually, then restart Lavalink:
 
 - Set `lavalink.server.sources.soundcloud: false`.
-- Add `com.github.Lochis.soundy:plugin:1.1.0` with repository `https://jitpack.io` to the existing `lavalink.plugins` list.
+- Add `com.waris4ly.soundy:plugin:1.1.0` with repository `https://maven.lavalink.dev/releases` and set `plugins.soundy.enabled: true` to the existing `lavalink.plugins` list.
 - Remove the legacy `soundcloudSearchEnabled` setting if present; Soundy supplies the SoundCloud source/search implementation.
 
 This changes the resolver used by both normal SoundCloud URLs and profile-tab imports. It is a community workaround, not an official Lavalink release; confirm plugin startup succeeds and test a public track URL plus `scsearch:` after restart.

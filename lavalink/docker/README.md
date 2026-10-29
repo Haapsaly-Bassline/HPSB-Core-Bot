@@ -30,7 +30,7 @@ path: "/usr/local/bin/yt-dlp"
 ```
 
 
-**SoundCloud:** the updated config uses the Soundy 1.1.0 community plugin from JitPack and disables Lavalink's broken built-in SoundCloud source. Make sure the `application.yml` copied into this Docker folder has the Soundy dependency and `lavalink.server.sources.soundcloud: false`. Lavalink downloads the dependency from JitPack at startup; no extra Soundy JAR needs to be copied manually. Restart with `docker compose up -d` after changing the config.
+**SoundCloud:** the updated config uses the Soundy 1.1.0 community plugin from the Lavalink Maven repository and disables Lavalink's broken built-in SoundCloud source. Make sure the `application.yml` copied into this Docker folder has the dependency `com.waris4ly.soundy:plugin:1.1.0`, repository `https://maven.lavalink.dev/releases`, `plugins.soundy.enabled: true`, and `lavalink.server.sources.soundcloud: false`. Lavalink downloads the dependency from Maven at startup; no extra Soundy JAR needs to be copied manually. Restart with `docker compose up -d` after changing the config.
 
 ## 2. Ship to the server
 
