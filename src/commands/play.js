@@ -58,7 +58,7 @@ module.exports = {
             added: fanRes.added, failed: fanRes.failed, totalTracks: fanRes.totalTracks,
           },
           interaction.user,
-        )], content: fanWarn || undefined });
+        )], content: [fanWarn, fanRes.warning].filter(Boolean).join('\n') || undefined });
         return;
       }
     } catch (e) {

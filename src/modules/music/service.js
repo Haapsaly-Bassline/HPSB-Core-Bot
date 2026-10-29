@@ -83,7 +83,7 @@ async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, l
   if (!engine) throw new Error('Music engine is not initialized yet (bot still starting) -- try again in a few seconds');
   needNode(engine);
   const { fetchCollection } = require('./bandcamp-fan');
-  const { fan, items } = await fetchCollection(fanUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
+  const { fan, items, warning: collectionWarning = null } = await fetchCollection(fanUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
   const added = [];
   let failed = 0;
   let firstFailure = null;
@@ -125,7 +125,7 @@ async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, l
       throw new Error(`Queued ${added.length} release(s), but playback failed to start: ${detail}`);
     }
   }
-  return { fan, added, failed, totalTracks: added.reduce((a, x) => a + x.count, 0) };
+  return { fan, added, failed, totalTracks: added.reduce((a, x) => a + x.count, 0), warning: collectionWarning };
 }
 
 module.exports = {
