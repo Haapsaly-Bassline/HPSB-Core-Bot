@@ -202,9 +202,12 @@ function mediaKind(item, section) {
 
 function normalizeProfileEntry(entry, section = 'all') {
   if (!entry || typeof entry !== 'object') return null;
-  // Likes/reposts/activity endpoints can wrap the playable resource in track or playlist.
-  const candidates = [entry, entry.track, entry.playlist].filter((v) => v && typeof v === 'object');
-  const candidate = candidates.find((v) => v.permalink_url || v.uri || v.url);
+  // Likes/reposts/activity responses may have their own activity URI as well as
+  // a nested track/playlist. Prefer the actual playable resource over the wrapper.
+  const candidates = [entry.track, entry.playlist, entry].filter((v) => v && typeof v === 'object');
+  const candidate = candidates.find((v) => v.permalink_url) ||
+    candidates.find((v) => v.url) ||
+    candidates.find((v) => v.uri);
   if (!candidate) return null;
 
   let kind = mediaKind(candidate, section);
