@@ -105,6 +105,29 @@ function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, req
   return e;
 }
 
+function soundCloudProfileEmbed({ profileName, profileUrl, sectionLabel, added, failed = 0, totalTracks = 0 }, requester) {
+  const icons = { track: '🎵', album: '💿', playlist: '📃' };
+  const lines = added.slice(0, 10).map((item, i) => {
+    const kind = item.kind || 'track';
+    const itemCount = Number(item.count || 0);
+    const countLabel = kind === 'track' ? 'track' : itemCount + ' tracks';
+    return '`' + (i + 1) + '.` ' + (icons[kind] || '🎵') + ' **' + String(item.title || 'Untitled').slice(0, 150) + '**' +
+      (item.band ? ' — ' + String(item.band).slice(0, 80) : '') + ' (' + countLabel + ')';
+  });
+  const more = added.length > 10 ? '\n…and ' + (added.length - 10) + ' more' : '';
+  const e = new EmbedBuilder()
+    .setColor(COLORS.success)
+    .setTitle('☁️ SoundCloud • ' + String(sectionLabel || 'Profile').slice(0, 120))
+    .setDescription('**' + String(profileName || 'SoundCloud profile').slice(0, 220) + '**\n' +
+      'Items added: **' + added.length + '** • Audio tracks: **' + totalTracks + '**' +
+      (failed ? ' • Failed: **' + failed + '**' : '') + '\n\n' + (lines.join('\n') + more).slice(0, 3300))
+    .setTimestamp();
+  if (profileUrl) e.setURL(profileUrl);
+  if (requester) e.addFields({ name: 'Requested by', value: String(requester), inline: false });
+  e.setFooter({ text: MUSIC_FOOTER });
+  return e;
+}
+
 // Source badge for overlays. Empty = not shown.
 const SOURCE_BADGES = {
   spotify: '🟢 Spotify', soundcloud: '🟠 SoundCloud', deezer: '🟣 Deezer',
@@ -119,5 +142,5 @@ function sourceBadge(source) {
 
 module.exports = {
   COLORS, MUSIC_FOOTER, ack, trackLink,
-  addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge,
+  addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, soundCloudProfileEmbed, sourceBadge,
 };

@@ -5,9 +5,9 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('play')
     .setDescription('Play: text search / SoundCloud / Spotify / Deezer / Apple / Tidal / Qobuz / Bandcamp / mp3 / radio')
-    .addStringOption(o => o.setName('query').setDescription('Title, track/playlist link, Bandcamp fan profile or direct mp3').setRequired(true))
+    .addStringOption(o => o.setName('query').setDescription('Track/playlist link, SoundCloud profile tab, Bandcamp fan profile or direct mp3').setRequired(true))
     .addChannelOption(o => o.setName('channel').setDescription('Voice channel (defaults to yours)').setRequired(false))
-    .addIntegerOption(o => o.setName('count').setDescription('Fan collection: how many releases to take (1-25, default 10)').setMinValue(1).setMaxValue(25).setRequired(false)),
+    .addIntegerOption(o => o.setName('count').setDescription('Profile import: how many items to queue (1-25, default 10)').setMinValue(1).setMaxValue(25).setRequired(false)),
   async execute(interaction, client) {
     const query = interaction.options.getString('query', true);
     await interaction.deferReply();
@@ -32,6 +32,39 @@ module.exports = {
     }
     if (!pre.ok) {
       await interaction.editReply(`❌ Can't join that voice channel:\n❌ ${pre.problems.join('\n❌ ')}`);
+      return;
+    }
+
+    // SoundCloud profile tab (tracks / albums / likes / reposts / sets), not a single track or playlist.
+    try {
+      const { parseProfileUrl } = require('../modules/music/soundcloud-profile');
+      const profile = parseProfileUrl(query.trim());
+      if (profile) {
+        const { soundCloudProfileEmbed } = require('../utils/embeds');
+        const limit = interaction.options.getInteger('count') || 10;
+        await interaction.editReply('⏳ Reading SoundCloud ' + profile.sectionLabel.toLowerCase() + '…');
+        const result = await music.playSoundCloudProfile(client, voiceChannel, query.trim(), {
+          requester: interaction.user,
+          textChannel: interaction.channel,
+          limit,
+        });
+        const { stageWarning } = require('../modules/music/stage');
+        const stageWarn = voiceChannel.type === 13 ? stageWarning(client, interaction.guildId) : '';
+        await interaction.editReply({
+          embeds: [soundCloudProfileEmbed({
+            profileName: result.user.name + ' (@' + result.user.username + ')',
+            profileUrl: result.profile.pageUrl,
+            sectionLabel: result.sectionLabel,
+            added: result.added,
+            failed: result.failed,
+            totalTracks: result.totalTracks,
+          }, interaction.user)],
+          content: [stageWarn, result.warning].filter(Boolean).join('\n') || undefined,
+        });
+        return;
+      }
+    } catch (error) {
+      await interaction.editReply('❌ Could not load SoundCloud profile: ' + String(error?.message || error).slice(0, 300));
       return;
     }
 

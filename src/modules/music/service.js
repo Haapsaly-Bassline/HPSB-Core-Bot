@@ -76,6 +76,51 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
   };
 }
 
+// SoundCloud profile tab: queue tracks, albums, likes or reposts from the selected section.
+async function playSoundCloudProfile(client, voiceChannel, profileUrl, { requester, textChannel, limit = 10 } = {}) {
+  const engine = eng(client);
+  if (!engine) throw new Error('Music engine is not initialized yet (bot still starting) -- try again in a few seconds');
+  needNode(engine);
+  const { fetchProfileCollection } = require('./soundcloud-profile');
+  const collection = await fetchProfileCollection(profileUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
+  const added = [];
+  let failed = 0;
+  let firstFailure = null;
+  for (const item of collection.items) {
+    try {
+      const result = await engine.enqueueUrl(voiceChannel, item.url, { requester, metadata: { channel: textChannel } });
+      added.push({ title: result.title || item.title, url: item.url, band: item.band, kind: item.kind, count: result.count });
+    } catch (error) {
+      failed += 1;
+      const detail = String(error?.message || error || 'unknown error').slice(0, 180);
+      if (!firstFailure) firstFailure = detail;
+      logger.warn('[music] SoundCloud profile item failed', JSON.stringify({
+        section: collection.section,
+        title: String(item.title || 'Unknown').slice(0, 120),
+        url: String(item.url || '').slice(0, 180),
+        error: detail,
+      }));
+    }
+  }
+  if (!added.length) {
+    throw new Error('No SoundCloud items were added (' + failed + '/' + collection.items.length + ' failed)' +
+      (firstFailure ? '; first error: ' + firstFailure : ''));
+  }
+  const player = engine.getPlayer(voiceChannel.guild.id);
+  if (player && !player.playing && !player.paused) {
+    try { await player.play(); }
+    catch (error) {
+      const detail = String(error?.message || error || 'unknown Lavalink error').slice(0, 180);
+      logger.error('[music] SoundCloud profile queue loaded but playback start failed', detail);
+      throw new Error('Queued ' + added.length + ' SoundCloud item(s), but playback failed to start: ' + detail);
+    }
+  }
+  const warnings = [];
+  if (collection.warning) warnings.push(collection.warning);
+  if (failed) warnings.push(failed + ' item(s) could not be added' + (firstFailure ? '; first error: ' + firstFailure : '.'));
+  return { ...collection, added, failed, totalTracks: added.reduce((sum, item) => sum + Number(item.count || 0), 0), warning: warnings.join(' ') || null };
+}
+
 // Bandcamp fan collection: batch of albums/tracks from purchases -> queue.
 // Returns { fan, added: [{band, title, kind, count}], failed, totalTracks }.
 async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, limit = 10, onProgress } = {}) {
@@ -133,6 +178,7 @@ module.exports = {
 
   play,
   playFan,
+  playSoundCloudProfile,
 
   skip: (client, guildId, amount = 1) => eng(client)?.skip(guildId, amount) ?? false,
   stop: async (client, guildId) => eng(client)?.stop(guildId) ?? false,
