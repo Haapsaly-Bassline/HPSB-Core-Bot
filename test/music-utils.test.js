@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseDuration, fmtMs, progressBar } = require('../src/utils/music');
+const { parseDuration, fmtMs, progressBar, parseSeekInput } = require('../src/utils/music');
 
 describe('music utils', () => {
   it('parseDuration handles m:ss, h:mm:ss, LIVE and numbers', () => {
@@ -23,5 +23,23 @@ describe('music utils', () => {
     const mid = progressBar(50, 100, 10);
     assert.equal(mid.length, 12); // 10 cells + 2-unit emoji
     assert.equal(progressBar(999, 100, 10), progressBar(100, 100, 10));
+  });
+  it('parseSeekInput handles absolute and relative positions', () => {
+    assert.deepEqual(parseSeekInput('1:30'), { ms: 90000, relative: false });
+    assert.deepEqual(parseSeekInput('90'), { ms: 90000, relative: false });
+    assert.deepEqual(parseSeekInput('90s'), { ms: 90000, relative: false });
+    assert.deepEqual(parseSeekInput('1.5s'), { ms: 1500, relative: false });
+    assert.deepEqual(parseSeekInput('+30', { currentMs: 60000 }), { ms: 90000, relative: true });
+    assert.deepEqual(parseSeekInput('-15', { currentMs: 30000 }), { ms: 15000, relative: true });
+    assert.deepEqual(parseSeekInput('+1:30', { currentMs: 0 }), { ms: 90000, relative: true });
+    assert.deepEqual(parseSeekInput('0:00'), { ms: 0, relative: false });
+  });
+  it('parseSeekInput clamps to the track and rejects garbage', () => {
+    assert.equal(parseSeekInput('-60', { currentMs: 30000 }).ms, 0);
+    assert.equal(parseSeekInput('+999', { currentMs: 60000, durationMs: 100000 }).ms, 100000);
+    assert.equal(parseSeekInput('abc'), null);
+    assert.equal(parseSeekInput('+'), null);
+    assert.equal(parseSeekInput(''), null);
+    assert.equal(parseSeekInput('1:2:3:4'), null);
   });
 });

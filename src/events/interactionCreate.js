@@ -18,6 +18,12 @@ module.exports = {
         const handled = await np.handleButton(interaction, client);
         if (handled) return;
       }
+      // Live Now Playing seek modal
+      if (interaction.isModalSubmit() && interaction.customId === 'np:seekmodal') {
+        const np = require('../modules/music/np');
+        const handled = await np.handleSeekModal(interaction, client);
+        if (handled) return;
+      }
     } catch (e) {
       logger.error('[interaction]', e?.stack || e);
       if (!interaction.isRepliable()) return;

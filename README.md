@@ -16,11 +16,13 @@ bot host only needs Node.js and network access to the node.
 | `/skip [count]` | Skip one or several tracks |
 | `/loop <mode>` | Repeat off / track / queue |
 | `/shuffle`, `/remove`, `/move`, `/clear` | Queue management |
-| `/seek <time>`, `/volume <0-200>`, `/pause`, `/stop` | Playback control |
+| `/seek <time>`, `/volume <0-200>`, `/pause`, `/stop` | Playback control (`1:30`, `90`, `+30`, `-15`) |
 | `/perms [channel]`, `/health`, `/version` | Diagnostics (Manage Server for `/health` and `/perms`) |
 
 The Now Playing message has live buttons: shuffle, previous, pause/resume,
-next, loop. Buttons work only for members in the same voice channel.
+next, loop, plus a seek row (−30s, −10s, +10s, +30s and an exact-time modal).
+Buttons work only for members in the same voice channel; live streams hide the
+seek row.
 
 ## Requirements
 
