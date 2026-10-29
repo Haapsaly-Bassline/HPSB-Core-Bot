@@ -7,7 +7,8 @@ const { logger } = require('../../utils/logger');
 const { config } = require('../../config');
 const music = require('./service');
 
-const UPDATE_SECS = Math.max(5, Number(process.env.NP_UPDATE_SECS || 10));
+const parsedUpdateSecs = Number(process.env.NP_UPDATE_SECS || 10);
+const UPDATE_SECS = Number.isFinite(parsedUpdateSecs) ? Math.max(5, parsedUpdateSecs) : 10;
 const sessions = new Map(); // guildId -> { channelId, messageId, timer }
 const trackGen = new Map(); // guildId -> generation counter (trackStart race guard)
 

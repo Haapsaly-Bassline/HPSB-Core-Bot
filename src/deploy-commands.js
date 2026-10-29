@@ -29,33 +29,27 @@ if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
   process.exit(1);
 }
 
-async function wipeApp({ token, clientId, guildId, label }) {
-  const rest = new REST({ version: '10' }).setToken(token);
-  const globals = await rest.get(Routes.applicationCommands(clientId));
-  console.log(`[${label}] global commands found: ${globals.length}`);
-  if (globals.length) {
-    await rest.put(Routes.applicationCommands(clientId), { body: [] });
-    console.log(`[${label}] global commands wiped`);
-  }
-  const guild = await rest.get(Routes.applicationGuildCommands(clientId, guildId));
-  console.log(`[${label}] guild commands found: ${guild.length}`);
-  return { rest, globals: globals.length, guild: guild.length };
-}
-
 (async () => {
   // Validate BEFORE touching anything: an unknown arg must never wipe first.
   if (mode !== 'deploy' && mode !== 'wipe') {
     console.error(`Unknown mode "${mode}" -- use: deploy (default) | wipe`);
     process.exit(1);
   }
-  const { rest } = await wipeApp({ token: TOKEN, clientId: CLIENT_ID, guildId: GUILD_ID, label: 'current' });
+  const rest = new REST({ version: '10' }).setToken(TOKEN);
 
   if (mode === 'wipe') {
+    const globals = await rest.get(Routes.applicationCommands(CLIENT_ID));
+    const guild = await rest.get(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID));
+    console.log(`[current] global commands found: ${globals.length}`);
+    console.log(`[current] guild commands found: ${guild.length}`);
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
     await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] });
-    console.log('[current] guild commands wiped -- clean slate (re-run without args to publish)');
+    console.log('[current] global and guild commands wiped -- re-run without args to publish guild commands');
     return;
   }
 
+  // A normal deploy only replaces this guild's commands. Never delete global
+  // commands as a side effect; they may be used by another environment.
   const body = await rest.put(
     Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
     { body: commands },

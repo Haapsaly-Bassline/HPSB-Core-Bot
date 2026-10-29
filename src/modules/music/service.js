@@ -85,6 +85,7 @@ async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, l
   const { fan, items } = await fetchCollection(fanUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
   const added = [];
   let failed = 0;
+  let firstFailure = null;
   let n = 0;
   for (const it of items) {
     n += 1;
@@ -96,16 +97,33 @@ async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, l
         requester, metadata: { channel: textChannel },
       });
       added.push({ band: it.band, title: it.kind === 'album' ? (r.title || it.title) : it.title, kind: it.kind, count: r.count });
-    } catch {
+    } catch (error) {
       failed += 1;
+      const detail = String(error?.message || error || 'unknown error').slice(0, 180);
+      if (!firstFailure) firstFailure = detail;
+      logger.warn('[music] Bandcamp release failed', JSON.stringify({
+        title: String(it.title || 'Unknown').slice(0, 120),
+        url: String(it.url || '').slice(0, 180),
+        error: detail,
+      }));
     }
   }
-  // Start if idle
-  try {
-    const p = engine.getPlayer(voiceChannel.guild.id);
-    if (p && !p.playing && !p.paused) await p.play().catch(() => {});
-  } catch {}
-  if (!added.length) throw new Error('Nothing was added (all releases are unavailable)');
+  if (!added.length) {
+    const detail = firstFailure ? `; first error: ${firstFailure}` : '';
+    throw new Error(`No releases were added (${failed}/${items.length} failed)${detail}`);
+  }
+
+  // Start if idle. Don't claim success if Lavalink rejected the playback start.
+  const player = engine.getPlayer(voiceChannel.guild.id);
+  if (player && !player.playing && !player.paused) {
+    try {
+      await player.play();
+    } catch (error) {
+      const detail = String(error?.message || error || 'unknown Lavalink error').slice(0, 180);
+      logger.error('[music] Bandcamp queue loaded but playback start failed', detail);
+      throw new Error(`Queued ${added.length} release(s), but playback failed to start: ${detail}`);
+    }
+  }
   return { fan, added, failed, totalTracks: added.reduce((a, x) => a + x.count, 0) };
 }
 

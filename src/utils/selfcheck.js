@@ -33,7 +33,6 @@ async function checkVoice(client, voiceChannel) {
     problems.push(`channel ${voiceChannel.name} is full (limit ${voiceChannel.userLimit})`);
   }
   if (me.voice.serverMute) problems.push('bot is server-muted (Server Mute)');
-  if (me.voice.serverDeaf) problems.push('bot is server-deafened (Server Deaf)');
   return { ok: problems.length === 0, problems, me, isStage };
 }
 

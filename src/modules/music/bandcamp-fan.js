@@ -50,20 +50,29 @@ async function fetchCollection(fanUrl, { limit = 10 } = {}) {
   const items = [];
   const seen = new Set();
   while (items.length < limit) {
-    const batch = await fetchBatch(fan.fanId, olderThan, Math.min(20, limit - items.length)).catch((e) => {
-      logger.warn('[bandcamp-fan] batch failed', e.message);
-      return null;
-    });
+    let batch;
+    try {
+      batch = await fetchBatch(fan.fanId, olderThan, Math.min(20, limit - items.length));
+    } catch (error) {
+      const detail = String(error?.message || error).slice(0, 180);
+      logger.warn('[bandcamp-fan] collection batch failed', detail);
+      if (!items.length) throw new Error(`Bandcamp collection API request failed: ${detail}`);
+      break; // Keep releases already fetched; the caller can still queue this partial batch.
+    }
     if (!batch || !Array.isArray(batch.items) || !batch.items.length) break;
     for (const it of batch.items) {
       if (!it.item_url || seen.has(it.item_url)) continue;
       seen.add(it.item_url);
-      // Custom domains (label.bandcamp instead of *.bandcamp.com) node won't eat --
-      // rebuild canonical URL from url_hints (subdomain+slug).
+      // The collection API's tralbum_type is 't' for tracks and 'a' for albums.
+      // Use it as the canonical type; url_hints.item_type may be absent or shaped differently.
+      const kind = it.tralbum_type === 't' ? 'track' : it.tralbum_type === 'a' ? 'album' : null;
+      if (!kind) {
+        logger.warn('[bandcamp-fan] skipping item with unknown tralbum_type', String(it.tralbum_type), String(it.item_url || '').slice(0, 180));
+        continue;
+      }
       const uh = it.url_hints || {};
-      const kind = it.tralbum_type === 't' ? 'track' : 'album';
       const url = (uh.subdomain && uh.slug)
-        ? `https://${uh.subdomain}.bandcamp.com/${uh.item_type === 't' ? 'track' : 'album'}/${uh.slug}`
+        ? `https://${uh.subdomain}.bandcamp.com/${kind}/${uh.slug}`
         : it.item_url;
       items.push({
         band: it.band_name || '',

@@ -7,21 +7,26 @@ module.exports = {
     .setDescription('Pull the bot into voice: to you or a specified channel (music continues)')
     .addChannelOption(o => o.setName('channel').setDescription('Where (defaults to your voice channel)').setRequired(false)),
   async execute(interaction, client) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const voiceChannel = interaction.options.getChannel('channel')
       || interaction.member?.voice?.channel;
     if (!voiceChannel || ![2, 13].includes(voiceChannel.type)) {
-      await interaction.reply({ content: '❌ Join a voice channel or stage (or specify one via the channel option).', flags: MessageFlags.Ephemeral });
+      await interaction.editReply('❌ Join a voice channel or stage (or specify one via the channel option).');
       return;
     }
 
+    let pre;
     try {
       const { checkVoice } = require('../utils/selfcheck');
-      const pre = await checkVoice(client, voiceChannel);
-      if (!pre.ok) {
-        await interaction.reply({ content: `❌ Can't join that voice channel:\n❌ ${pre.problems.join('\n❌ ')}`, flags: MessageFlags.Ephemeral });
-        return;
-      }
-    } catch {}
+      pre = await checkVoice(client, voiceChannel);
+    } catch (error) {
+      await interaction.editReply(`❌ Couldn't verify voice permissions: ${String(error?.message || error).slice(0, 180)}`);
+      return;
+    }
+    if (!pre.ok) {
+      await interaction.editReply(`❌ Can't join that voice channel:\n❌ ${pre.problems.join('\n❌ ')}`);
+      return;
+    }
 
     try {
       await music.join(client, voiceChannel, interaction.channel?.id);
@@ -34,9 +39,9 @@ module.exports = {
       }
       const { ack, COLORS } = require('../utils/embeds');
       const label = voiceChannel.type === 13 ? 'the stage' : 'the voice channel';
-      await interaction.reply({ embeds: [ack(`🔊 Joined ${label}`, `**${voiceChannel.name}**${extra}`, { color: COLORS.success })] });
+      await interaction.editReply({ embeds: [ack(`🔊 Joined ${label}`, `**${voiceChannel.name}**${extra}`, { color: COLORS.success })] });
     } catch (e) {
-      await interaction.reply({ content: `❌ Couldn't join: ${String(e.message || e).slice(0, 200)}`, flags: MessageFlags.Ephemeral });
+      await interaction.editReply(`❌ Couldn't join: ${String(e.message || e).slice(0, 200)}`);
     }
   },
 };

@@ -20,15 +20,20 @@ module.exports = {
       return;
     }
 
-    // Preflight: bot checks its own permissions in THIS voice
+    // Preflight: bot checks its own permissions in THIS voice.
+    // Fail closed: if permission checking fails, don't join blindly.
+    let pre;
     try {
       const { checkVoice } = require('../utils/selfcheck');
-      const pre = await checkVoice(client, voiceChannel);
-      if (!pre.ok) {
-        await interaction.editReply(`❌ Can't join that voice channel:\n❌ ${pre.problems.join('\n❌ ')}`);
-        return;
-      }
-    } catch {}
+      pre = await checkVoice(client, voiceChannel);
+    } catch (error) {
+      await interaction.editReply(`❌ Couldn't verify voice permissions: ${String(error?.message || error).slice(0, 180)}`);
+      return;
+    }
+    if (!pre.ok) {
+      await interaction.editReply(`❌ Can't join that voice channel:\n❌ ${pre.problems.join('\n❌ ')}`);
+      return;
+    }
 
     // Bandcamp fan profile -- this is a collection, not a track (fan import lives here, no separate command)
     try {
