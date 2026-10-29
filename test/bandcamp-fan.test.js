@@ -77,6 +77,6 @@ describe('Bandcamp fan collection parsing', () => {
 
   it('rejects malformed/missing page data with useful error text', () => {
     assert.throws(() => extractPageData('<html></html>'), /no #pagedata block/);
-    assert.throws(() => extractPageData('<div id="pagedata" data-blob="{bad"></div>/), /Could not parse/);
+    assert.throws(() => extractPageData('<div id="pagedata" data-blob="{bad"></div>'), /Could not parse/);
   });
 });
