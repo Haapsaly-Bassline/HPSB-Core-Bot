@@ -50,13 +50,24 @@ unlike Node, Java has no Happy Eyeballs — without the flag, occasional request
 - Playlists, `ytsearch:`/`scsearch:` search, queue and filters — like Jockie
 - The bot survives Lavalink restarts (reconnects), audio doesn't depend on the bot's network
 
-## Source matrix (live-tested 2026-10-04)
+## SoundCloud compatibility (2026-10-29)
+
+SoundCloud changed its stream formats and the built-in Lavaplayer source can resolve tracks but fail during playback (often HTTP 404/403). The Soundy 1.1.0 plugin supports the current fragmented-MP4 HLS format. See the upstream reports and plugin instructions:
+- https://github.com/lavalink-devs/lavaplayer/issues/189
+- https://github.com/lowkwrs/soundy
+
+The example config now disables the built-in source, loads `com.waris4ly.soundy:plugin:1.1.0` from `https://maven.lavalink.dev/releases`, and enables Soundy. Soundy's README currently notes that in-track seeking is not supported.
+
+For an existing installation, edit the ignored local `lavalink/application.yml` as well; updating Git does not overwrite that secret-bearing runtime config. Mirror the same changes from `application.example.yml`, then fully restart Lavalink and test a public SoundCloud URL plus `scsearch:`.
+
+## Source matrix
 
 The bot runs EXCLUSIVELY on Lavalink (legacy engine removed from code).
 
 | Source | Status | Needed |
 |---|---|---|
-| SoundCloud / Bandcamp / HTTP radio | ✅ work | nothing |
+| SoundCloud | 🔧 Soundy 1.1.0 workaround | Configured in the example; after applying it to the active config, test a public URL and `scsearch:`. Seeking within a track is currently unsupported by Soundy. |
+| Bandcamp / HTTP radio | ✅ work | nothing |
 | Vimeo | ❌ off | source is dead |
 | Spotify (links + `spsearch:`) | ❌ off | needs Premium on the Spotify app owner; keys stay in the block for later |
 | Deezer | ⏳ waits for tokens | `arl` (deezer.com cookie) + `masterDecryptionKey`; unlocks direct audio + Spotify mirror without YouTube |

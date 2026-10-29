@@ -29,6 +29,8 @@ path: "/usr/local/bin/yt-dlp"
 "--cookies", "/opt/Lavalink/cookies.txt",
 ```
 
+**SoundCloud:** the current config uses Soundy 1.1.0 from `https://maven.lavalink.dev/releases` and disables the built-in SoundCloud source. Ensure the `application.yml` copied into this Docker folder includes the Soundy dependency and `plugins.soundy.enabled: true`. Lavalink downloads the plugin automatically; no extra JAR needs to be copied manually. After changing config, recreate/restart Lavalink and inspect its logs for successful Soundy loading. Soundy's README currently notes that seeking within a track is not supported.
+
 ## 2. Ship to the server
 
 ```powershell

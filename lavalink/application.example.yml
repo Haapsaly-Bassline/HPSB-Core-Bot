@@ -19,7 +19,8 @@ lavalink:
       youtube: false                # MUST be false: built-in source is deprecated and intercepts
                                     # ytsearch: from plugin (400 from YouTube). Plugin is below, separate.
       bandcamp: true
-      soundcloud: true
+      # Use Soundy for current SoundCloud streaming URLs; built-in source returns 404/403.
+      soundcloud: false
       twitch: false
       vimeo: false                      # OFF 2026-10-04: not working (source dead)
       nico: false
@@ -35,7 +36,6 @@ lavalink:
     youtubePlaylistLoadLimit: 6
     playerUpdateInterval: 5
     youtubeSearchEnabled: true               # TEST 2026-10-04: trying to restore YouTube
-    soundcloudSearchEnabled: true
     httpSearchEnabled: false
     localSearchEnabled: false
   plugins:
@@ -43,6 +43,10 @@ lavalink:
     # DISABLED: home IP flagged by YouTube as bot. Return only via OAuth
     # (burner account!) — see commented block below.
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+    # SoundCloud replacement for the built-in source (current HLS stream format).
+    - dependency: "com.waris4ly.soundy:plugin:1.1.0"
       repository: "https://maven.lavalink.dev/releases"
       snapshot: false
     # Other music integrations via LavaSrc (Spotify / Apple / Deezer / Tidal / Qobuz ...).
@@ -55,6 +59,8 @@ lavalink:
     # bot doesn't use lyrics. Don't add back without verifying URL on maven.
 
 plugins:
+  soundy:
+    enabled: true
   youtube:
     # SCHEMA 2026-10-04: search/metadata via plugin; DIRECT LINKS via ytdlp with burner cookies
     # (allowDirect* disabled: plugin passes URLs, ytdlp picks them up -- otherwise all links
