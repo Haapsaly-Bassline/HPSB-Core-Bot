@@ -3,6 +3,18 @@ const { logger } = require('../utils/logger');
 
 let retryTimer = null;
 
+// manager.init() resolves before the node's websocket is actually up, so
+// available() is false for a moment on every cold start. Poll briefly instead
+// of declaring failure (and waiting 30s) on a perfectly healthy node.
+async function waitForConnection(engine, timeoutMs = 10000, stepMs = 250) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (engine.available()) return true;
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+  return engine.available();
+}
+
 async function startMusic(client) {
   const { LavalinkEngine } = require('../modules/music/engine-lavalink');
   if (!client.music || typeof client.music.init !== 'function') {
@@ -11,7 +23,7 @@ async function startMusic(client) {
     client.music = engine;
     client.lavalink = engine;
   }
-  if (client.music.available()) {
+  if (await waitForConnection(client.music)) {
     logger.info('[music] lavalink connected');
     return;
   }
