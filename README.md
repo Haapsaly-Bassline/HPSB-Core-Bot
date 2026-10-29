@@ -9,8 +9,7 @@ bot host only needs Node.js and network access to the node.
 
 | Command | What it does |
 | --- | --- |
-| `/play <query> [channel] [count]` | Search or play a URL: YouTube, SoundCloud, Bandcamp, Deezer, Apple Music, Tidal, Qobuz, Yandex, VK, direct mp3/radio, playlists. A Bandcamp fan profile queues that fan's purchases (`count` = releases, 1–25) |
-| `/radio [station] [url] [channel]` | HPSB radio stations or any custom stream URL |
+| `/play <query> [channel] [count]` | Search or play a URL: YouTube, SoundCloud, Bandcamp, Deezer, Apple Music, Tidal, Qobuz, Yandex, VK, direct mp3/stream, playlists. A Bandcamp fan profile queues that fan's purchases (`count` = releases, 1–25) |
 | `/join [channel]` | Move the bot to your voice channel / a specified one |
 | `/queue` | Current track + upcoming |
 | `/nowplaying` | Snapshot of the live Now Playing message |
@@ -18,7 +17,6 @@ bot host only needs Node.js and network access to the node.
 | `/loop <mode>` | Repeat off / track / queue |
 | `/shuffle`, `/remove`, `/move`, `/clear` | Queue management |
 | `/seek <time>`, `/volume <0-200>`, `/pause`, `/stop` | Playback control |
-| `/onair [station]` | HPSB radio now-playing metadata |
 | `/perms [channel]`, `/health`, `/version` | Diagnostics (Manage Server for `/health` and `/perms`) |
 
 The Now Playing message has live buttons: shuffle, previous, pause/resume,
