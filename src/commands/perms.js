@@ -1,14 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { requireMod } = require('../utils/mod');
+const { config } = require('../config');
 
 const WANT_GUILD = [
   ['Administrator', PermissionFlagsBits.Administrator],
   ['Manage Channels', PermissionFlagsBits.ManageChannels],
-  ['Manage Messages', PermissionFlagsBits.ManageMessages],
-  ['Manage Roles', PermissionFlagsBits.ManageRoles],
-  ['Moderate Members', PermissionFlagsBits.ModerateMembers],
-  ['Kick', PermissionFlagsBits.KickMembers],
-  ['Ban', PermissionFlagsBits.BanMembers],
   ['Send Messages', PermissionFlagsBits.SendMessages],
   ['Embed Links', PermissionFlagsBits.EmbedLinks],
   ['Read History', PermissionFlagsBits.ReadMessageHistory],
@@ -25,19 +20,18 @@ const WANT_VOICE = [
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('perms')
-    .setDescription('Check the bot permissions (server + voice + mutes)')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDescription('Check the bot voice permissions (server + channel + mutes)')
     .addChannelOption(o => o.setName('channel').setDescription('Voice channel to check (your current one by default)').setRequired(false)),
   async execute(interaction, client) {
-    if (!await requireMod(interaction)) return;
-    if (!interaction.guild) {
-      await interaction.reply({ content: '❌ Run this on the server, not in DM.', flags: MessageFlags.Ephemeral });
+    const allowed = config.adminIds.includes(interaction.user.id)
+      || interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+    if (!allowed) {
+      await interaction.reply({ content: '❌ Manage Server permission required.', flags: MessageFlags.Ephemeral }).catch(() => {});
       return;
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const me = await interaction.guild.members.fetch(client.user.id).catch(() => null);
     if (!me) { await interaction.editReply('❌ I cannot see myself on the server.'); return; }
-    // Full channel list, not just cache (uncached voices would vanish from the audit)
     try { await interaction.guild.channels.fetch().catch(() => null); } catch {}
 
     const gLines = WANT_GUILD.map(([n, f]) => `${me.permissions.has(f) ? '✅' : '❌'} ${n}`);
@@ -58,7 +52,6 @@ module.exports = {
       `Bot channel: ${vs.channel ? `<#${vs.channel.id}>` : 'not in voice'}`,
     ];
 
-    // Which voice channels bot can see at all (View/Connect/Speak)
     const voiceList = interaction.guild.channels.cache
       .filter(c => c.isVoiceBased?.())
       .map(c => {
@@ -76,7 +69,7 @@ module.exports = {
     }
     if (voiceChannel?.isVoiceBased?.()) {
       const eff = voiceChannel.permissionsFor(me);
-      if (!isAdmin && eff && (!eff.has(PermissionFlagsBits.Connect) || !eff.has(PermissionFlagsBits.Speak))) {
+      if (!isAdmin && eff && (!eff.has(PermissionFlagsBits.Connect) || (!eff.has(PermissionFlagsBits.Speak) && voiceChannel.type !== 13))) {
         problems.push('No Connect/Speak in THIS voice channel (channel overwrite overrides the role)');
       }
     }
@@ -95,7 +88,7 @@ module.exports = {
         { name: 'Verdict', value: problems.length ? '❌ ' + problems.join('\n❌ ') : '✅ All clear - not a permission issue.' },
       )
       .setTimestamp()
-      .setFooter({ text: 'Haapsaly Bassline • Perms' });
+      .setFooter({ text: `${config.botName} • Perms` });
     await interaction.editReply({ embeds: [e] });
   },
 };

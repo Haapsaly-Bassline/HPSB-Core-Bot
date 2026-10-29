@@ -34,7 +34,7 @@ function detectEngine(value) {
   return null;
 }
 
-function resolveSearchQuery(query) {
+function resolveSearchQuery(query, defaultSource = 'youtube') {
   const value = String(query || '').trim();
   if (!value) throw new Error('Empty query');
   if (/^(ytsearch|ytmsearch|scsearch|spsearch|dzsearch|dzisrc|amsearch|tdsearch|qbsearch|qbisrc|ymsearch|vksearch):/i.test(value)) {
@@ -50,7 +50,8 @@ function resolveSearchQuery(query) {
     const engine = detectEngine(value) || 'arbitrary';
     return { engine, query: value }; // URL resolved by node
   }
-  return { engine: 'youtube', query: `${SEARCH_PREFIX.youtube}${value}` };
+  const engine = SEARCH_PREFIX[String(defaultSource || '').toLowerCase()] ? String(defaultSource).toLowerCase() : 'youtube';
+  return { engine, query: `${SEARCH_PREFIX[engine]}${value}` };
 }
 
 module.exports = { resolveSearchQuery, SEARCH_PREFIX, detectEngine };

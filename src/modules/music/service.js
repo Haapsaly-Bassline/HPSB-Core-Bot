@@ -2,6 +2,7 @@
 // Response shapes are stable -- commands and NP build overlays on top.
 const { resolveSearchQuery } = require('./resolvers');
 const { fmtMs } = require('../../utils/music');
+const { config } = require('../../config');
 
 // Null when the engine isn't up (client.music set in ready.js after login).
 // One-liner actions below tolerate null and answer false/null so commands show
@@ -17,7 +18,7 @@ function eng(client) {
 function needNode(engine) {
   let ok = false;
   try { ok = typeof engine.available === 'function' ? engine.available() : true; } catch { ok = false; }
-  if (!ok) throw new Error('Music unavailable: Lavalink node is not connected. Start Lavalink (java -jar Lavalink.jar in lavalink folder) and wait for "ready to accept connections", then retry. If it is running, check LAVALINK_PASSWORD.');
+  if (!ok) throw new Error('Music unavailable: the Lavalink node is not connected. Check that your Lavalink server is running and that LAVALINK_HOST / LAVALINK_PORT / LAVALINK_PASSWORD / LAVALINK_SECURE in .env match it, then retry.');
 }
 
 function viewOf(item) {
@@ -41,12 +42,7 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
   const engine = eng(client);
   if (!engine) throw new Error('Music engine is not initialized yet (bot still starting) -- try again in a few seconds');
   needNode(engine);
-  const q = resolveSearchQuery(query);
-// Spotify disabled on node (no Premium on app): reply immediately with clear message,
-// not vague "No results" after timeouts.
-  if (q.engine === 'spotify') {
-    throw new Error('Spotify is temporarily disabled: the Spotify app has no Premium. Search by text (YouTube/SoundCloud) or paste a direct track link.');
-  }
+  const q = resolveSearchQuery(query, config.music.defaultSearchSource);
   // ETA: how long until our track plays (remaining current + queue BEFORE addition)
   let etaMs = 0;
   let nextTitle = null;
@@ -152,6 +148,6 @@ module.exports = {
   // Stage speaker status (null = not stage / not requested)
   speakerStatus: (client, guildId) => {
     const e = eng(client);
-    return typeof e.getSpeakerStatus === 'function' ? e.getSpeakerStatus(guildId) : null;
+    return typeof e?.getSpeakerStatus === 'function' ? e.getSpeakerStatus(guildId) : null;
   },
 };

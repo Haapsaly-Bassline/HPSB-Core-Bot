@@ -49,20 +49,25 @@ class LavalinkEngine {
     const password = String(lav.password ?? '');
     const secure = !!lav.secure;
     if (!host) {
-      throw new Error('[lavalink] LAVALINK_HOST empty -- set in .env (usually 127.0.0.1)');
+      throw new Error('[lavalink] LAVALINK_HOST empty -- set the address of your Lavalink server in .env');
     }
     if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-      throw new Error(`[lavalink] LAVALINK_PORT invalid (${lav.port}) -- set in .env (usually 2333)`);
+      throw new Error(`[lavalink] LAVALINK_PORT invalid (${lav.port}) -- set the port of your Lavalink server in .env`);
     }
     if (!password.length) {
       // lavalink-client throws cryptic
       // "ManagerOption.nodes must be an Array..." in this case, so we validate ourselves with clear text.
-      throw new Error('[lavalink] LAVALINK_PASSWORD empty -- set in .env the same password as in lavalink/application.yml -> lavalink.server.password');
+      throw new Error('[lavalink] LAVALINK_PASSWORD empty -- set the same password as on your Lavalink server (lavalink.server.password in application.yml)');
     }
+    const timeout = Number(lav.requestTimeoutMs) > 0 ? Number(lav.requestTimeoutMs) : 30000;
     this.manager = new LavalinkManager({
-      // requestTimeout 30s: ytdlp resolve of direct YT links takes ~13s (process spawn),
-      // default timeout aborted such requests "operation aborted due to timeout".
-      nodes: [{ host, port, authorization: password, secure, id: 'hpsb-main', requestTimeout: 30000, requestSignalTimeoutMS: 30000 }],
+      // Longer timeout: yt-dlp resolve of direct YT links can take ~13s on the node.
+      nodes: [{
+        host, port, authorization: password, secure,
+        id: lav.nodeId || 'main',
+        requestTimeout: timeout,
+        requestSignalTimeoutMS: timeout,
+      }],
       sendToShard: (guildId, payload) => {
         const guild = this.client.guilds.cache.get(guildId);
         if (guild?.shard) guild.shard.send(payload);

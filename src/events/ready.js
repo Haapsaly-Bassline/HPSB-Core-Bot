@@ -1,6 +1,35 @@
 const { Events } = require('discord.js');
 const { logger } = require('../utils/logger');
-const { config } = require('../config');
+
+let retryTimer = null;
+
+async function startMusic(client) {
+  const { LavalinkEngine } = require('../modules/music/engine-lavalink');
+  if (!client.music || typeof client.music.init !== 'function') {
+    const engine = new LavalinkEngine(client, require('../config').config.music);
+    await engine.init();
+    client.music = engine;
+    client.lavalink = engine;
+  }
+  if (client.music.available()) {
+    logger.info('[music] lavalink connected');
+    return;
+  }
+  // init() does NOT throw when the node is unreachable -- retry until connected.
+  logger.error('[lavalink] NO CONNECTED NODES: check the remote node (host/port/password) and retry every 30s.');
+  if (retryTimer) clearInterval(retryTimer);
+  retryTimer = setInterval(async () => {
+    try {
+      await client.music.manager.init({ id: client.user.id, username: client.user.username || client.user.tag });
+    } catch {}
+    if (client.music.available()) {
+      clearInterval(retryTimer);
+      retryTimer = null;
+      logger.info('[music] lavalink connected on retry');
+    }
+  }, 30000);
+  retryTimer.unref?.();
+}
 
 module.exports = {
   name: Events.ClientReady,
@@ -8,28 +37,10 @@ module.exports = {
   async execute(client) {
     logger.info(`[ready] Logged in as ${client.user.tag}`);
 
-    // All subsystems boot through the Module Manager (enable/disable via
-    // MODULE_* env + /modules overrides). One module never takes down the rest.
     try {
-      const { startAll } = require('../modules/manager');
-      await startAll(client);
-    } catch (e) { logger.warn('[modules] startAll failed:', e.message); }
-
-    // Self-check permissions at startup -- no placeholders, live from API
-    try {
-      const { auditGuild } = require('../utils/selfcheck');
-      const { missing } = await auditGuild(client);
-      if (missing.length) {
-        const id = config.logChannelId || config.honeypot.logChannelId;
-        const ch = id ? await client.channels.fetch(id).catch(() => null) : null;
-        if (ch?.isTextBased()) {
-          await ch.send(`⚠️ **Self-check:** bot missing perms on server:\n❌ ${missing.join('\n❌ ')}`).catch(() => {});
-        }
-      }
-    } catch (e) { logger.warn('[selfcheck] disabled:', e.message); }
-
-    if (config.modcall.panelChannelId) {
-      logger.info('[modcall] ready, use /modcall-panel to post the button');
+      await startMusic(client);
+    } catch (e) {
+      logger.error('[music] failed to start:', e?.message || e);
     }
   },
 };

@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, MessageFlags, EmbedBuilder } = require('discord.js');
 const music = require('../modules/music/service');
 const { fmtMs } = require('../utils/music');
+const { config } = require('../config');
 
 const LOOP_NAMES = ['Off', 'Track', 'Queue'];
 
@@ -20,7 +21,7 @@ module.exports = {
         `**Now playing:** [${cur?.title || '-'}](${cur?.url || interaction.channel.url})\n\n` +
         (list.join('\n').slice(0, 3500) || '_nothing up next_')
       )
-      .setFooter({ text: `Up next: ${v.size} • Total time: ${fmtMs(v.totalMs)} • Repeat: ${LOOP_NAMES[v.repeatMode] ?? v.repeatMode} • Haapsaly Bassline` })
+      .setFooter({ text: `Up next: ${v.size} • Total time: ${fmtMs(v.totalMs)} • Repeat: ${LOOP_NAMES[v.repeatMode] ?? v.repeatMode} • ${config.botName}` })
       .setTimestamp();
     await interaction.reply({ embeds: [e] });
   },

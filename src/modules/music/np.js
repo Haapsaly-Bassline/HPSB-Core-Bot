@@ -4,6 +4,7 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
 const { fmtMs, progressBar } = require('../../utils/music');
 const { logger } = require('../../utils/logger');
+const { config } = require('../../config');
 const music = require('./service');
 
 const UPDATE_SECS = Math.max(5, Number(process.env.NP_UPDATE_SECS || 10));
@@ -28,7 +29,7 @@ function buildEmbed(snap) {
   e.addFields({ name: '​', value: `\`${left}\` ${progressBar(snap.positionMs, snap.durationMs, 18)} \`${right}\`` });
   if ((snap.size ?? 0) > 0) e.addFields({ name: '📋 In queue', value: String(snap.size), inline: true });
   if (badge && snap.radioLabel) e.addFields({ name: 'Source', value: badge, inline: true });
-  e.setFooter({ text: t.requesterTag ? `Requested by ${t.requesterTag}` : 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: t.requesterTag ? `Requested by ${t.requesterTag}` : `${config.botName} • Music` });
   return e;
 }
 
@@ -95,7 +96,7 @@ async function trackStart(client, guildId, channel) {
       const msg = ch?.isTextBased?.() ? await ch.messages.fetch(prev.messageId).catch(() => null) : null;
       if (msg && trackGen.get(guildId) === gen) {
         const e = EmbedBuilder.from(msg.embeds[0] || new EmbedBuilder().setTitle('Now Playing'));
-        e.setFooter({ text: 'Played • Haapsaly Bassline' });
+        e.setFooter({ text: `Played • ${config.botName}` });
         await msg.edit({ embeds: [e], components: [] }).catch(() => {});
       }
     } catch {}
@@ -131,7 +132,7 @@ async function finalize(client, guildId, note) {
     sessions.delete(guildId);
     if (msg) {
       const e = EmbedBuilder.from(msg.embeds[0] || new EmbedBuilder().setTitle('Now Playing'));
-      e.setFooter({ text: `${note || 'Stopped'} • Haapsaly Bassline` });
+      e.setFooter({ text: `${note || 'Stopped'} • ${config.botName}` });
       await msg.edit({ embeds: [e], components: [] }).catch(() => {});
     }
   } catch {}

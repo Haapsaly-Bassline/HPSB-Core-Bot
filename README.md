@@ -1,221 +1,89 @@
-# HPSB Core Bot - Haapsaly Bassline
+# HPSB Music Bot — music-only branch
 
-Multipurpose Discord bot: Lavalink music engine (Jockie-style) + unified
-Publisher (YouTube / HPSB feeds live; Twitch / Instagram / TikTok code-ready) +
-honeypot/automod + ModCall tickets + stats + private rooms. Written from scratch
-for HPSB (inspired by Jockie/Carl, no copied code).
+A stripped-down, music-only Discord bot. Everything unrelated to music
+(moderation, publisher/reposter, automod, honeypot, ModCall, stats, private
+rooms) is removed. Audio is played by a **remote Lavalink v4 node**, so the
+bot host only needs Node.js and network access to the node.
 
-> **Deployment status (this server, live `.env`)** - what is actually ON here:
->
-> | Subsystem | State here | Why |
-> |---|---|---|
-> | Music (Lavalink) | 🟢 on | `MODULE_MUSIC=on` |
-> | Publisher core + HPSB feeds | 🟢 on | releases/events/news poll every 5m |
-> | YouTube videos + live check | 🟢 on | `YOUTUBE_MAP` set, `YT_API_KEY` set (Data API, no scraping) |
-> | TikTok | ⚪ off | `PUBLISHER_TIKTOK=off` - no accounts yet (`TIKTOK_MAP` empty) |
-> | Twitch live | ⚪ unavailable | no `TWITCH_*` credentials (code-ready: EventSub) |
-> | Instagram | ⚪ unavailable | no `INSTAGRAM_ACCESS_TOKEN` (code-ready: webhook/API) |
-> | Webhook server (`:3100`) | ⚪ off | `WEBHOOK_ENABLED=off` - **polling only**: no PubSub pushes, no EventSub, no `/hook/*` from outside |
-> | Honeypot trap (`timeout`) | 🟢 on | `/honeypot status` to verify perms/hierarchy |
-> | Automod / ModCall / Stats / Private | 🟢 on | Stats counters need `/counters setup` (no counter channels linked yet) |
-> | Spotify playback | ⚪ off | Spotify app has no Premium (engine rejects Spotify queries with a clear message) |
->
-> Removed for good (do not look for them): standalone `/bandcamp-fan` command
-> (fan import lives in `/play query:<bandcamp.com/user> +count`), legacy
-> `src/modules/reposter/` + `src/modules/site-publisher/` (deleted; new Publisher
-> replaced them), `wipe-legacy` deploy mode, `/logs` command.
+## Commands
 
-## Architecture
+| Command | What it does |
+| --- | --- |
+| `/play <query> [channel] [count]` | Search or play a URL: YouTube, SoundCloud, Bandcamp, Deezer, Apple Music, Tidal, Qobuz, Yandex, VK, direct mp3/radio, playlists. A Bandcamp fan profile queues that fan's purchases (`count` = releases, 1–25) |
+| `/radio [station] [url] [channel]` | HPSB radio stations or any custom stream URL |
+| `/join [channel]` | Move the bot to your voice channel / a specified one |
+| `/queue` | Current track + upcoming |
+| `/nowplaying` | Snapshot of the live Now Playing message |
+| `/skip [count]` | Skip one or several tracks |
+| `/loop <mode>` | Repeat off / track / queue |
+| `/shuffle`, `/remove`, `/move`, `/clear` | Queue management |
+| `/seek <time>`, `/volume <0-200>`, `/pause`, `/stop` | Playback control |
+| `/onair [station]` | HPSB radio now-playing metadata |
+| `/perms [channel]`, `/health`, `/version` | Diagnostics (Manage Server for `/health` and `/perms`) |
 
-```text
-                       HPSB CORE BOT
-                             │
-                     ┌───────▼───────┐
-                     │ MODULE MANAGER│  src/modules/manager.js
-                     └───────┬───────┘  startAll() in ready.js
-                             │
-        ┌────────────┬───────┼────────┬────────────┐
-        ▼            ▼       ▼        ▼            ▼
-      Music      Publisher  AutoMod  ModCall     Stats ...
-                    │
-          ┌─────────┼─────────┐
-          ▼         ▼         ▼
-       Sources   Webhooks   Pollers
-          │
-    ┌─────┼─────┬─────┬─────┬─────┐
-    ▼     ▼     ▼     ▼     ▼     ▼
-   YT   Twitch  IG    TT   HPSB  Live
-    │     │      │     │     │     │
-    └─────┴──────┴─────┴─────┴─────┘
-                    │
-                 NORMALIZE
-                    │
-                  DEDUP  (survives restart, data/store.json)
-                    │
-                  QUEUE  (serial, in-memory)
-                    │
-                  ROUTER
-                    │
-              ┌─────┴─────┐
-              ▼           ▼
-        #announcements  #media
-
-#partners = manual only (/partner-post), Publisher never writes there
-```
-
-### Module Manager
-
-Every subsystem is a manifest (`name, label, dependsOn, start, stop`) managed from
-`src/modules/manager.js`. `ready.js` calls `startAll()` - no manual per-module
-boots. One failing module never takes down the rest; repeated starts are no-ops
-(no duplicate timers).
-
-| Module | What it runs |
-|---|---|---|
-| `music` | Lavalink engine init (+ retry until node connects) |
-| `publisher` | Pipeline + scheduler (+ webhook server if enabled) |
-| `automod` | Message filters (no timers) |
-| `honeypot` | Trap warning post |
-| `modcall` | Ticket relay (event-driven) |
-| `stats` | Counter rename loop |
-| `private` | Voice rooms + startup orphan sweep |
-
-Priority: **Discord override → `MODULE_*` in `.env` → default on**.
-`/modules status|enable|disable|restart|reset` (Administrator) controls runtime
-state without restarting the bot; overrides persist in `data/store.json`.
-
-### Publisher
-
-Single pipeline for all publishing: `sources/* → normalize → dedup → queue →
-router → formatter → Discord`. Sources never know the target channel; the router
-decides `announcements` (HPSB releases/events/news, LIVE) vs `media`
-(YouTube/Instagram/TikTok).
-
-| Source | Active here? | How it works when on |
-|---|---|---|
-| YouTube videos | ✅ polling via Data API | PubSub push when webhooks on; else Data API → RSS → scrape → `#media` |
-| YouTube live | ✅ check every 2m | API `eventType=live` search (or `/live` redirect); single LIVE message in `#announcements` |
-| Twitch live | ❌ no creds | EventSub `stream.online/offline` (needs webhooks on); shared LIVE message with YouTube |
-| Instagram | ❌ no token | Webhook/API + legacy `/hook/news` compat → `#media` |
-| TikTok | ❌ off | TikWM provider poll → `#media` |
-| HPSB releases | ✅ | API `rls.hpsbassline.club` → RSS fallback → `#announcements` |
-| HPSB events | ✅ | API `events.hpsbassline.club` → RSS fallback → `#announcements` (+24h/1h reminders) |
-| HPSB news | ✅ | RSS → `#announcements` |
-
-Details:
-
-- **Multistream LIVE**: Twitch + YouTube describe ONE physical stream. The second
-  source updates the existing Discord message instead of posting another; buttons
-  (`▶️ YouTube`, `🟣 Twitch`) come from live URLs plus `YOUTUBE_LIVE_URL` /
-  `TWITCH_URL` fallbacks. Offline fires after 2 consecutive misses (no flapping).
-- **Dedup**: key `source:type:id`, `pending → published | released`. Nothing is
-  marked published before Discord confirms; failures retry. A boot **baseline**
-  pass remembers everything without posting - a restart never re-posts history.
-- **Polling is fallback**: push (PubSub/EventSub/webhooks) is primary when the
-  webhook server is on; here it is **off**, so everything runs on pollers.
-  Disabled sources get no timers, no subscriptions, no fetches.
-- **Per-source runtime toggles**: `PUBLISHER_*` in `.env` are defaults;
-  `/publisher enable|disable|reset <source>` overrides them live (module restarts
-  internally to rebuild timers - never the whole bot).
-- **Webhooks** (one Express server, `WEBHOOK_PORT`, currently **off** via
-  `WEBHOOK_ENABLED=off`): `/health`, `/hook/youtube`, `/hook/twitch`,
-  `/hook/instagram`, `/hook/hpsb`, `/hook/news` (legacy compat). Publisher
-  disabled → `503`; disabled source → ignored/`503`. See
-  `src/modules/publisher/webhooks.js`. Turn `WEBHOOK_ENABLED=on` + restart to
-  re-enable pushes (PubSub HMAC, EventSub) - required for instant Twitch live.
-
-### /sync modes
-
-`/sync source:<...> mode:<...>` (default: `source=all, mode=missing`) with live
-progress edits during long restores:
-
-- `new` - only items unseen in memory (cap 5/source). `found N, posted 0` with
-  the hint means "all already published".
-- `republish` - re-post known items oldest-first (`count`, 1–25, default 10).
-- `missing` - reconcile against **actual channel history** (last 100 messages)
-  and post what's gone (default limit 25). For wiped/recreated channels. Refuses
-  to run blind when history is unreadable.
-- `backfill N` - newest N regardless of seen (cap 5).
-
-## Features
-
-- **Music (Lavalink-only):** `/play` (text / links / playlists / direct mp3 /
-  Bandcamp fan profile + `count`; no separate fan command), `/radio`, `/queue`,
-  `/nowplaying` (live ticking embed with buttons), `/skip [count]`, `/prev`,
-  `/join`, `/loop`, `/shuffle`, `/remove`, `/move`, `/seek`, `/volume`, `/clear`,
-  `/pause` (toggle), `/stop`, `/onair`. Sources: YouTube, SoundCloud, Bandcamp, HTTP radio/files.
-  Spotify is OFF (no Premium on the app). Stage auto-speaker included.
-- **Automod & honeypot:** flood/caps/links/invites/badwords, trap channel (first
-  message = `timeout|kick|ban`; kick = softban with 24h wipe), anti-raid join
-  spike. Bots are NOT exempt in the trap (raid bots are the target); own bot is.
-  Behavior follows [RiskyMH/honeypot](https://github.com/RiskyMH/honeypot).
-  `/honeypot status|test` diagnoses config, perms, role hierarchy (dry-run).
-- **ModCall:** button → modal → staff ticket thread with two-way DM relay.
-- **Stats:** Member-Count-style voice counters (`/counters setup|list|link`;
-  nothing linked yet - run `setup`).
-- **Private rooms:** join generator → own room + control panel, orphan sweep.
-- **Partners:** `/partner-post` modal → Components-V2 card (wide banner gallery,
-  title, links, start date) into `#partners`. Banner is re-uploaded as an
-  attachment (signed/proxied URLs often fail Discord's image proxy). Only manual
-  writer.
-- **Showcase & misc:** `/top` (server overview + biggest roles), 🔖 Save button
-  on media posts (DMs you the link, stateless), honeypot timeout-end DMs
-  ("you can chat again", persisted across restarts), `backup` module snapshots
-  `data/store.json` to `data/backups/` (`STORE_BACKUP_MINUTES/KEEP`), auto-threads
-  under HPSB releases (`RELEASE_THREADS`).
-- **Ops:** `/health` (channels, APIs, music, modules, store read/write),
-  `/modules`, `/publisher`, `/sync`, `/publish`, `/version`.
+The Now Playing message has live buttons: shuffle, previous, pause/resume,
+next, loop. Buttons work only for members in the same voice channel.
 
 ## Requirements
 
-- Node.js 20+, Java 17+ (for Lavalink), a Discord app with bot token.
-- Dev Portal → Bot: enable **Server Members Intent**, **Message Content Intent**,
-  **Presence Intent** (online/offline counters), **Guild Moderation** (ban events).
-- Bot permissions: Administrator (or Manage Channels/Threads, Timeout Members,
-  Connect/Speak, Send Messages/Embeds, Read History). The bot's top role must
-  sit **above** punished users or timeout/kick/ban fail (see `/honeypot test`).
+- Node.js 20+
+- A Lavalink v4 server (local or on another machine) with a password
+- Discord application/bot token
+
+No native Opus/FFmpeg builds are needed: the Lavalink node decodes and streams
+the audio, the bot only sends voice state/gateway payloads.
+
+**No privileged intents are required.** Only `Guilds` and `GuildVoiceStates`
+are used, so nothing needs to be enabled in the Developer Portal beyond the
+defaults.
+
+Bot permissions in voice: **View Channel**, **Connect**, **Speak** (on Stage
+channels Speak is replaced by the speaker request; `Manage Channels` helps the
+bot unsuppress itself). Send Messages + Embed Links in the text channel.
 
 ## Quickstart
 
-1. `cp .env.example .env` and fill it (Discord token, guild/channel/role IDs).
-   Every variable is typed (`string/secret/snowflake-id/boolean/integer/list/map/
-   url/template`) - see the header of `.env.example`; same structure in `src/config.js`.
-2. Lavalink (see `lavalink/README.md` for details):
-   - download `Lavalink.jar` v4 into `lavalink/`;
-   - `cp lavalink/application.example.yml lavalink/application.yml` and fill passwords/tokens;
-   - keep `LAVALINK_PASSWORD` in sync between `application.yml` and bot `.env`.
-3. `npm install` (if it complains about install-scripts: approve `opencode` + `ffmpeg-static`, then `npm rebuild`).
-4. `node src/deploy-commands.js` - guild slash commands (also wipes stale globals;
-   `wipe` = clean slate).
-5. Start Lavalink: `java "-Djava.net.preferIPv4Stack=true" -jar Lavalink.jar` (quotes matter on PowerShell), wait for `ready to accept connections`.
-6. `npm start` (background: PM2 / scheduler; logs in `data/bot.log`).
-7. If the machine route to Discord flaps (IPv6/WARP): `index.js` and
-   `deploy-commands.js` force `ipv4first`; login failures distinguish
-   network-unreachable from a bad token.
+1. Copy `.env.example` to `.env` and fill:
+   - `DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID`
+   - `LAVALINK_HOST`, `LAVALINK_PORT`, `LAVALINK_PASSWORD`,
+     `LAVALINK_SECURE` (set `true` for wss/https)
+2. `npm install`
+3. `npm run register` — registers guild slash commands
+4. `npm start`
+
+Logs go to the console and `data/bot.log`.
+
+## Remote Lavalink notes
+
+- The bot connects to `LAVALINK_HOST:LAVALINK_PORT`; the node must be
+  reachable from the bot host (open the port in the firewall/security group).
+- Use the **same** `LAVALINK_PASSWORD` in `.env` and in the node's
+  `application.yml` → `lavalink.server.password`.
+- Source plugins (YouTube plugin, LavaSrc for Spotify/Deezer/Apple/Tidal/Qobuz,
+  etc.) are configured **on the Lavalink server**, not in this bot. If the node
+  does not have a source enabled, `/play` for that source will fail.
+- The `lavalink/` folder in this repo is only a reference (config template,
+  Docker files; the Jar is gitignored). The bot does not start or manage
+  Lavalink itself.
+- Text queries use `DEFAULT_SEARCH_SOURCE` (default `youtube`). URLs are routed
+  by their domain.
 
 ## Project layout
 
-- `src/commands/` - slash commands (42): music, moderation, publisher (`sync`,
-  `publisher`, `modules`, `publish`, `partner-post`, `honeypot`, `counters`),
-  info.
-- `src/events/` - `ready` (Module Manager boot), `interactionCreate` (commands,
-  buttons, modals), `voiceStateUpdate`, moderation/member events.
-- `src/modules/manager.js` - lifecycle, runtime overrides.
-- `src/modules/publisher/` - `index` (wiring), `pipeline`, `dedup`, `queue`,
-  `router`, `formatter`, `live`, `state`, `scheduler`, `webhooks`,
-  `source-state` (source overrides), `sources/` (fetch/normalize per platform,
-  `channel-scan` for missing-mode).
-- `src/modules/music/` - `engine-lavalink.js`, `service.js` (single entry),
-  `resolvers.js`, `np.js`, `stage.js`, `bandcamp-fan.js` (provider used by `/play`).
-- `src/modules/` - `honeypot`, `modcall`, `stats`, `private`.
-- `src/utils/` - embeds, music fmt, mod gates, selfcheck, logger, store
-  (atomic JSON + in-process mutex).
-- `lavalink/` - `application.example.yml`, plugins, README.
-- `test/` - `node --test` suites (unit + pipeline with mocked Discord; real
-  APIs never touched).
+- `src/commands/` — slash commands (music + diagnostics)
+- `src/events/` — `ready` (Lavalink init + retry), `interactionCreate`
+  (commands + NP buttons), `voiceStateUpdate` (stage speaker re-request)
+- `src/modules/music/` — `engine-lavalink.js` (queue/voice), `service.js`
+  (single entry point), `resolvers.js` (query routing), `np.js` (live Now
+  Playing), `stage.js` (stage speaker), `bandcamp-fan.js` (fan collections)
+- `src/utils/` — embeds (overlays), music formatting, logger, voice preflight
+- `src/config.js` — env parsing (Discord + Lavalink only)
+- `lavalink/` — optional Lavalink template / Docker setup
 
-## Secrets discipline
+## Tests
 
-Never committed (all gitignored): `.env`, `lavalink/application.yml`,
-`lavalink/cookies.txt`, `lavalink/*.jar`, `data/*.json`. Templates are committed
-instead. After every `git pull`, re-fill local secrets and restart Lavalink + bot.
+```bash
+npm test
+```
+
+Covers embeds, music formatting, query resolvers and the engine-null guards.

@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { config, validate } = require('./config');
 
 // Many ISPs have broken IPv6 (timeout instead of refusal), and Node picks
@@ -8,54 +8,23 @@ const { logger } = require('./utils/logger');
 const fs = require('node:fs');
 const path = require('node:path');
 
-try {
-  if (!process.env.FFMPEG_PATH) {
-    const bin = require('ffmpeg-static');
-    if (bin) process.env.FFMPEG_PATH = bin;
-  }
-} catch {}
-
 validate();
 
+// Music-only: no privileged intents required.
+// GuildVoiceStates is enough to join/leave voice channels; Lavalink plays the audio.
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildModeration, // ban add/remove audit events
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
   ],
-  partials: [Partials.Channel, Partials.Message],
 });
 
 client.commands = new Collection();
 
-// Bot runs EXCLUSIVELY on Lavalink (legacy hpsb engine removed).
-// client.music initialized in ready.js (needs client.user.id); until ready no music --
-// commands honestly reply "Music engine not initialized".
+// client.music is initialized in ready.js (needs client.user.id).
 client.music = null;
 client.lavalink = null;
 logger.info('[music] lavalink-only mode (init deferred until ready)');
-
-try {
-  require('@discordjs/opus');
-  logger.info('[voice] opus ok');
-} catch {
-  logger.error('[voice] NO OPUS -- no audio! npm install-scripts approve @discordjs/opus + npm rebuild');
-}
-try {
-  const bin = require('ffmpeg-static');
-  const ok = bin && require('node:fs').existsSync(bin);
-  if (ok) logger.info('[voice] ffmpeg ok');
-  else logger.error('[voice] NO FFMPEG binary -- no audio! npm rebuild ffmpeg-static');
-} catch {
-  logger.error('[voice] NO FFMPEG -- no audio! npm install ffmpeg-static');
-}
-
-logger.info('[music] engine bootstrap complete');
 
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) {
@@ -75,7 +44,6 @@ if (fs.existsSync(eventsPath)) {
   }
 }
 
-client.modules = {};
 process.on('unhandledRejection', (e) => logger.error('[unhandled]', e?.stack || e));
 process.on('uncaughtException', (e) => logger.error('[uncaught]', e?.stack || e));
 

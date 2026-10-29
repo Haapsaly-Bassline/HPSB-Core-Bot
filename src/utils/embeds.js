@@ -1,6 +1,7 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
+const { config } = require('../config');
 
-// HPSB design tokens: new embeds from here, old ones migrate gradually
+// Design tokens: shared by all music overlays.
 const COLORS = {
   primary: 0x7c3aed,
   info: 0x0ea5e9,
@@ -11,7 +12,7 @@ const COLORS = {
   accent: 0x5865f2, // blurple -- music "added / queue action" family
 };
 
-const MUSIC_FOOTER = 'Haapsaly Bassline • Music';
+const MUSIC_FOOTER = `${config.botName} • Music`;
 
 // Compact confirmation embed for control commands (skip/pause/stop/...).
 // Errors stay plain ephemeral text; successes share one look.
@@ -23,55 +24,6 @@ function ack(title, desc, { color = COLORS.accent, footer = MUSIC_FOOTER } = {})
   return e;
 }
 
-function baseEmbed({ title, description, url, image, color = 0x7c3aed, footer = 'Haapsaly Bassline' }) {
-  const e = new EmbedBuilder().setColor(color).setTimestamp();
-  if (title) e.setTitle(String(title).slice(0, 256));
-  if (description) e.setDescription(String(description).slice(0, 4000));
-  if (url && /^https?:\/\/\S+$/i.test(String(url))) e.setURL(String(url));
-  if (image && /^https?:\/\/\S+$/i.test(String(image))) e.setImage(String(image));
-  if (footer) e.setFooter({ text: footer });
-  return e;
-}
-
-function newsEmbed({ title, description, url, image, source = 'HPSB' }) {
-  return baseEmbed({ title: `📰 ${title}`, description, url, image, footer: `HPSB • ${source}` });
-}
-
-// --- RF-style: link button rows (up to 5 per row, rows in chunks) ---
-// links: [{ label, url, emoji }]. Invalid entries (no label/url, non-http URL)
-// are SKIPPED, never throw -- callers pass user/webhook-controlled data.
-function linkButtonRows(links = []) {
-  const rows = [];
-  const clean = (Array.isArray(links) ? links : []).filter((l) =>
-    l && typeof l.label === 'string' && l.label.trim() && /^https?:\/\/\S+$/i.test(String(l.url || '')));
-  for (let i = 0; i < clean.slice(0, 25).length; i += 5) {
-    const row = new ActionRowBuilder();
-    for (const l of clean.slice(i, i + 5)) {
-      const b = new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(l.label.slice(0, 80)).setURL(String(l.url));
-      if (l.emoji) b.setEmoji(l.emoji);
-      row.addComponents(b);
-    }
-    rows.push(row);
-  }
-  return rows;
-}
-
-// --- Honeypot warning RF-style: red banner + DO NOT POST ---
-function honeypotEmbed({ punishment = 'mute 12h', banner } = {}) {
-  const e = new EmbedBuilder()
-    .setColor(0xff2020)
-    .setTitle('⛔ DO NOT POST IN HERE')
-    .setDescription(
-      'This channel serves as a honeypot for compromised accounts. ' +
-      `A bot is monitoring any activity and will punish the user immediately (**${punishment}**). ` +
-      'We will not be looking at appeals for people who want to take risks, accidental or as a joke.'
-    )
-    .setFooter({ text: 'HPSB-HONEYPOT • Haapsaly Bassline' })
-    .setTimestamp();
-  if (banner) e.setImage(banner);
-  return e;
-}
-
 function trackLink(track) {
   const title = String(track.title || 'Unknown').slice(0, 300);
   return /^https?:\/\//i.test(track.url || '') ? `**[${title}](${track.url})**` : `**${title}**`;
@@ -79,7 +31,6 @@ function trackLink(track) {
 
 // --- Jockie-style: Added Track ---
 // track: { title, url, author, thumbnail, duration, source }
-// source: short source code (spotify/soundcloud/deezer/.../http) -- shown as badge.
 function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
   const { fmtMs } = require('./music');
   const badge = sourceBadge(source || track.source);
@@ -98,7 +49,7 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
     { name: 'Next', value: nextTitle ? String(nextTitle).slice(0, 200) : '-', inline: true },
   );
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -115,7 +66,7 @@ function playlistAddedEmbed({ title, count, first, source }, requester) {
     ).setTimestamp();
   if (first?.thumbnail) e.setThumbnail(first.thumbnail);
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -130,7 +81,7 @@ function liveAddedEmbed({ label, url, source }, requester) {
       (url ? `\n${url}` : '')
     ).setTimestamp();
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -150,7 +101,7 @@ function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, req
     ).setTimestamp();
   if (fanUrl) e.setURL(fanUrl);
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -166,67 +117,7 @@ function sourceBadge(source) {
   return SOURCE_BADGES[String(source || '').toLowerCase()] || '';
 }
 
-// Role ping for announcements (media + news). Empty = no ping.
-function announcePing() {
-  try {
-    const { config } = require('../config');
-    return config.announceRoleId ? `<@&${config.announceRoleId}>` : '';
-  } catch { return ''; }
-}
-
-// Role ping for MEDIA (YT/IG/TT). Empty = falls back to general announceRoleId.
-function mediaPing() {
-  try {
-    const { config } = require('../config');
-    const id = config.mediaRoleId || config.announceRoleId;
-    return id ? `<@&${id}>` : '';
-  } catch { return ''; }
-}
-
-// EN announcement templates: {role} {author} {user} {title} {link}
-// roleOverride: mediaPing() for media posts, else general announcePing().
-function renderTpl(tpl, vars = {}, roleOverride) {
-  const role = roleOverride !== undefined ? roleOverride : announcePing();
-  return String(tpl || '')
-    .split('{role}').join(role)
-    .replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''))
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-module.exports = { COLORS, MUSIC_FOOTER, ack, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
-
-// --- Mod action: unified pretty output (both in chat and log) ---
-// kind: warn/unwarn/mute/unmute/kick/ban/unban/purge
-const MOD_STYLE = {
-  warn:   { emoji: '⚠️', color: 0xf59e0b, title: 'Warning' },
-  unwarn: { emoji: '✅', color: 0x22c55e, title: 'Warning removed' },
-  mute:   { emoji: '🔇', color: 0xef4444, title: 'Mute' },
-  unmute: { emoji: '🔈', color: 0x22c55e, title: 'Mute removed' },
-  kick:   { emoji: '👢', color: 0xf97316, title: 'Kick' },
-  ban:    { emoji: '🔨', color: 0xdc2626, title: 'Ban' },
-  unban:  { emoji: '✅', color: 0x22c55e, title: 'Unban' },
-  purge:  { emoji: '🧹', color: 0x0ea5e9, title: 'Purge' },
+module.exports = {
+  COLORS, MUSIC_FOOTER, ack, trackLink,
+  addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge,
 };
-
-function modActionEmbed(kind, { target, mod, reason, extra } = {}) {
-  const st = MOD_STYLE[kind] || { emoji: '🛡', color: 0x7c3aed, title: kind };
-  const e = new EmbedBuilder().setColor(st.color).setTitle(`${st.emoji} ${st.title}`).setTimestamp();
-  const lines = [];
-  if (target) lines.push(`**Target:** ${target}`);
-  if (mod) lines.push(`**Moderator:** ${mod}`);
-  if (reason) lines.push(`**Reason:** ${String(reason).slice(0, 500)}`);
-  if (extra) lines.push(`**Details:** ${String(extra).slice(0, 500)}`);
-  e.setDescription(lines.join('\n').slice(0, 3500) || '_-_');
-  e.setFooter({ text: 'Haapsaly Bassline • Moderation' });
-  return e;
-}
-
-// --- Honeypot/automod punishment log ---
-function punishLogEmbed({ what, member, reason, excerpt }) {
-  const e = new EmbedBuilder().setColor(0xff2020).setTitle(`🍯 Honeypot • ${what}`).setTimestamp()
-    .setDescription(`**Who:** ${member}\n**Reason:** ${String(reason).slice(0, 500)}`.slice(0, 3500));
-  if (excerpt) e.addFields({ name: 'Message', value: String(excerpt).slice(0, 900) });
-  e.setFooter({ text: 'Haapsaly Bassline • Automod' });
-  return e;
-}

@@ -18,46 +18,6 @@ module.exports = {
         const handled = await np.handleButton(interaction, client);
         if (handled) return;
       }
-      // Partner post modal -> dedicated handler on the command module.
-      // handleModal returns true when fully handled (never false/undefined).
-      if (interaction.isModalSubmit() && interaction.customId === 'partner-post:modal') {
-        const cmd = client.commands.get('partner-post');
-        if (cmd?.handleModal) {
-          await cmd.handleModal(interaction, client);
-          return;
-        }
-      }
-      // Media 🔖 Save button (stateless: URL is read back out of the message)
-      if (interaction.isButton() && interaction.customId === 'pub:save') {
-        const { handleSaveButton } = require('../modules/publisher/save');
-        await handleSaveButton(interaction);
-        return;
-      }
-      // Roles audit fix buttons
-      if (interaction.isButton() && interaction.customId.startsWith('roles:fix:')) {
-        const cmd = client.commands.get('roles');
-        if (cmd?.handleButton) {
-          const handled = await cmd.handleButton(interaction, client);
-          if (handled) return;
-        }
-      }
-      // Private rooms: buttons/modals/selects
-      if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isUserSelectMenu())
-        && interaction.customId.startsWith('priv:')) {
-        const priv = require('../modules/private/rooms');
-        const handled = await priv.handleInteraction(interaction, client);
-        if (handled) return;
-      }
-      // Buttons / modals -> delegate to modcall module (it handles no string selects;
-      // passing those in would time them out silently, so gate them out here)
-      if (interaction.isButton() || interaction.isModalSubmit()) {
-        const modcall = require('../modules/modcall/handler');
-        const handled = await modcall.handleInteraction(interaction, client);
-        if (handled) return;
-      }
-      if (interaction.isStringSelectMenu() && interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: '❌ Unknown menu.', flags: MessageFlags.Ephemeral }).catch(() => {});
-      }
     } catch (e) {
       logger.error('[interaction]', e?.stack || e);
       if (!interaction.isRepliable()) return;

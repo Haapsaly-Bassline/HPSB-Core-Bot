@@ -38,16 +38,16 @@ module.exports = {
       if (v?.current) now = v.current.title;
     } catch {}
     const e = new EmbedBuilder()
-      .setColor(0x7c3aed).setTitle(`🤖 HPSB Core Bot v${pkg.version}`).setTimestamp()
+      .setColor(0x7c3aed).setTitle(`🤖 ${config.botName} v${pkg.version}`).setTimestamp()
       .addFields(
         { name: 'Build', value: `v${pkg.version}`, inline: true },
         { name: 'Code from', value: codeDate(), inline: true },
         { name: 'Node', value: process.version, inline: true },
         { name: 'Uptime', value: uptimeStr(process.uptime() * 1000), inline: true },
-        { name: 'Music engine', value: `lavalink${client.lavalink ? ' (connected)' : ' (flag on, node unavailable)'}`, inline: false },
+        { name: 'Music engine', value: `lavalink${client.music?.available?.() ? ' (connected)' : ' (node unavailable)'}`, inline: false },
         { name: 'Queue now', value: now, inline: false },
       )
-      .setFooter({ text: 'Haapsaly Bassline' });
+      .setFooter({ text: config.botName });
     await interaction.reply({ embeds: [e], flags: MessageFlags.Ephemeral });
   },
 };
