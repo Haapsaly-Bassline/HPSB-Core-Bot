@@ -44,6 +44,31 @@ all fetching/transcoding lives in the Java process, the bot only controls it.
 unlike Node, Java has no Happy Eyeballs — without the flag, occasional requests
 (e.g. to the Spotify API) die with `Read timed out`.
 
+## Plugins (`plugins/`, jars are gitignored)
+
+- `youtube-plugin-1.18.2.jar`, `lavasrc-plugin-4.8.3.jar` — pinned in
+  `application.yml` (`lavalink.plugins`); Lavalink re-downloads them if missing.
+- `soundy-plugin-1.1.0.jar` — **must be copied by hand** (not on a Maven repo).
+  SoundCloud removed progressive MP3/Opus transcodings on 2025-12-31 and only
+  serves AAC in fragmented-MP4 HLS, which upstream lavaplayer's SoundCloud
+  reader cannot parse: every search/link died with
+  `RuntimeException: Did not detect any supported formats`
+  (`DefaultSoundCloudFormatHandler.chooseBestFormat`). `soundy` (MIT) speaks
+  that format and keeps `scsearch:`, URLs, sets and metadata.
+
+  ```powershell
+  git clone https://github.com/lowkwrs/soundy
+  cd soundy
+  # needs a JDK 17 (Lavalink's JRE is not enough): Temurin 17 JDK
+  .\gradlew.bat :plugin:jar
+  Copy-Item plugin\build\libs\soundy-plugin-1.1.0.jar <...>\lavalink\plugins\
+  ```
+
+  In `application.yml` keep `sources.soundcloud: false` (otherwise the built-in
+  reader claims `scsearch:`/URLs first) and add `plugins.soundy.enabled: true`.
+  Verified 2026-11-01 on Lavalink 4.2.2 / lavaplayer 2.2.6: `scsearch:` and
+  `soundcloud.com` links resolve, AAC HLS decodes, seeks work.
+
 ## What you get
 - All providers from one place (YouTube/Spotify/Apple/Deezer/SoundCloud/Bandcamp/HTTP)
 - Spotify via ISRC — exact matches instead of lookalikes
@@ -56,7 +81,8 @@ The bot runs EXCLUSIVELY on Lavalink (legacy engine removed from code).
 
 | Source | Status | Needed |
 |---|---|---|
-| SoundCloud / Bandcamp / HTTP radio | ✅ work | nothing |
+| Bandcamp / HTTP radio | ✅ work | nothing |
+| SoundCloud | ✅ work (via `soundy` jar) | `plugins/soundy-plugin-1.1.0.jar` + `soundcloud: false` (see Plugins above) |
 | Vimeo | ❌ off | source is dead |
 | Spotify (links + `spsearch:`) | ❌ off | needs Premium on the Spotify app owner; keys stay in the block for later |
 | Deezer | ⏳ waits for tokens | `arl` (deezer.com cookie) + `masterDecryptionKey`; unlocks direct audio + Spotify mirror without YouTube |

@@ -16,6 +16,7 @@ Copy-Item ..\cookies.txt .\cookies.txt
 # plugin jars only (NOT the loose .class mess in plugins\):
 Copy-Item ..\plugins\youtube-plugin-1.18.2.jar .\plugins\
 Copy-Item ..\plugins\lavasrc-plugin-4.8.3.jar .\plugins\
+Copy-Item ..\plugins\soundy-plugin-1.1.0.jar .\plugins\   # SoundCloud AAC HLS (see below)
 ```
 
 Then edit the **copy** `lavalink/docker/application.yml` — 3 Windows paths
@@ -88,6 +89,12 @@ instead of cryptic errors.
 - **Plugins**: pinned in `application.yml` (`youtube-plugin:1.18.2`,
   `lavasrc:4.8.3`); bump versions there, `docker compose up -d` re-downloads
   (or drop new jars into `plugins/`).
+- **SoundCloud (`soundy`)**: unlike the pinned pair, `soundy-plugin-1.1.0.jar`
+  is not on a Maven repo — build it (JDK 17 + `gradlew :plugin:jar`, see
+  `../README.md`) and drop it into `plugins/`, then
+  `docker compose restart lavalink`. `application.yml` must keep
+  `sources.soundcloud: false` and `plugins.soundy.enabled: true`. Without the
+  jar, SoundCloud fails with `Did not detect any supported formats`.
 - **Firewall**: `:2333` has only the password for auth — bind/publish it to
   trusted nets only (see the commented examples in `docker-compose.yml`),
   ideally bot-IP-only.
