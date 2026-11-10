@@ -18,7 +18,7 @@ const SEARCH_PREFIX = {
 
 function detectEngine(value) {
   const v = String(value || '');
-  if (/soundcloud\.com|on\.soundcloud/i.test(v)) return 'soundcloud';
+  if (/m\.soundcloud\.com|soundcloud\.com|on\.soundcloud/i.test(v)) return 'soundcloud';
   if (/open\.spotify\.com|spotify\.com/i.test(v)) return 'spotify';
   if (/(^|\.)deezer\.com|deezer\.page\.link/i.test(v)) return 'deezer';
   if (/music\.apple\.com/i.test(v)) return 'applemusic';

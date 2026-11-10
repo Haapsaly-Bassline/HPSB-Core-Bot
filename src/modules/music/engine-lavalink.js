@@ -497,7 +497,7 @@ function searchParamSource(engine, q) {
 // Canonical Lavalink source names for URL (match node's sourceManagers).
 function urlSource(url) {
   const v = String(url || '').toLowerCase();
-  if (/soundcloud\.com|on\.soundcloud/.test(v)) return 'soundcloud';
+  if (/m\.soundcloud\.com|soundcloud\.com|on\.soundcloud/.test(v)) return 'soundcloud';
   if (/spotify\.com/.test(v)) return 'spotify';
   if (/deezer\.com|deezer\.page\.link/.test(v)) return 'deezer';
   if (/music\.apple\.com/.test(v)) return 'applemusic';

@@ -32,7 +32,7 @@ function parseProfileUrl(value) {
   let url;
   try { url = new URL(String(value || '').trim()); } catch { return null; }
   if (!['http:', 'https:'].includes(url.protocol)) return null;
-  if (!['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com'].includes(url.hostname.toLowerCase())) return null;
+  if (!['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com', 'on.soundcloud.com'].includes(url.hostname.toLowerCase())) return null;
 
   const parts = url.pathname.split('/').filter(Boolean).map((part) => {
     try { return decodeURIComponent(part); } catch { return part; }
@@ -225,7 +225,7 @@ function normalizeProfileEntry(entry, section = 'all') {
   try {
     const parsed = new URL(rawUrl);
     if (!['http:', 'https:'].includes(parsed.protocol) ||
-        !['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com',
+        !['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com', 'on.soundcloud.com',
           'api.soundcloud.com', 'api-v2.soundcloud.com'].includes(parsed.hostname.toLowerCase())) return null;
     url = parsed.href;
   } catch { return null; }
