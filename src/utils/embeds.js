@@ -154,6 +154,26 @@ function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, req
   return e;
 }
 
+// --- SoundCloud profile import: tracks / albums / likes / reposts / sets ---
+function soundCloudProfileEmbed({ profileName, profileUrl, sectionLabel, added, failed, totalTracks }, requester) {
+  const lines = added.slice(0, 10).map((a, i) =>
+    `\`${i + 1}.\` 🟠 **${String(a.title || a.url).slice(0, 150)}**${a.band ? ` - ${String(a.band).slice(0, 100)}` : ''} (${a.count} tracks)`
+  );
+  const more = added.length > 10 ? `\n…and ${added.length - 10} more` : '';
+  const e = new EmbedBuilder()
+    .setColor(COLORS.success)
+    .setTitle(`🟠 SoundCloud ${String(sectionLabel || 'Tracks')} • ${String(profileName || 'profile').slice(0, 200)}`)
+    .setDescription(
+      `Items added: **${added.length}**, tracks: **${totalTracks}**` +
+      (failed ? ` (failed: ${failed})` : '') +
+      `\n\n${lines.join('\n')}${more}`.slice(0, 3800)
+    ).setTimestamp();
+  if (profileUrl) e.setURL(profileUrl);
+  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
+  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  return e;
+}
+
 // Source badge for overlays. Empty = not shown.
 const SOURCE_BADGES = {
   spotify: '🟢 Spotify', soundcloud: '🟠 SoundCloud', deezer: '🟣 Deezer',
@@ -194,7 +214,7 @@ function renderTpl(tpl, vars = {}, roleOverride) {
     .trim();
 }
 
-module.exports = { COLORS, MUSIC_FOOTER, ack, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
+module.exports = { COLORS, MUSIC_FOOTER, ack, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, soundCloudProfileEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
 
 // --- Mod action: unified pretty output (both in chat and log) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge

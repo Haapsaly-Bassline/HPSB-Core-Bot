@@ -170,4 +170,4 @@ async function handleButton(interaction, client) {
   return true;
 }
 
-module.exports = { trackStart, render, finalize, handleButton, buildEmbed, buildRow };
+module.exports = { trackStart, render, finalize, handleButton, handleSeekModal, buildEmbed, buildRow, buildComponents };
