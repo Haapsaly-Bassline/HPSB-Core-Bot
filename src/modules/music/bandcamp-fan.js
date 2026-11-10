@@ -68,9 +68,10 @@ function canonicalItemUrl(item, kind) {
   const subdomain = String(hints.subdomain || '').trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
   const slug = String(hints.slug || '').trim().replace(/^\/+|\/+$/g, '');
   if (subdomain && slug) {
-    // Some payloads already provide "artist.bandcamp.com"; don't append the
-    // domain suffix twice. Fan collection playback requires /track/ or /album/.
-    const host = /\.bandcamp\.com$/i.test(subdomain) ? subdomain : `${subdomain}.bandcamp.com`;
+    // Some payloads already provide "artist.bandcamp.com" or a custom artist
+    // domain (e.g. music.monstercat.com); don't append ".bandcamp.com" twice.
+    // Fan collection playback requires /track/ or /album/.
+    const host = subdomain.includes('.') ? subdomain : `${subdomain}.bandcamp.com`;
     return `https://${host}/${kind}/${slug}`;
   }
   const rawUrl = String(item?.item_url || item?.url || '').trim();
@@ -116,7 +117,7 @@ async function fetchBatch(fanId, olderThanToken, count = 20) {
   });
   if (!r.ok) {
     const body = (await r.text().catch(() => '')).slice(0, 180);
-    throw new Error(`Bandcamp collection API: HTTP ${r.status}${body ? ` — ${body}` : ''}`);
+    throw new Error(`Bandcamp collection API: HTTP ${r.status}${body ? ` - ${body}` : ''}`);
   }
   const data = await r.json();
   if (data?.error) {

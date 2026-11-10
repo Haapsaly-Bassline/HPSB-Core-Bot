@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge } = require('../src/utils/embeds');
+const { addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, soundCloudProfileEmbed, sourceBadge } = require('../src/utils/embeds');
 const { buildEmbed } = require('../src/modules/music/np');
 
 const track = { title: 'T', url: 'https://x.test/t', author: 'A', thumbnail: '', durationMs: 200000, durationLabel: '3:20', requesterTag: 'u#1', isLive: false, source: 'soundcloud' };
@@ -31,6 +31,14 @@ describe('embeds', () => {
     const j = fanCollectionEmbed({ fanName: 'F (@f)', fanUrl: 'https://bandcamp.com/f', added: [{ title: 'A', band: 'B', count: 5 }], failed: 0, totalTracks: 5 }, 'u#1').toJSON();
     assert.ok(j.title.includes('Fan collection'));
     assert.equal(j.url, 'https://bandcamp.com/f');
+  });
+  it('soundcloud profile embed is valid', () => {
+    const j = soundCloudProfileEmbed({
+      profileName: 'P (@p)', profileUrl: 'https://soundcloud.com/p', sectionLabel: 'Likes',
+      added: [{ title: 'A', band: 'B', count: 1 }], failed: 0, totalTracks: 1,
+    }, 'u#1').toJSON();
+    assert.ok(j.title.includes('SoundCloud') && j.title.includes('Likes'));
+    assert.equal(j.url, 'https://soundcloud.com/p');
   });
   it('np embed handles track and radio snapshots', () => {
     const snap = { track, positionMs: 5000, durationMs: 200000, repeatMode: 0, paused: false, size: 3, radioLabel: null };

@@ -59,10 +59,12 @@ class LavalinkEngine {
       // "ManagerOption.nodes must be an Array..." in this case, so we validate ourselves with clear text.
       throw new Error('[lavalink] LAVALINK_PASSWORD empty -- set in .env the same password as in lavalink/application.yml -> lavalink.server.password');
     }
+    // ytdlp resolve of direct YT links takes ~13s (process spawn); the default
+    // timeout aborts such requests ("operation aborted due to timeout").
+    const nodeId = String(lav.nodeId || 'hpsb-main').trim() || 'hpsb-main';
+    const requestTimeoutMs = Number(lav.requestTimeoutMs) > 0 ? Math.trunc(Number(lav.requestTimeoutMs)) : 30000;
     this.manager = new LavalinkManager({
-      // requestTimeout 30s: ytdlp resolve of direct YT links takes ~13s (process spawn),
-      // default timeout aborted such requests "operation aborted due to timeout".
-      nodes: [{ host, port, authorization: password, secure, id: 'hpsb-main', requestTimeout: 30000, requestSignalTimeoutMS: 30000 }],
+      nodes: [{ host, port, authorization: password, secure, id: nodeId, requestTimeout: requestTimeoutMs, requestSignalTimeoutMS: requestTimeoutMs }],
       sendToShard: (guildId, payload) => {
         const guild = this.client.guilds.cache.get(guildId);
         if (guild?.shard) guild.shard.send(payload);
@@ -203,7 +205,9 @@ class LavalinkEngine {
     // defaultSearchPlatform='ytsearch', and with YouTube disabled ANY
     // link FAILS ("has not 'youtube' enabled"), even though node resolves it. Verified 2026-10-03.
     const src = searchParamSource(engine, q);
+    let searchError = null;
     const res = await player.search({ query: q, source: src }, requester).catch((e) => {
+      searchError = e;
       logger.warn('[lavalink] search failed', String(e?.message || e).slice(0, 160));
       return null;
     });
@@ -218,7 +222,10 @@ class LavalinkEngine {
           await player.destroy().catch(() => {});
         }
       } catch {}
-      throw new Error(`No results for "${String(query).slice(0, 120)}"`);
+      const detail = String(
+        searchError?.message || searchError || res?.exception?.message || res?.exception?.cause || '',
+      ).slice(0, 180);
+      throw new Error(`No results for "${String(query).slice(0, 120)}"${detail ? ': ' + detail : ''}`);
     }
     this.setPlayerMeta(player, { requester, radioLabel: metadata.radioLabel || null });
     // position in upcoming BEFORE addition (0 = playing now)
@@ -243,7 +250,9 @@ class LavalinkEngine {
     const prevVoice = this.getPlayer(voiceChannel.guild.id)?.voiceChannelId || null;
     const player = await this.ensurePlayer(voiceChannel, metadata.channel?.id);
     const src = urlSource(String(url));
+    let searchError = null;
     const res = await player.search({ query: String(url), source: src }, requester).catch((e) => {
+      searchError = e;
       logger.warn('[lavalink] search failed', String(e?.message || e).slice(0, 160));
       return null;
     });
@@ -255,7 +264,10 @@ class LavalinkEngine {
           await player.destroy().catch(() => {});
         }
       } catch {}
-      throw new Error(`No results for "${String(url).slice(0, 120)}"`);
+      const detail = String(
+        searchError?.message || searchError || res?.exception?.message || res?.exception?.cause || '',
+      ).slice(0, 180);
+      throw new Error(`No results for "${String(url).slice(0, 120)}"${detail ? ': ' + detail : ''}`);
     }
     // setData -- only key/value; fan tracks are NOT radio: clear any stale label.
     this.setPlayerMeta(player, { requester, radioLabel: null }, false);

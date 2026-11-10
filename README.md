@@ -1,4 +1,4 @@
-# HPSB Music Bot — music-only branch
+# HPSB Music Bot - music-only branch
 
 A stripped-down, music-only Discord bot. Everything unrelated to music
 (moderation, publisher/reposter, automod, honeypot, ModCall, stats, private
@@ -9,7 +9,7 @@ bot host only needs Node.js and network access to the node.
 
 | Command | What it does |
 | --- | --- |
-| `/play <query> [channel] [count]` | Search or play a URL: YouTube, SoundCloud, Bandcamp, Deezer, Apple Music, Tidal, Qobuz, Yandex, VK, direct mp3/stream, playlists. Bandcamp fan profiles queue purchases; SoundCloud profiles support tracks, albums, sets, likes and reposts (`count` = items, 1–25) |
+| `/play <query> [channel] [count]` | Search or play a URL: YouTube, SoundCloud, Bandcamp, Deezer, Apple Music, Tidal, Qobuz, Yandex, VK, direct mp3/stream, playlists. Bandcamp fan profiles queue purchases; SoundCloud profiles support tracks, albums, sets, likes and reposts (`count` = items, 1-25). SoundCloud playback/search requires the `soundy` plugin on the node |
 | `/join [channel]` | Move the bot to your voice channel / a specified one |
 | `/queue` | Current track + upcoming |
 | `/nowplaying` | Snapshot of the live Now Playing message |
@@ -47,8 +47,10 @@ bot unsuppress itself). Send Messages + Embed Links in the text channel.
    - `DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID`
    - `LAVALINK_HOST`, `LAVALINK_PORT`, `LAVALINK_PASSWORD`,
      `LAVALINK_SECURE` (set `true` for wss/https)
+   - optional: `BOT_NAME`, `MUSIC_DEFAULT_SEARCH_SOURCE`, `NP_UPDATE_SECS`,
+     `LAVALINK_NODE_ID`, `LAVALINK_REQUEST_TIMEOUT_MS`
 2. `npm install`
-3. `npm run register` — registers guild slash commands
+3. `npm run register` - registers guild slash commands
 4. `npm start`
 
 Logs go to the console and `data/bot.log`.
@@ -58,27 +60,33 @@ Logs go to the console and `data/bot.log`.
 - The bot connects to `LAVALINK_HOST:LAVALINK_PORT`; the node must be
   reachable from the bot host (open the port in the firewall/security group).
 - Use the **same** `LAVALINK_PASSWORD` in `.env` and in the node's
-  `application.yml` → `lavalink.server.password`.
+  `application.yml` -> `lavalink.server.password`.
 - Source plugins (YouTube plugin, LavaSrc for Spotify/Deezer/Apple/Tidal/Qobuz,
   etc.) are configured **on the Lavalink server**, not in this bot. If the node
   does not have a source enabled, `/play` for that source will fail.
+- **SoundCloud:** use the `soundy` plugin on the node and disable the built-in
+  Lavalink source (`soundcloud: false`, `soundcloudSearchEnabled: false`); the
+  built-in source is broken. Profile imports use SoundCloud's public web API and
+  do not need the plugin, but playback of the imported tracks does.
+- **YouTube:** use the bgutil POT sidecar (`pot` service) with no cookies.
 - The `lavalink/` folder in this repo is only a reference (config template,
   Docker files; the Jar is gitignored). The bot does not start or manage
   Lavalink itself.
-- Text queries use `DEFAULT_SEARCH_SOURCE` (default `youtube`). URLs are routed
-  by their domain.
+- Text queries use `MUSIC_DEFAULT_SEARCH_SOURCE` (fallback
+  `DEFAULT_SEARCH_SOURCE`, default `youtube`). URLs are routed by their domain.
 
 ## Project layout
 
-- `src/commands/` — slash commands (music + diagnostics)
-- `src/events/` — `ready` (Lavalink init + retry), `interactionCreate`
+- `src/commands/` - slash commands (music + diagnostics)
+- `src/events/` - `ready` (Lavalink init + retry), `interactionCreate`
   (commands + NP buttons), `voiceStateUpdate` (stage speaker re-request)
-- `src/modules/music/` — `engine-lavalink.js` (queue/voice), `service.js`
+- `src/modules/music/` - `engine-lavalink.js` (queue/voice), `service.js`
   (single entry point), `resolvers.js` (query routing), `np.js` (live Now
-  Playing), `stage.js` (stage speaker), `bandcamp-fan.js` (fan collections)
-- `src/utils/` — embeds (overlays), music formatting, logger, voice preflight
-- `src/config.js` — env parsing (Discord + Lavalink only)
-- `lavalink/` — optional Lavalink template / Docker setup
+  Playing + seek UI), `stage.js` (stage speaker), `bandcamp-fan.js` (fan
+  collections), `soundcloud-profile.js` (profile tabs)
+- `src/utils/` - embeds (overlays), music formatting, logger, voice preflight
+- `src/config.js` - env parsing (Discord + Lavalink only)
+- `lavalink/` - optional Lavalink template / Docker setup
 
 ## Tests
 
@@ -86,4 +94,6 @@ Logs go to the console and `data/bot.log`.
 npm test
 ```
 
-Covers embeds, music formatting, query resolvers and the engine-null guards.
+Covers embeds (including SoundCloud profile overlays), music formatting, query
+resolvers, the NP seek UI, Bandcamp fan parsing, SoundCloud profile parsing and
+the engine-null guards.

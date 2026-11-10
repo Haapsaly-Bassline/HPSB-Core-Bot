@@ -17,6 +17,6 @@ module.exports = {
       await interaction.reply({ content: "❌ Couldn't move the track.", flags: MessageFlags.Ephemeral }); return;
     }
     const { ack } = require('../utils/embeds');
-    await interaction.reply({ embeds: [ack('↕️ Moved', `**${String(title).slice(0, 200)}**: ${from} → ${to}.`)] });
+    await interaction.reply({ embeds: [ack('↕️ Moved', `**${String(title).slice(0, 200)}**: ${from} -> ${to}.`)] });
   },
 };

@@ -18,6 +18,12 @@ module.exports = {
         const handled = await np.handleButton(interaction, client);
         if (handled) return;
       }
+      // Live Now Playing seek modal submit
+      if (interaction.isModalSubmit() && interaction.customId === 'np:seekmodal') {
+        const np = require('../modules/music/np');
+        const handled = await np.handleSeekModal(interaction, client);
+        if (handled) return;
+      }
       // Partner post modal -> dedicated handler on the command module.
       // handleModal returns true when fully handled (never false/undefined).
       if (interaction.isModalSubmit() && interaction.customId === 'partner-post:modal') {

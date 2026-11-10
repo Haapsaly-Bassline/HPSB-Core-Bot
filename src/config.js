@@ -28,7 +28,7 @@ const config = {
     },
     // Text search source when the query is not a URL:
     // youtube | soundcloud | spotify | deezer | applemusic | tidal | qobuz | yandex | vk
-    defaultSearchSource: (process.env.MUSIC_DEFAULT_SEARCH_SOURCE || 'youtube').toLowerCase(),
+    defaultSearchSource: (process.env.MUSIC_DEFAULT_SEARCH_SOURCE || process.env.DEFAULT_SEARCH_SOURCE || 'youtube').toLowerCase(),
   },
 };
 

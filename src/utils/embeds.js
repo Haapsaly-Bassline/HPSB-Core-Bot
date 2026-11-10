@@ -1,4 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { config } = require('../config');
 
 // HPSB design tokens: new embeds from here, old ones migrate gradually
 const COLORS = {
@@ -11,7 +12,9 @@ const COLORS = {
   accent: 0x5865f2, // blurple -- music "added / queue action" family
 };
 
-const MUSIC_FOOTER = 'Haapsaly Bassline • Music';
+const BOT_NAME = config.botName || 'HPSB Music';
+// Avoid "HPSB Music • Music" when the bot name already ends with "Music".
+const MUSIC_FOOTER = /(^|\s)music$/i.test(BOT_NAME) ? BOT_NAME : `${BOT_NAME} • Music`;
 
 // Compact confirmation embed for control commands (skip/pause/stop/...).
 // Errors stay plain ephemeral text; successes share one look.
@@ -98,7 +101,7 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
     { name: 'Next', value: nextTitle ? String(nextTitle).slice(0, 200) : '-', inline: true },
   );
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -115,7 +118,7 @@ function playlistAddedEmbed({ title, count, first, source }, requester) {
     ).setTimestamp();
   if (first?.thumbnail) e.setThumbnail(first.thumbnail);
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -130,7 +133,7 @@ function liveAddedEmbed({ label, url, source }, requester) {
       (url ? `\n${url}` : '')
     ).setTimestamp();
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -150,7 +153,27 @@ function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, req
     ).setTimestamp();
   if (fanUrl) e.setURL(fanUrl);
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
+  return e;
+}
+
+// --- SoundCloud profile import: tracks / albums / likes / reposts / sets ---
+function soundCloudProfileEmbed({ profileName, profileUrl, sectionLabel, added, failed, totalTracks }, requester) {
+  const lines = added.slice(0, 10).map((a, i) =>
+    `\`${i + 1}.\` 🟠 **${String(a.title || a.url).slice(0, 150)}**${a.band ? ` - ${String(a.band).slice(0, 100)}` : ''} (${a.count} tracks)`
+  );
+  const more = added.length > 10 ? `\n…and ${added.length - 10} more` : '';
+  const e = new EmbedBuilder()
+    .setColor(COLORS.success)
+    .setTitle(`🟠 SoundCloud ${String(sectionLabel || 'Tracks')} • ${String(profileName || 'profile').slice(0, 200)}`)
+    .setDescription(
+      `Items added: **${added.length}**, tracks: **${totalTracks}**` +
+      (failed ? ` (failed: ${failed})` : '') +
+      `\n\n${lines.join('\n')}${more}`.slice(0, 3800)
+    ).setTimestamp();
+  if (profileUrl) e.setURL(profileUrl);
+  if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -194,7 +217,7 @@ function renderTpl(tpl, vars = {}, roleOverride) {
     .trim();
 }
 
-module.exports = { COLORS, MUSIC_FOOTER, ack, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
+module.exports = { COLORS, MUSIC_FOOTER, ack, baseEmbed, newsEmbed, linkButtonRows, honeypotEmbed, addedTrackEmbed, playlistAddedEmbed, liveAddedEmbed, fanCollectionEmbed, soundCloudProfileEmbed, sourceBadge, modActionEmbed, punishLogEmbed, announcePing, mediaPing, renderTpl };
 
 // --- Mod action: unified pretty output (both in chat and log) ---
 // kind: warn/unwarn/mute/unmute/kick/ban/unban/purge

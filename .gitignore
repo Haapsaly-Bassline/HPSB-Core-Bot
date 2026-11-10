@@ -26,5 +26,7 @@ test_*.js
 *_test.js
 dbg-*.js
 *.log
+*.err
+bot-restart.err
 .DS_Store
 Thumbs.db
