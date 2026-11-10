@@ -19,10 +19,9 @@ lavalink:
       youtube: false                # MUST be false: built-in source is deprecated and intercepts
                                     # ytsearch: from plugin (400 from YouTube). Plugin is below, separate.
       bandcamp: true
-      soundcloud: false             # OFF 2026-11-01: built-in reader can't parse AAC/fMP4 HLS
-                                    # ("Did not detect any supported formats" -- SoundCloud dropped
-                                    # MP3/Opus on 2025-12-31). soundy plugin (below) serves BOTH
-                                    # scsearch: text and soundcloud.com URLs.
+      soundcloud: true             # ON 2026-11-10: retrying built-in SoundCloud source
+                                   # (was OFF 2026-11-01: "Did not detect any supported formats").
+                                   # If it breaks again, flip back to false.
       twitch: false
       vimeo: false                      # OFF 2026-10-04: not working (source dead)
       nico: false
@@ -38,7 +37,7 @@ lavalink:
     youtubePlaylistLoadLimit: 6
     playerUpdateInterval: 5
     youtubeSearchEnabled: true               # TEST 2026-10-04: trying to restore YouTube
-    soundcloudSearchEnabled: false           # built-in SC source is off; soundy handles scsearch:
+    soundcloudSearchEnabled: true           # retrying built-in SoundCloud search
     httpSearchEnabled: false
     localSearchEnabled: false
   plugins:
