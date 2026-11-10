@@ -17,7 +17,7 @@ function _useFile(p) {
   else process.env.HPSB_STORE_FILE = p;
 }
 
-const DEFAULTS = { youtube: {}, tiktok: {}, instagram: {}, site: { lastIds: [] }, releases: { ids: [] }, events: { ids: [] }, posts: { ids: [] }, modcall: {}, warns: {}, statsChannels: {}, statsTemplates: {}, statsDisabled: [], modules: {} };
+const DEFAULTS = { youtube: {}, tiktok: {}, instagram: {}, site: { lastIds: [] }, releases: { ids: [] }, events: { ids: [] }, posts: { ids: [] }, modcall: {}, warns: {}, statsChannels: {}, statsTemplates: {}, statsDisabled: [], modules: {}, musicVolumes: {} };
 // warns: { userId: [{ id, mod, reason, at }] }
 
 function ensure() {

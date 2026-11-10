@@ -3,6 +3,28 @@
 
 const { LavalinkManager } = require('lavalink-client');
 const { logger } = require('../../utils/logger');
+const store = require('../../utils/store');
+
+function clampVolume(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(200, Math.round(n))) : 100;
+}
+
+function getSavedVolume(guildId) {
+  try {
+    const d = store.load();
+    return clampVolume(d.musicVolumes?.[guildId] ?? 100);
+  } catch { return 100; }
+}
+
+function saveVolume(guildId, vol) {
+  try {
+    const d = store.load();
+    d.musicVolumes = d.musicVolumes || {};
+    d.musicVolumes[guildId] = clampVolume(vol);
+    store.save(d);
+  } catch {}
+}
 
 const LOOP_MAP = { 0: 'off', 1: 'track', 2: 'queue' };
 const LOOP_BACK = { off: 0, track: 1, queue: 2 };
@@ -143,7 +165,7 @@ class LavalinkEngine {
         guildId: voiceChannel.guild.id,
         voiceChannelId: voiceChannel.id,
         textChannelId,
-        volume: 100,
+        volume: getSavedVolume(voiceChannel.guild.id),
         selfDeaf: true,
         selfMute: false,
       });
@@ -328,8 +350,11 @@ class LavalinkEngine {
   async volume(guildId, vol) {
     const p = this.getPlayer(guildId);
     if (!p) return false;
-    try { await p.setVolume(vol); return true; }
-    catch { return false; }
+    try {
+      await p.setVolume(vol);
+      saveVolume(guildId, vol);
+      return true;
+    } catch { return false; }
   }
   async loop(guildId, modeNum) {
     const p = this.getPlayer(guildId);
