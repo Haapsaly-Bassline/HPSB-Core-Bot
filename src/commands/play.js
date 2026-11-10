@@ -30,6 +30,39 @@ module.exports = {
       }
     } catch {}
 
+    // SoundCloud profile tab (tracks / albums / likes / reposts / sets), not a single track or playlist.
+    try {
+      const { parseProfileUrl } = require('../modules/music/soundcloud-profile');
+      const profile = parseProfileUrl(query.trim());
+      if (profile) {
+        const { soundCloudProfileEmbed } = require('../utils/embeds');
+        const limit = interaction.options.getInteger('count') || 10;
+        await interaction.editReply('⏳ Reading SoundCloud ' + profile.sectionLabel.toLowerCase() + '…');
+        const result = await music.playSoundCloudProfile(client, voiceChannel, query.trim(), {
+          requester: interaction.user,
+          textChannel: interaction.channel,
+          limit,
+        });
+        const { stageWarning } = require('../modules/music/stage');
+        const stageWarn = voiceChannel.type === 13 ? stageWarning(client, interaction.guildId) : '';
+        await interaction.editReply({
+          embeds: [soundCloudProfileEmbed({
+            profileName: result.user.name + ' (@' + result.user.username + ')',
+            profileUrl: result.profile.pageUrl,
+            sectionLabel: result.sectionLabel,
+            added: result.added,
+            failed: result.failed,
+            totalTracks: result.totalTracks,
+          }, interaction.user)],
+          content: [stageWarn, result.warning].filter(Boolean).join('\n') || undefined,
+        });
+        return;
+      }
+    } catch (error) {
+      await interaction.editReply('❌ Could not load SoundCloud profile: ' + String(error?.message || error).slice(0, 300));
+      return;
+    }
+
     // Bandcamp fan profile -- this is a collection, not a track (fan import lives here, no separate command)
     try {
       const { FAN_RE } = require('../modules/music/bandcamp-fan');
