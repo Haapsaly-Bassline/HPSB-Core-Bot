@@ -27,50 +27,6 @@ function searchSource(engine, query) {
   }
 }
 
-
-function compactError(error) {
-  if (error == null) return '';
-  if (typeof error === 'string') return error.trim();
-  if (typeof error.message === 'string' && error.message.trim()) return error.message.trim();
-  if (typeof error.cause === 'string' && error.cause.trim()) return error.cause.trim();
-  try { return JSON.stringify(error); } catch { return String(error); }
-}
-
-function resolveFailure(query, source, result, thrown) {
-  const loadType = String(result?.loadType || 'no-response');
-  const detailObject = result?.exception || result?.data?.exception || result?.data || null;
-  // The source error message is often generic. Prefer cause and its stack trace.
-  const cause = compactError(detailObject?.cause);
-  const stack = compactError(detailObject?.causeStackTrace || detailObject?.stackTrace || detailObject?.trace);
-  const message = compactError(detailObject?.message || result?.message);
-  const thrownMessage = compactError(thrown);
-  const reason = (thrownMessage || cause || message || compactError(detailObject) ||
-    (loadType === 'empty' ? 'source returned no tracks' : `Lavalink returned loadType="${loadType}"`)).slice(0, 360);
-  logger.warn('[lavalink] resolve failed', JSON.stringify({
-    source,
-    loadType,
-    query: String(query || '').slice(0, 180),
-    message: message.slice(0, 240) || undefined,
-    cause: cause.slice(0, 500) || undefined,
-    causeStackTrace: stack.split(/\r?\n/).slice(0, 8).join('\n').slice(0, 1200) || undefined,
-    reason,
-  }));
-  return new Error(`No results for "${String(query || '').slice(0, 100)}" (${reason})`);
-}
-
-async function startPlayback(player, query) {
-  try {
-    await player.play();
-  } catch (error) {
-    const detail = compactError(error) || 'unknown Lavalink playback error';
-    logger.error('[lavalink] playback start failed', JSON.stringify({
-      query: String(query || '').slice(0, 180),
-      error: detail.slice(0, 240),
-    }));
-    throw new Error(`The track was queued, but playback failed to start: ${detail.slice(0, 180)}`);
-  }
-}
-
 class LavalinkEngine {
   constructor(client, musicCfg) {
     this.client = client;
@@ -93,25 +49,20 @@ class LavalinkEngine {
     const password = String(lav.password ?? '');
     const secure = !!lav.secure;
     if (!host) {
-      throw new Error('[lavalink] LAVALINK_HOST empty -- set the address of your Lavalink server in .env');
+      throw new Error('[lavalink] LAVALINK_HOST empty -- set in .env (usually 127.0.0.1)');
     }
     if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-      throw new Error(`[lavalink] LAVALINK_PORT invalid (${lav.port}) -- set the port of your Lavalink server in .env`);
+      throw new Error(`[lavalink] LAVALINK_PORT invalid (${lav.port}) -- set in .env (usually 2333)`);
     }
     if (!password.length) {
       // lavalink-client throws cryptic
       // "ManagerOption.nodes must be an Array..." in this case, so we validate ourselves with clear text.
-      throw new Error('[lavalink] LAVALINK_PASSWORD empty -- set the same password as on your Lavalink server (lavalink.server.password in application.yml)');
+      throw new Error('[lavalink] LAVALINK_PASSWORD empty -- set in .env the same password as in lavalink/application.yml -> lavalink.server.password');
     }
-    const timeout = Number(lav.requestTimeoutMs) > 0 ? Number(lav.requestTimeoutMs) : 30000;
     this.manager = new LavalinkManager({
-      // Longer timeout: yt-dlp resolve of direct YT links can take ~13s on the node.
-      nodes: [{
-        host, port, authorization: password, secure,
-        id: lav.nodeId || 'main',
-        requestTimeout: timeout,
-        requestSignalTimeoutMS: timeout,
-      }],
+      // requestTimeout 30s: ytdlp resolve of direct YT links takes ~13s (process spawn),
+      // default timeout aborted such requests "operation aborted due to timeout".
+      nodes: [{ host, port, authorization: password, secure, id: 'hpsb-main', requestTimeout: 30000, requestSignalTimeoutMS: 30000 }],
       sendToShard: (guildId, payload) => {
         const guild = this.client.guilds.cache.get(guildId);
         if (guild?.shard) guild.shard.send(payload);
@@ -184,54 +135,39 @@ class LavalinkEngine {
 
   async ensurePlayer(voiceChannel, textChannelId) {
     let player = this.getPlayer(voiceChannel.guild.id);
-    const isNew = !player;
-    const moving = !!player && player.voiceChannelId !== voiceChannel.id;
-
+    let isNew = false;
     if (!player) {
       player = this.manager.createPlayer({
         guildId: voiceChannel.guild.id,
         voiceChannelId: voiceChannel.id,
-        textChannelId: textChannelId || null,
+        textChannelId,
         volume: 100,
         selfDeaf: true,
         selfMute: false,
       });
-    }
-
-    try {
-      if (moving) {
-        // changeVoiceState is required to move an existing player; connect()
-        // without changing voiceChannelId may reconnect it to the old channel.
+      isNew = true;
+      await player.connect().catch(() => {});
+    } else if (player.voiceChannelId !== voiceChannel.id) {
+      // Bot invited to different voice -- MOVE (connect() without id change stays in old!)
+      try {
         await player.changeVoiceState({ voiceChannelId: voiceChannel.id });
-      } else {
-        await player.connect();
+      } catch {
+        await player.connect().catch(() => {});
       }
-    } catch (error) {
-      const detail = compactError(error) || 'unknown voice connection error';
-      logger.warn('[lavalink] voice connection failed', JSON.stringify({
-        guildId: voiceChannel.guild.id,
-        channelId: voiceChannel.id,
-        moving,
-        error: detail.slice(0, 240),
-      }));
-      if (isNew) await player.destroy().catch(() => {});
-      throw new Error(`Couldn't connect to ${voiceChannel.name || 'that voice channel'}: ${detail.slice(0, 180)}`);
+      isNew = true; // new channel -- request speaker again
+    } else {
+      await player.connect().catch(() => {});
     }
-
-    // Update the output channel for existing players too, so Now Playing
-    // follows the command that most recently selected the player.
-    if (textChannelId) player.textChannelId = textChannelId;
-
-    // Stage: request speaker immediately, otherwise bot is a muted listener.
+    // Stage: request speaker immediately, otherwise bot is muted listener (suppress)
     if (voiceChannel?.type === 13) {
       try {
         const { becomeSpeaker } = require('./stage');
-        if (isNew || moving) await new Promise((r) => setTimeout(r, 1500));
-        const res = await becomeSpeaker(this.client, voiceChannel.guild.id, voiceChannel.id, { force: isNew || moving });
+        // Discord applies voice state not instantly -- on fresh join give it time to settle
+        if (isNew) await new Promise((r) => setTimeout(r, 1500));
+        const res = await becomeSpeaker(this.client, voiceChannel.guild.id, voiceChannel.id, { force: isNew });
         this.speakerStatus.set(voiceChannel.guild.id, { ...res, at: Date.now() });
-      } catch (error) {
-        this.speakerStatus.set(voiceChannel.guild.id, { ok: false, reason: 'error', message: error?.message });
-        logger.warn('[lavalink] stage speaker request failed', error?.message || error);
+      } catch (e) {
+        this.speakerStatus.set(voiceChannel.guild.id, { ok: false, reason: 'error', message: e?.message });
       }
     }
     return player;
@@ -267,9 +203,8 @@ class LavalinkEngine {
     // defaultSearchPlatform='ytsearch', and with YouTube disabled ANY
     // link FAILS ("has not 'youtube' enabled"), even though node resolves it. Verified 2026-10-03.
     const src = searchParamSource(engine, q);
-    let searchError = null;
-    const res = await player.search({ query: q, source: src }, requester).catch((error) => {
-      searchError = error;
+    const res = await player.search({ query: q, source: src }, requester).catch((e) => {
+      logger.warn('[lavalink] search failed', String(e?.message || e).slice(0, 160));
       return null;
     });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
@@ -283,7 +218,7 @@ class LavalinkEngine {
           await player.destroy().catch(() => {});
         }
       } catch {}
-      throw resolveFailure(query, src, res, searchError);
+      throw new Error(`No results for "${String(query).slice(0, 120)}"`);
     }
     this.setPlayerMeta(player, { requester, radioLabel: metadata.radioLabel || null });
     // position in upcoming BEFORE addition (0 = playing now)
@@ -293,12 +228,12 @@ class LavalinkEngine {
 
     if (res.loadType === 'playlist') {
       await player.queue.add(res.tracks);
-      if (wasIdle) await startPlayback(player, query);
+      if (wasIdle) await player.play().catch(() => {});
       return { track: viewOf(res.tracks[0], requester), queue: player.queue, playlist: { title: res.playlist?.name || res.playlist?.title, count: res.tracks.length }, position };
     }
     const track = res.tracks[0];
     await player.queue.add(track);
-    if (wasIdle) await startPlayback(player, query);
+    if (wasIdle) await player.play().catch(() => {});
     return { track: viewOf(track, requester), queue: player.queue, playlist: null, position };
   }
 
@@ -308,9 +243,8 @@ class LavalinkEngine {
     const prevVoice = this.getPlayer(voiceChannel.guild.id)?.voiceChannelId || null;
     const player = await this.ensurePlayer(voiceChannel, metadata.channel?.id);
     const src = urlSource(String(url));
-    let searchError = null;
-    const res = await player.search({ query: String(url), source: src }, requester).catch((error) => {
-      searchError = error;
+    const res = await player.search({ query: String(url), source: src }, requester).catch((e) => {
+      logger.warn('[lavalink] search failed', String(e?.message || e).slice(0, 160));
       return null;
     });
     if (!res || res.loadType === 'empty' || res.loadType === 'error' || !res.tracks?.length) {
@@ -321,7 +255,7 @@ class LavalinkEngine {
           await player.destroy().catch(() => {});
         }
       } catch {}
-      throw resolveFailure(url, src, res, searchError);
+      throw new Error(`No results for "${String(url).slice(0, 120)}"`);
     }
     // setData -- only key/value; fan tracks are NOT radio: clear any stale label.
     this.setPlayerMeta(player, { requester, radioLabel: null }, false);

@@ -1,14 +1,12 @@
 // Live Now Playing (like Notes): one message per guild, ticking
 // progress bar and buttons. Engine doesn't matter -- all via MusicService.
 // Updates every NP_UPDATE_SECS (min 5).
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const { fmtMs, progressBar, parseSeekInput } = require('../../utils/music');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
+const { fmtMs, progressBar } = require('../../utils/music');
 const { logger } = require('../../utils/logger');
-const { config } = require('../../config');
 const music = require('./service');
 
-const parsedUpdateSecs = Number(process.env.NP_UPDATE_SECS || 10);
-const UPDATE_SECS = Number.isFinite(parsedUpdateSecs) ? Math.max(5, parsedUpdateSecs) : 10;
+const UPDATE_SECS = Math.max(5, Number(process.env.NP_UPDATE_SECS || 10));
 const sessions = new Map(); // guildId -> { channelId, messageId, timer }
 const trackGen = new Map(); // guildId -> generation counter (trackStart race guard)
 
@@ -30,7 +28,7 @@ function buildEmbed(snap) {
   e.addFields({ name: '​', value: `\`${left}\` ${progressBar(snap.positionMs, snap.durationMs, 18)} \`${right}\`` });
   if ((snap.size ?? 0) > 0) e.addFields({ name: '📋 In queue', value: String(snap.size), inline: true });
   if (badge && snap.radioLabel) e.addFields({ name: 'Source', value: badge, inline: true });
-  e.setFooter({ text: t.requesterTag ? `Requested by ${t.requesterTag}` : `${config.botName} • Music` });
+  e.setFooter({ text: t.requesterTag ? `Requested by ${t.requesterTag}` : 'Haapsaly Bassline • Music' });
   return e;
 }
 
@@ -52,45 +50,6 @@ function buildRow(snap) {
   );
 }
 
-function isLive(snap) {
-  return !!snap?.track?.isLive || !(snap?.durationMs > 0);
-}
-
-// Second row: quick seek offsets + modal for an exact position.
-// Hidden for live streams -- Lavalink cannot seek them.
-function buildSeekRow() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('np:seek:-30').setLabel('-30s').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('np:seek:-10').setLabel('-10s').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('np:seek:+10').setLabel('+10s').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('np:seek:+30').setLabel('+30s').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('np:seekmodal').setLabel('⏱').setStyle(ButtonStyle.Secondary),
-  );
-}
-
-function buildComponents(snap) {
-  const rows = [buildRow(snap)];
-  if (!isLive(snap)) rows.push(buildSeekRow());
-  return rows;
-}
-
-function seekModal() {
-  return new ModalBuilder()
-    .setCustomId('np:seekmodal')
-    .setTitle('Seek to a position')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('time')
-          .setLabel('Time (1:30) or offset (+30 / -15)')
-          .setPlaceholder('1:30')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(16),
-      ),
-    );
-}
-
 function stopTimer(guildId) {
   const s = sessions.get(guildId);
   if (s?.timer) clearInterval(s.timer);
@@ -110,7 +69,7 @@ async function render(client, guildId) {
     if (!ch?.isTextBased()) { stopTimer(guildId); sessions.delete(guildId); return false; }
     const msg = await ch.messages.fetch(s.messageId).catch(() => null);
     if (!msg) { stopTimer(guildId); sessions.delete(guildId); return false; }
-    await msg.edit({ embeds: [buildEmbed(snap)], components: buildComponents(snap) });
+    await msg.edit({ embeds: [buildEmbed(snap)], components: [buildRow(snap)] });
     return true;
   } catch {
     stopTimer(guildId);
@@ -136,7 +95,7 @@ async function trackStart(client, guildId, channel) {
       const msg = ch?.isTextBased?.() ? await ch.messages.fetch(prev.messageId).catch(() => null) : null;
       if (msg && trackGen.get(guildId) === gen) {
         const e = EmbedBuilder.from(msg.embeds[0] || new EmbedBuilder().setTitle('Now Playing'));
-        e.setFooter({ text: `Played • ${config.botName}` });
+        e.setFooter({ text: 'Played • Haapsaly Bassline' });
         await msg.edit({ embeds: [e], components: [] }).catch(() => {});
       }
     } catch {}
@@ -147,7 +106,7 @@ async function trackStart(client, guildId, channel) {
   try { snap = music.npSnapshot(client, guildId); } catch { snap = null; }
   if (!snap) return;
   try {
-    const msg = await channel.send({ embeds: [buildEmbed(snap)], components: buildComponents(snap) });
+    const msg = await channel.send({ embeds: [buildEmbed(snap)], components: [buildRow(snap)] });
     if (trackGen.get(guildId) !== gen) {
       // Superseded while sending -- remove our orphan, keep the winner's session.
       await msg.delete().catch(() => {});
@@ -172,21 +131,10 @@ async function finalize(client, guildId, note) {
     sessions.delete(guildId);
     if (msg) {
       const e = EmbedBuilder.from(msg.embeds[0] || new EmbedBuilder().setTitle('Now Playing'));
-      e.setFooter({ text: `${note || 'Stopped'} • ${config.botName}` });
+      e.setFooter({ text: `${note || 'Stopped'} • Haapsaly Bassline` });
       await msg.edit({ embeds: [e], components: [] }).catch(() => {});
     }
   } catch {}
-}
-
-function sameVoice(interaction, client) {
-  let botVoice = null;
-  try { botVoice = music.voiceChannelId(client, interaction.guildId); } catch { botVoice = null; }
-  const myChannel = interaction.member?.voice?.channelId;
-  return !!myChannel && (!botVoice || myChannel === botVoice);
-}
-
-async function voiceError(interaction) {
-  await interaction.reply({ content: '❌ Join the same voice channel the bot is playing in.', flags: MessageFlags.Ephemeral }).catch(() => {});
 }
 
 // Buttons. Only for those in the same voice channel as the bot.
@@ -198,29 +146,19 @@ async function handleButton(interaction, client) {
     await interaction.reply({ content: '❌ Nothing is playing.', flags: MessageFlags.Ephemeral }).catch(() => {});
     return true;
   }
-  if (!sameVoice(interaction, client)) { await voiceError(interaction); return true; }
-  const id = interaction.customId;
-  if (id === 'np:seekmodal') {
-    if (isLive(snap)) {
-      await interaction.reply({ content: '❌ Live streams cannot be seeked.', flags: MessageFlags.Ephemeral }).catch(() => {});
-      return true;
-    }
-    await interaction.showModal(seekModal()).catch(() => {});
+  let botVoice = null;
+  try { botVoice = music.voiceChannelId(client, guildId); } catch { botVoice = null; }
+  const myChannel = interaction.member?.voice?.channelId;
+  if (!myChannel || (botVoice && myChannel !== botVoice)) {
+    await interaction.reply({ content: '❌ Join the same voice channel the bot is playing in.', flags: MessageFlags.Ephemeral }).catch(() => {});
     return true;
   }
   try {
     // Acknowledge FIRST (3s interaction budget), then do the work.
     // A late deferUpdate throws away the token even when the action succeeded.
     await interaction.deferUpdate().catch(() => {});
-    if (id.startsWith('np:seek:')) {
-      if (!isLive(snap)) {
-        const delta = Number(id.slice('np:seek:'.length));
-        if (Number.isFinite(delta)) {
-          const target = Math.max(0, Math.min(snap.positionMs + delta * 1000, snap.durationMs));
-          await music.seek(client, guildId, target);
-        }
-      }
-    } else if (id === 'np:shuffle') await music.shuffle(client, guildId);
+    const id = interaction.customId;
+    if (id === 'np:shuffle') await music.shuffle(client, guildId);
     else if (id === 'np:prev') await music.prev(client, guildId);
     else if (id === 'np:pause') await music.pause(client, guildId, !snap.paused);
     else if (id === 'np:next') await music.skip(client, guildId);
@@ -232,35 +170,4 @@ async function handleButton(interaction, client) {
   return true;
 }
 
-// Exact-position modal submitted from the NP ⏱ button.
-async function handleSeekModal(interaction, client) {
-  const guildId = interaction.guildId;
-  let snap = null;
-  try { snap = music.npSnapshot(client, guildId); } catch { snap = null; }
-  if (!snap) {
-    await interaction.reply({ content: '❌ Nothing is playing.', flags: MessageFlags.Ephemeral }).catch(() => {});
-    return true;
-  }
-  if (!sameVoice(interaction, client)) { await voiceError(interaction); return true; }
-  if (isLive(snap)) {
-    await interaction.reply({ content: '❌ Live streams cannot be seeked.', flags: MessageFlags.Ephemeral }).catch(() => {});
-    return true;
-  }
-  const parsed = parseSeekInput(interaction.fields.getTextInputValue('time'), {
-    currentMs: snap.positionMs,
-    durationMs: snap.durationMs,
-  });
-  if (!parsed) {
-    await interaction.reply({ content: '❌ Format: `1:30`, `90`, or an offset like `+30` / `-15`.', flags: MessageFlags.Ephemeral }).catch(() => {});
-    return true;
-  }
-  if (!(await music.seek(client, guildId, parsed.ms))) {
-    await interaction.reply({ content: '❌ Seeking is not supported for this source.', flags: MessageFlags.Ephemeral }).catch(() => {});
-    return true;
-  }
-  await interaction.reply({ content: `⏩ Seeked to \`${fmtMs(parsed.ms)}\`.`, flags: MessageFlags.Ephemeral }).catch(() => {});
-  await render(client, guildId);
-  return true;
-}
-
-module.exports = { trackStart, render, finalize, handleButton, handleSeekModal, buildEmbed, buildRow, buildComponents };
+module.exports = { trackStart, render, finalize, handleButton, buildEmbed, buildRow };
