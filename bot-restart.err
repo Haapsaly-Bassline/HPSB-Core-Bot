@@ -1,4 +1,0 @@
-[2026-11-10T19:50:17.450Z] [ERROR] [lavalink] NO CONNECTED NODES: start Lavalink and wait for "ready to accept connections". Retrying every 30s.
-[2026-11-10T19:50:18.318Z] [WARN] [stats] NO configured counters -- run /counters setup (or set STATS_*_CHANNEL_ID)
-[2026-11-10T19:50:18.807Z] [WARN] [stats] Cannot read properties of null (reading 'filter')
-[2026-11-10T19:53:46.809Z] [WARN] [lavalink] trackError Bonfire {"message":"Something broke when playing the track.","severity":"fault","cause":"java.io.IOException: No playable stream found for track: 47816886","causeStackTrace":"java.io.IOException: No playable 
