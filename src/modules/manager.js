@@ -81,6 +81,11 @@ async function stopMusic(client) {
   if (engine && typeof engine.detach === 'function') {
     try { engine.detach(); } catch {}
   }
+  // Close the Lavalink websocket(s) too. Without this a module restart leaves
+  // the old manager connected while a new engine opens a second node.
+  try {
+    await engine?.manager?.nodeManager?.disconnectAll?.(true, true);
+  } catch {}
   client.music = null;
   client.lavalink = null;
   logger.info('[module] music stopped');

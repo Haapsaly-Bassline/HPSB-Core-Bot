@@ -20,6 +20,11 @@ describe('resolvers', () => {
   it('plain text defaults to YouTube search', () => {
     assert.deepEqual(resolveSearchQuery('hardbass'), { engine: 'youtube', query: 'ytsearch:hardbass' });
   });
+  it('honours the configured default search source for plain text', () => {
+    assert.deepEqual(resolveSearchQuery('hardbass', 'soundcloud'), { engine: 'soundcloud', query: 'scsearch:hardbass' });
+    assert.deepEqual(resolveSearchQuery('hardbass', 'deezer'), { engine: 'deezer', query: 'dzsearch:hardbass' });
+    assert.deepEqual(resolveSearchQuery('hardbass', 'nonsense'), { engine: 'youtube', query: 'ytsearch:hardbass' });
+  });
   it('empty query throws', () => {
     assert.throws(() => resolveSearchQuery('   '), /Empty query/);
   });

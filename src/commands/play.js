@@ -5,9 +5,9 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('play')
     .setDescription('Play: text search / SoundCloud / Spotify / Deezer / Apple / Tidal / Qobuz / Bandcamp / mp3 / radio')
-    .addStringOption(o => o.setName('query').setDescription('Title, track/playlist link, Bandcamp fan profile or direct mp3').setRequired(true))
+    .addStringOption(o => o.setName('query').setDescription('Track/playlist link, SoundCloud profile tab, Bandcamp fan profile or direct mp3').setRequired(true))
     .addChannelOption(o => o.setName('channel').setDescription('Voice channel (defaults to yours)').setRequired(false))
-    .addIntegerOption(o => o.setName('count').setDescription('Fan collection: how many releases to take (1-25, default 10)').setMinValue(1).setMaxValue(25).setRequired(false)),
+    .addIntegerOption(o => o.setName('count').setDescription('Profile import: how many items to queue (1-25, default 10)').setMinValue(1).setMaxValue(25).setRequired(false)),
   async execute(interaction, client) {
     const query = interaction.options.getString('query', true);
     await interaction.deferReply();

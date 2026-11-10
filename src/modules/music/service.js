@@ -101,20 +101,12 @@ async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, l
       failed += 1;
     }
   }
-  // Start if idle
+  // Start if idle. The NP message is created by Lavalink's native trackStart
+  // event -- do not call np.trackStart() here (that caused duplicate messages
+  // and a circular service -> np -> service dependency).
   try {
     const p = engine.getPlayer(voiceChannel.guild.id);
-    if (p && !p.playing && !p.paused) {
-      await p.play();
-      // Force NP update in case Lavalink trackStart event didn't fire after batch enqueue
-      const np = require('./np');
-      const ch = p.textChannelId
-        ? await client.channels.fetch(p.textChannelId).catch(() => null)
-        : null;
-      if (ch?.isTextBased?.()) {
-        await np.trackStart(client, p.guildId, ch).catch(() => {});
-      }
-    }
+    if (p && !p.playing && !p.paused) await p.play().catch(() => {});
   } catch {}
   if (!added.length) throw new Error('Nothing was added (all releases are unavailable)');
   return { fan, added, failed, totalTracks: added.reduce((a, x) => a + x.count, 0) };
@@ -153,17 +145,11 @@ async function playSoundCloudProfile(client, voiceChannel, profileUrl, { request
   }
   const player = engine.getPlayer(voiceChannel.guild.id);
   if (player && !player.playing && !player.paused) {
-    try {
-      await player.play();
-      // Force NP update in case Lavalink trackStart event didn't fire after batch enqueue
-      const np = require('./np');
-      const ch = player.textChannelId
-        ? await client.channels.fetch(player.textChannelId).catch(() => null)
-        : null;
-      if (ch?.isTextBased?.()) {
-        await np.trackStart(client, p.guildId, ch).catch(() => {});
-      }
-    } catch (error) {
+    // NP is created by Lavalink's native trackStart event. Calling
+    // np.trackStart() manually here duplicated the message and created a
+    // circular dependency (service -> np -> service).
+    try { await player.play(); }
+    catch (error) {
       const detail = String(error?.message || error || 'unknown Lavalink error').slice(0, 180);
       logger.error('[music] SoundCloud profile queue loaded but playback start failed', detail);
       throw new Error('Queued ' + added.length + ' SoundCloud item(s), but playback failed to start: ' + detail);

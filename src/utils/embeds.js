@@ -1,4 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { config } = require('../config');
 
 // HPSB design tokens: new embeds from here, old ones migrate gradually
 const COLORS = {
@@ -11,7 +12,7 @@ const COLORS = {
   accent: 0x5865f2, // blurple -- music "added / queue action" family
 };
 
-const MUSIC_FOOTER = 'Haapsaly Bassline • Music';
+const MUSIC_FOOTER = `${config.botName || 'Haapsaly Bassline'} • Music`;
 
 // Compact confirmation embed for control commands (skip/pause/stop/...).
 // Errors stay plain ephemeral text; successes share one look.
@@ -98,7 +99,7 @@ function addedTrackEmbed(track, position, requester, eta, nextTitle, source) {
     { name: 'Next', value: nextTitle ? String(nextTitle).slice(0, 200) : '-', inline: true },
   );
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -115,7 +116,7 @@ function playlistAddedEmbed({ title, count, first, source }, requester) {
     ).setTimestamp();
   if (first?.thumbnail) e.setThumbnail(first.thumbnail);
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -130,7 +131,7 @@ function liveAddedEmbed({ label, url, source }, requester) {
       (url ? `\n${url}` : '')
     ).setTimestamp();
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -150,7 +151,7 @@ function fanCollectionEmbed({ fanName, fanUrl, added, failed, totalTracks }, req
     ).setTimestamp();
   if (fanUrl) e.setURL(fanUrl);
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 
@@ -170,7 +171,7 @@ function soundCloudProfileEmbed({ profileName, profileUrl, sectionLabel, added, 
     ).setTimestamp();
   if (profileUrl) e.setURL(profileUrl);
   if (requester) e.addFields({ name: 'Requested by', value: `${requester}`, inline: false });
-  e.setFooter({ text: 'Haapsaly Bassline • Music' });
+  e.setFooter({ text: MUSIC_FOOTER });
   return e;
 }
 

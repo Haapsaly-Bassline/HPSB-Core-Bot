@@ -34,7 +34,7 @@ function detectEngine(value) {
   return null;
 }
 
-function resolveSearchQuery(query) {
+function resolveSearchQuery(query, defaultSearchSource = 'youtube') {
   const value = String(query || '').trim();
   if (!value) throw new Error('Empty query');
   if (/^(ytsearch|ytmsearch|scsearch|spsearch|dzsearch|dzisrc|amsearch|tdsearch|qbsearch|qbisrc|ymsearch|vksearch):/i.test(value)) {
@@ -50,7 +50,10 @@ function resolveSearchQuery(query) {
     const engine = detectEngine(value) || 'arbitrary';
     return { engine, query: value }; // URL resolved by node
   }
-  return { engine: 'youtube', query: `${SEARCH_PREFIX.youtube}${value}` };
+  // Text search: honour MUSIC_DEFAULT_SEARCH_SOURCE (default YouTube).
+  const wanted = String(defaultSearchSource || 'youtube').trim().toLowerCase();
+  const source = Object.prototype.hasOwnProperty.call(SEARCH_PREFIX, wanted) ? wanted : 'youtube';
+  return { engine: source, query: `${SEARCH_PREFIX[source]}${value}` };
 }
 
 module.exports = { resolveSearchQuery, SEARCH_PREFIX, detectEngine };

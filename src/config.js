@@ -120,6 +120,8 @@ const config = {
   token: secret('DISCORD_TOKEN', ''), // secret, обязательно
   clientId: id('CLIENT_ID', '') || id('DISCORD_CLIENT_ID', ''), // snowflake-id, обязательно
   guildId: id('GUILD_ID', ''), // snowflake-id, обязательно
+  // Shown in music embed footers (NP / queue / added-track).
+  botName: str('BOT_NAME', 'Haapsaly Bassline'),
   modRoleId: id('MOD_ROLE_ID', ''), // snowflake-id
   logChannelId: id('LOG_CHANNEL_ID', ''), // snowflake-id, '' = без логов
   adminIds: list('ADMIN_DISCORD_IDS'), // list<snowflake-id>, [] = нет админов
@@ -186,7 +188,12 @@ const config = {
       port: int('LAVALINK_PORT', 2333), // integer
       password: secret('LAVALINK_PASSWORD', ''), // secret (= lavalink.server.password)
       secure: bool('LAVALINK_SECURE', false), // boolean
+      nodeId: str('LAVALINK_NODE_ID', 'hpsb-main'), // string: node id in LavalinkManager
+      requestTimeoutMs: int('LAVALINK_REQUEST_TIMEOUT_MS', 30000), // integer, ms
     },
+    // Text-search source when the query is not a URL:
+    // youtube | soundcloud | spotify | deezer | applemusic | tidal | qobuz | yandex | vk
+    defaultSearchSource: str('MUSIC_DEFAULT_SEARCH_SOURCE', str('DEFAULT_SEARCH_SOURCE', 'youtube')).toLowerCase(),
     npUpdateSecs: int('NP_UPDATE_SECS', 10), // integer, секунд (мин. 5)
   },
 
