@@ -2,6 +2,8 @@
 // Response shapes are stable -- commands and NP build overlays on top.
 const { resolveSearchQuery } = require('./resolvers');
 const { fmtMs } = require('../../utils/music');
+const { config } = require('../../config');
+const { logger } = require('../../utils/logger');
 
 // Null when the engine isn't up (client.music set in ready.js after login).
 // One-liner actions below tolerate null and answer false/null so commands show
@@ -41,12 +43,7 @@ async function play(client, voiceChannel, query, { requester, textChannel, radio
   const engine = eng(client);
   if (!engine) throw new Error('Music engine is not initialized yet (bot still starting) -- try again in a few seconds');
   needNode(engine);
-  const q = resolveSearchQuery(query);
-// Spotify disabled on node (no Premium on app): reply immediately with clear message,
-// not vague "No results" after timeouts.
-  if (q.engine === 'spotify') {
-    throw new Error('Spotify is temporarily disabled: the Spotify app has no Premium. Search by text (YouTube/SoundCloud) or paste a direct track link.');
-  }
+  const q = resolveSearchQuery(query, config.music.defaultSearchSource);
   // ETA: how long until our track plays (remaining current + queue BEFORE addition)
   let etaMs = 0;
   let nextTitle = null;
@@ -113,11 +110,58 @@ async function playFan(client, voiceChannel, fanUrl, { requester, textChannel, l
   return { fan, added, failed, totalTracks: added.reduce((a, x) => a + x.count, 0) };
 }
 
+// SoundCloud profile tab: queue tracks, albums, likes or reposts from the selected section.
+// Returns { profile, user, section, sectionLabel, items, added, failed, totalTracks, warning }.
+async function playSoundCloudProfile(client, voiceChannel, profileUrl, { requester, textChannel, limit = 10 } = {}) {
+  const engine = eng(client);
+  if (!engine) throw new Error('Music engine is not initialized yet (bot still starting) -- try again in a few seconds');
+  needNode(engine);
+  const { fetchProfileCollection } = require('./soundcloud-profile');
+  const collection = await fetchProfileCollection(profileUrl, { limit: Math.max(1, Math.min(25, limit || 10)) });
+  const added = [];
+  let failed = 0;
+  let firstFailure = null;
+  for (const item of collection.items) {
+    try {
+      const result = await engine.enqueueUrl(voiceChannel, item.url, { requester, metadata: { channel: textChannel } });
+      added.push({ title: result.title || item.title, url: item.url, band: item.band, kind: item.kind, count: result.count });
+    } catch (error) {
+      failed += 1;
+      const detail = String(error?.message || error || 'unknown error').slice(0, 180);
+      if (!firstFailure) firstFailure = detail;
+      logger.warn('[music] SoundCloud profile item failed', JSON.stringify({
+        section: collection.section,
+        title: String(item.title || 'Unknown').slice(0, 120),
+        url: String(item.url || '').slice(0, 180),
+        error: detail,
+      }));
+    }
+  }
+  if (!added.length) {
+    throw new Error('No SoundCloud items were added (' + failed + '/' + collection.items.length + ' failed)' +
+      (firstFailure ? '; first error: ' + firstFailure : ''));
+  }
+  const player = engine.getPlayer(voiceChannel.guild.id);
+  if (player && !player.playing && !player.paused) {
+    try { await player.play(); }
+    catch (error) {
+      const detail = String(error?.message || error || 'unknown Lavalink error').slice(0, 180);
+      logger.error('[music] SoundCloud profile queue loaded but playback start failed', detail);
+      throw new Error('Queued ' + added.length + ' SoundCloud item(s), but playback failed to start: ' + detail);
+    }
+  }
+  const warnings = [];
+  if (collection.warning) warnings.push(collection.warning);
+  if (failed) warnings.push(failed + ' item(s) could not be added' + (firstFailure ? '; first error: ' + firstFailure : '.'));
+  return { ...collection, added, failed, totalTracks: added.reduce((sum, item) => sum + Number(item.count || 0), 0), warning: warnings.join(' ') || null };
+}
+
 module.exports = {
   engineName: () => 'lavalink',
 
   play,
   playFan,
+  playSoundCloudProfile,
 
   skip: (client, guildId, amount = 1) => eng(client)?.skip(guildId, amount) ?? false,
   stop: async (client, guildId) => eng(client)?.stop(guildId) ?? false,
