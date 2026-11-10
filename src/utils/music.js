@@ -28,4 +28,30 @@ function progressBar(currentMs, totalMs, len = 12) {
   return '▬'.repeat(pos) + '🔘' + '▬'.repeat(Math.max(len - pos, 0));
 }
 
-module.exports = { parseDuration, fmtMs, progressBar };
+// Parse /seek and the NP modal into an absolute position.
+// Absolute: '1:30', '90', '90s'. Relative: '+30', '-15', '+1:30'.
+// Returns { ms, relative } or null for invalid input.
+function parseSeekInput(raw, { currentMs = 0, durationMs = 0 } = {}) {
+  if (typeof raw !== 'string') return null;
+  let s = raw.trim().replace(/\s+/g, '');
+  if (!s) return null;
+  let relative = false;
+  let sign = 1;
+  if (s[0] === '+' || s[0] === '-') {
+    relative = true;
+    sign = s[0] === '-' ? -1 : 1;
+    s = s.slice(1);
+  }
+  if (!s) return null;
+  let ms;
+  if (/^\d+(?:\.\d+)?s$/i.test(s)) ms = Number(s.slice(0, -1)) * 1000;
+  else if (/^\d+$/.test(s)) ms = Number(s) * 1000;
+  else if (/^\d+(?::\d{1,2}){1,2}$/.test(s)) ms = parseDuration(s);
+  else return null;
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  if (relative) ms = currentMs + sign * ms;
+  if (durationMs > 0) ms = Math.min(ms, durationMs);
+  return { ms: Math.max(0, Math.round(ms)), relative };
+}
+
+module.exports = { parseDuration, fmtMs, progressBar, parseSeekInput };
