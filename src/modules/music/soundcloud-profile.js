@@ -225,7 +225,7 @@ function normalizeProfileEntry(entry, section = 'all') {
   try {
     const parsed = new URL(rawUrl);
     if (!['http:', 'https:'].includes(parsed.protocol) ||
-        !['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com',
+        !['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com', 'on.soundcloud.com',
           'api.soundcloud.com', 'api-v2.soundcloud.com'].includes(parsed.hostname.toLowerCase())) return null;
     url = parsed.href;
   } catch { return null; }

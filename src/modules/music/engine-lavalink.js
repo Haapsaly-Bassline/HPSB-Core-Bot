@@ -3,6 +3,38 @@
 
 const { LavalinkManager } = require('lavalink-client');
 const { logger } = require('../../utils/logger');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const VOLUME_FILE = path.join(__dirname, '..', '..', '..', 'data', 'music-volumes.json');
+
+function clampVolume(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(200, Math.round(n))) : 100;
+}
+
+function loadVolumes() {
+  try { return JSON.parse(fs.readFileSync(VOLUME_FILE, 'utf8')) || {}; } catch { return {}; }
+}
+
+function getSavedVolume(guildId) {
+  try {
+    const data = loadVolumes();
+    return clampVolume(data[guildId] ?? 100);
+  } catch { return 100; }
+}
+
+function saveVolume(guildId, vol) {
+  try {
+    const dir = path.dirname(VOLUME_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const data = loadVolumes();
+    data[guildId] = clampVolume(vol);
+    const tmp = `${VOLUME_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+    fs.renameSync(tmp, VOLUME_FILE);
+  } catch {}
+}
 
 const LOOP_MAP = { 0: 'off', 1: 'track', 2: 'queue' };
 const LOOP_BACK = { off: 0, track: 1, queue: 2 };
@@ -143,7 +175,7 @@ class LavalinkEngine {
         guildId: voiceChannel.guild.id,
         voiceChannelId: voiceChannel.id,
         textChannelId,
-        volume: 100,
+        volume: getSavedVolume(voiceChannel.guild.id),
         selfDeaf: true,
         selfMute: false,
       });
@@ -328,8 +360,11 @@ class LavalinkEngine {
   async volume(guildId, vol) {
     const p = this.getPlayer(guildId);
     if (!p) return false;
-    try { await p.setVolume(vol); return true; }
-    catch { return false; }
+    try {
+      await p.setVolume(vol);
+      saveVolume(guildId, vol);
+      return true;
+    } catch { return false; }
   }
   async loop(guildId, modeNum) {
     const p = this.getPlayer(guildId);
@@ -472,7 +507,7 @@ function searchParamSource(engine, q) {
 // Canonical Lavalink source names for URL (match node's sourceManagers).
 function urlSource(url) {
   const v = String(url || '').toLowerCase();
-  if (/soundcloud\.com|on\.soundcloud/.test(v)) return 'soundcloud';
+  if (/m\.soundcloud\.com|soundcloud\.com|on\.soundcloud/.test(v)) return 'soundcloud';
   if (/spotify\.com/.test(v)) return 'spotify';
   if (/deezer\.com|deezer\.page\.link/.test(v)) return 'deezer';
   if (/music\.apple\.com/.test(v)) return 'applemusic';
