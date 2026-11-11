@@ -6,6 +6,7 @@ describe('resolvers', () => {
   it('routes known domains to engines, URLs pass through', () => {
     assert.deepEqual(resolveSearchQuery('https://soundcloud.com/a/b'), { engine: 'soundcloud', query: 'https://soundcloud.com/a/b' });
     assert.deepEqual(resolveSearchQuery('https://on.soundcloud.com/x'), { engine: 'soundcloud', query: 'https://on.soundcloud.com/x' });
+    assert.deepEqual(resolveSearchQuery('https://m.soundcloud.com/a/b'), { engine: 'soundcloud', query: 'https://m.soundcloud.com/a/b' });
     assert.deepEqual(resolveSearchQuery('https://open.spotify.com/track/abc'), { engine: 'spotify', query: 'https://open.spotify.com/track/abc' });
     assert.deepEqual(resolveSearchQuery('https://www.youtube.com/watch?v=x'), { engine: 'youtube', query: 'https://www.youtube.com/watch?v=x' });
     assert.deepEqual(resolveSearchQuery('https://a.bandcamp.com/album/x'), { engine: 'bandcamp', query: 'https://a.bandcamp.com/album/x' });

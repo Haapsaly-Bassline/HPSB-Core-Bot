@@ -24,6 +24,7 @@ describe('SoundCloud profile importer', () => {
     assert.equal(parseProfileUrl('https://soundcloud.com/artist/sets').section, 'sets');
     assert.equal(parseProfileUrl('https://soundcloud.com/artist/playlists').section, 'sets');
     assert.equal(parseProfileUrl('https://soundcloud.com/artist').section, 'all');
+    assert.equal(parseProfileUrl('https://m.soundcloud.com/artist/tracks').section, 'tracks');
   });
 
   it('does not mistake a track, playlist or short share URL for a profile page', () => {

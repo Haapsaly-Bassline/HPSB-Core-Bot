@@ -143,8 +143,13 @@ progress edits during long restores:
   Bandcamp fan profile + `count`; no separate fan command), `/radio`, `/queue`,
   `/nowplaying` (live ticking embed with buttons), `/skip [count]`, `/prev`,
   `/join`, `/loop`, `/shuffle`, `/remove`, `/move`, `/seek`, `/volume`, `/clear`,
-  `/pause` (toggle), `/stop`, `/onair`. Sources: YouTube, SoundCloud, Bandcamp, HTTP radio/files.
-  Spotify is OFF (no Premium on the app). Stage auto-speaker included.
+  `/pause` (toggle), `/stop`, `/onair`. Sources: YouTube, SoundCloud (mobile
+  `m.soundcloud.com` / short `on.soundcloud.com` links and profile tabs: tracks,
+  albums, sets, likes, reposts), Bandcamp, HTTP radio/files. `/volume` is saved
+  per guild in `data/store.json` and restored when the player is recreated.
+  Text search uses `MUSIC_DEFAULT_SEARCH_SOURCE` (default `youtube`); URLs are
+  routed by domain. Spotify is OFF (no Premium on the app). Stage auto-speaker
+  included.
 - **Automod & honeypot:** flood/caps/links/invites/badwords, trap channel (first
   message = `timeout|kick|ban`; kick = softban with 24h wipe), anti-raid join
   spike. Bots are NOT exempt in the trap (raid bots are the target); own bot is.
@@ -183,7 +188,12 @@ progress edits during long restores:
 2. Lavalink (see `lavalink/README.md` for details):
    - download `Lavalink.jar` v4 into `lavalink/`;
    - `cp lavalink/application.example.yml lavalink/application.yml` and fill passwords/tokens;
-   - keep `LAVALINK_PASSWORD` in sync between `application.yml` and bot `.env`.
+   - keep `LAVALINK_PASSWORD` in sync between `application.yml` and bot `.env`;
+   - SoundCloud: install the `soundy` plugin and keep the built-in source off
+     (`soundcloud: false`, `soundcloudSearchEnabled: false`) - the built-in
+     reader cannot parse SoundCloud's current AAC HLS;
+   - YouTube: the live Docker node uses the bgutil POT sidecar (`pot` service in
+     `lavalink/docker/docker-compose.yml`); no cookies are mounted there.
 3. `npm install` (if it complains about install-scripts: approve `opencode` + `ffmpeg-static`, then `npm rebuild`).
 4. `node src/deploy-commands.js` - guild slash commands (also wipes stale globals;
    `wipe` = clean slate).
@@ -206,13 +216,25 @@ progress edits during long restores:
   `source-state` (source overrides), `sources/` (fetch/normalize per platform,
   `channel-scan` for missing-mode).
 - `src/modules/music/` - `engine-lavalink.js`, `service.js` (single entry),
-  `resolvers.js`, `np.js`, `stage.js`, `bandcamp-fan.js` (provider used by `/play`).
+  `resolvers.js`, `np.js`, `stage.js`, `bandcamp-fan.js` (provider used by
+  `/play`), `soundcloud-profile.js` (profile tabs).
 - `src/modules/` - `honeypot`, `modcall`, `stats`, `private`.
 - `src/utils/` - embeds, music fmt, mod gates, selfcheck, logger, store
   (atomic JSON + in-process mutex).
 - `lavalink/` - `application.example.yml`, plugins, README.
 - `test/` - `node --test` suites (unit + pipeline with mocked Discord; real
   APIs never touched).
+
+## Tests
+
+```bash
+npm test
+```
+
+`node --test` suites cover music resolvers (including `m.soundcloud.com` /
+`on.soundcloud.com` routing), the NP/seek UI, Bandcamp fan parsing, SoundCloud
+profile parsing, embeds/overlays, the JSON store and music service guards, plus
+the Publisher pipeline with mocked Discord. Real APIs are never touched.
 
 ## Secrets discipline
 
