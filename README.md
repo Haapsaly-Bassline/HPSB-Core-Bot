@@ -9,7 +9,7 @@ bot host only needs Node.js and network access to the node.
 
 | Command | What it does |
 | --- | --- |
-| `/play <query> [channel] [count]` | Search or play a URL: YouTube, SoundCloud, Bandcamp, Deezer, Apple Music, Tidal, Qobuz, Yandex, VK, direct mp3/stream, playlists. Bandcamp fan profiles queue purchases; SoundCloud profiles support tracks, albums, sets, likes and reposts (`count` = items, 1-25). SoundCloud playback/search requires the `soundy` plugin on the node |
+| `/play <query> [channel] [count]` | Search or play a URL: YouTube, SoundCloud, Bandcamp, direct mp3/stream, playlists. Bandcamp fan profiles queue purchases; SoundCloud profiles support tracks, albums, sets, likes and reposts (`count` = items, 1-25). SoundCloud playback/search requires the `soundy` plugin on the node |
 | `/join [channel]` | Move the bot to your voice channel / a specified one |
 | `/queue` | Current track + upcoming |
 | `/nowplaying` | Snapshot of the live Now Playing message |
